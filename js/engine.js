@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.3.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.4.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
   const mem = {};
@@ -121,6 +121,7 @@
       orgStr: {}, lg: null, dom: {}, yr: null, hist: [], log: [], q: [], flags: {}, opt: { fast: false },
       car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0, tryouts: 0, retry: 0 },
       stat: { turns: 0, t0: Date.now(), t20: 0, ev20: 0 },
+      rivals: [], rivalSeq: 0, evn: {},
       pendingSim: false, pendingNewYear: false, over: false, sim: null, recentMom: [],
     };
     const t = gauss(), talent = t * B.talentSd;
@@ -235,6 +236,7 @@
     c.used.push(mo.id); S.recentMom.push(mo.id); if (S.recentMom.length > 6) S.recentMom.shift();
     return {
       type: 'moment', mid: mo.id, tour: t.name, label: m.label, bo: m.bo, set: c.x + c.y + 1, me: tName(t, t.me), opp: tName(t, opp), x: c.x, y: c.y, sit,
+      rival: t.kind === 'nations' ? '' : rivalsAlive().filter(r => r.org === opp && r.squad === (t.kind === 'playoff' ? t.tier : 'first') && !r.out).map(r => r.nick).join(', '),
       title: mo.title, text: mo.text, base: pct(winP(effStr(T, true), O)),
       choices: mo.c.map(ch => {
         const k = chance(ch.chk);
@@ -284,6 +286,7 @@
       const win = c.x > c.y;
       const rec = { opp: tName(t, opp), win, plays: c.plays, r: c.n ? Math.round(c.rs / c.n * 10) / 10 : 0, k: c.k, d: c.d, a: c.a, label: m.label, score: c.x + '-' + c.y, moms: c.moms };
       record(rec, t.first, t.stage); t.lines.push(rec);
+      if (t.kind !== 'nations') rivalMatch(opp, t.kind === 'playoff' ? t.tier : 'first', rec, `${S.year}-${S.m}-${t.kind}${t.i}`, T, O, t.name);
       t.w[t.i++] = win ? t.me : opp; t.cur = null;
     }
     return true;
@@ -324,12 +327,23 @@
       if (p > 0) {
         const ok = rnd() < p, pct = Math.round(p * 100);
         S.flags.lastEval = { y: S.year, m: MONTHS[S.m].m, p: pct, ok };
+        // 같은 구단 2군에 같은 포지션 라이벌이 기준을 넘겨 있으면 한 자리를 두고 다툰 것으로 기록한다(내 확률은 그대로다).
+        const rv = rivalsAlive().find(r => r.org === S.org && r.squad === 'second' && r.role === S.role && !r.out && r.ovr >= base - B.toFirstGap);
+        if (rv) {
+          rv.f.skip = S.stat.turns;
+          if (ok) { rRel(rv, 6, 2); rNote(rv, '1군 한 자리를 두고 다퉜고, 올라간 것은 나였다.', 'good', true); }
+          else {
+            rv.squad = 'first'; if (!rv.debut) rv.debut = rv.age; rv.f.ahead = S.year; rRel(rv, 10, 0);
+            rNote(rv, '1군 한 자리를 두고 다퉜고, 올라간 것은 저쪽이었다.', 'bad', true);
+          }
+        }
         if (ok) {
           S.squad = 'first'; S.trust = 30; if (!S.car.debut) { S.car.debut = S.age; S.car.via = 'callup'; } S.contract.salary = Math.max(S.contract.salary, r100(salaryFor(org(), o) * .5)); S.contract.years = Math.max(S.contract.years, 2);
-          after.push(info('1군 콜업', `${org().name} 1군에 합류했다. 감독 신뢰 45 이상이면 주전으로 나선다. 자리는 스스로 만들어야 한다.`, 'good'));
+          after.push(info('1군 콜업', `${rv ? `같은 포지션의 ${rv.nick}을(를) 제치고 ` : ''}${org().name} 1군에 합류했다. 감독 신뢰 45 이상이면 주전으로 나선다. 자리는 스스로 만들어야 한다.`, 'good'));
           log('1군 콜업. 꿈의 무대가 눈앞이다.', 'good');
         } else {
-          const msg = `1군 콜업 심사: 기준은 넘었지만 이번에는 자리가 나지 않았다(자리가 날 확률 ${pct}%). OVR을 더 올리면 확률이 오른다.`;
+          const msg = rv ? `1군 콜업 심사: 한 자리는 같은 포지션의 ${rv.nick}에게 돌아갔다(내가 뽑힐 확률 ${pct}%). OVR을 더 올리면 확률이 오른다.`
+            : `1군 콜업 심사: 기준은 넘었지만 이번에는 자리가 나지 않았다(자리가 날 확률 ${pct}%). OVR을 더 올리면 확률이 오른다.`;
           log(msg); if (notes) notes.push(msg);
         }
       }
@@ -354,6 +368,7 @@
         const opp = a === S.org ? b : a, plays = decidePlays();
         const g = playGame(str(S.org, L.tier), str(opp, L.tier), 'league', plays);
         const m = Object.assign(g, { opp: D.ORG[opp].name }); record(m, first, 'league'); rep.matches.push(m);
+        rivalMatch(opp, L.tier, m, `${S.year}-${S.m}-L${r}`, str(S.org, L.tier), str(opp, L.tier));
         win = g.win ? S.org : opp;
       } else win = rnd() < 1 / (1 + Math.pow(10, (S.orgStr[b] - S.orgStr[a]) / 16)) ? a : b;
       const lose = win === a ? b : a; L.w[win]++; L.l[lose]++;
@@ -398,6 +413,12 @@
   // 대회가 끝난 뒤 한 번만 실행된다: 경기 기록을 월간 보고에 옮기고 우승·수상을 처리한다.
   function tourEnd(t, sim) {
     const rep = sim.rep, after = sim.after, last = t.lines[t.lines.length - 1], ch = t.w[t.ms.length - 1];
+    // 라이벌과 실제로 맞붙은 시리즈가 있을 때만 재회를 알린다(결승은 별도 화면, 그 밖은 월간 보고의 한 줄).
+    for (const ln of t.lines) for (const v of (ln.rv || [])) {
+      const r = rivalOf(v.id); if (!r) continue;
+      if (ln.label === '결승') after.push(info('결승의 라이벌', `${t.name} 결승 상대는 ${r.nick}의 ${ln.opp}였다. ${ln.score}로 ${ln.win ? '이겼다' : '졌다'}. ${ln.win ? '트로피 너머로 눈이 마주쳤다.' : '시상대 아래에서 저쪽의 환호를 지켜봤다.'}`, ln.win ? 'gold' : 'bad', [`${r.nick} 상대 통산 ${r.w}승 ${r.l}패`, `${r.nick} 평점 ${v.r.toFixed(1)}`]));
+      else rep.notes.push(`${ln.label}에서 ${r.nick}의 ${ln.opp}을(를) 만나 ${ln.score}로 ${ln.win ? '이겼다' : '졌다'}. 통산 ${r.w}승 ${r.l}패.`);
+    }
     if (t.kind === 'playoff') {
       const ru = ch === t.w[0] ? t.w[1] : t.w[0];
       rep.matches.push(...t.lines);
@@ -499,6 +520,7 @@
       log('손목 부상. 2개월 결장.', 'bad');
     }
     for (const s of D.STATS) { const d = S.stats[s.id] - before[s.id]; if (Math.abs(d) >= .05) rep.growth.push([s.name, Math.round(d * 10) / 10]); }
+    rivalsMonth(mi, rep);
     S.car.peak = Math.max(S.car.peak, ovr()); S.monthsInOrg++;
     rep.ovr = Math.floor(ovr());
     const pm = rep.matches.filter(m => m.plays);
@@ -580,6 +602,7 @@
     S.hist.push(rec);
     after.push(Object.assign({ type: 'season' }, rec));
     if (y.awards.includes('올해의 선수')) after.push(info('올해의 선수', '전 세계 기자단과 선수단 투표 1위. 올해 이 종목에서 가장 빛난 이름은 나였다.', 'gold', ['상금 5,000만']));
+    rivalsYear();   // 해가 넘어가기 전에 처리해야 사건 기록의 연차가 맞는다
     // 나이
     S.age++; S.year++;
     const st = B.fadeFrom + (S.trait === 'brain' ? 1 : 0) + (has('late') ? 2 : 0), a = S.age;
@@ -635,6 +658,7 @@
       type: 'retire', reason, nick: S.nick, role: role().name, age: S.age, years: S.hist.length,
       g: c.g, w: c.w, avg: c.g ? c.rs / c.g : 0, mvp: c.mvp, kda: c.d ? (c.k + c.a) / c.d : 0, peak: Math.floor(c.peak), earn: c.earn,
       titles: c.titles.slice(), awards: c.awards.slice(), orgs: c.orgs.map(id => D.ORG[id].name),
+      rivals: S.rivals.map(r => Object.assign(rivalView(r), { epilogue: rivalEpilogue(r), hist: r.hist.slice(0, 1).concat(r.hist.slice(1).slice(-4)) })),
     }, ev);
     S.q = [sc];
     let hall = []; try { hall = JSON.parse(store.get(HALL) || '[]'); } catch (e) {}
@@ -642,17 +666,233 @@
     hall.sort((a, b) => b.score - a.score); store.set(HALL, JSON.stringify(hall.slice(0, 30)));
   }
 
-  /* ---------- 진행 ---------- */
-  function eventScene() {
-    const ok = D.EVENTS.filter(e => e.when(S) && !S.recentEv.includes(e.id) && !(e.once && S.flags['ev_' + e.id]));
-    if (!ok.length) return null;
-    const ev = pick(ok); S.recentEv.push(ev.id); while (S.recentEv.length > B.eventMemory) S.recentEv.shift();
-    if (ev.once) S.flags['ev_' + ev.id] = S.year;
+  /* ---------- 라이벌 ----------
+     연습생 동기 두 명이 은퇴까지 함께 간다. 리그 전체를 시뮬레이션하지 않고, 라이벌마다 OVR 하나와 소속·상태만 가볍게 진행한다.
+       성장·부상: 매달(rivalsMonth) / 콜업 심사: 스플릿 종료와 스토브리그(rivalEval) / 노쇠·방출·이적·은퇴: 스토브리그(rivalsYear)
+     맞대결 전적은 내가 출전한 공식전의 결과가 확정되는 순간에만 기록하고, 경기 ID로 중복을 막는다(rivalMatch).
+     라이벌은 경기 계산식에 들어가지 않는다. 상대 팀 전력은 구단 전력 그대로다.
+     r = { id, nick, role, style, grow, age, home, ovr, pot, org, squad, months, origin, rv(경쟁심), rs(존중), w, l(내 기준 맞대결 승·패),
+           mids(기록한 경기 ID), hist(사건 기록), news(최근 소식), titles, debut, peak, moves, out(부상 남은 달), slump, retired, f(알림 표시) } */
+  const RSQ = { trainee: 0, second: 1, first: 2 };
+  const STYLES = ['공격적인', '침착한', '성실한', '대담한', '영리한', '끈질긴'];
+  const rivalsAlive = () => S.rivals.filter(r => !r.retired);
+  const rivalOf = id => S.rivals.find(r => r.id === id);
+  const round1 = v => Math.round(v * 10) / 10;
+  function rivalNick() {
+    let n, k = 0;
+    do { n = pick(D.SYL_A) + pick(D.SYL_B) + (k++ > 40 ? k : ''); } while (n.toLowerCase() === S.nick.toLowerCase() || S.rivals.some(r => r.nick === n));
+    return n;
+  }
+  // 사건 기록: 처음 5개(만남)와 최근 기록을 남긴다.
+  function rHist(r, text) { r.hist.push({ y: S.year, m: MONTHS[S.m].m, t: text }); if (r.hist.length > 36) r.hist.splice(5, 1); }
+  function rNote(r, text, tone, quiet) { r.news = text; rHist(r, text); if (!quiet) log(`${r.nick} — ${text}`, tone); }
+  function rRel(r, drv, drs) { r.rv = clamp(r.rv + (drv || 0), 0, 100); r.rs = clamp(r.rs + (drs || 0), 0, 100); }
+  function relLabel(r) {
+    if (r.rs >= 60 && r.rv >= 60) return '호적수';
+    if (r.rs >= 60) return '벗';
+    if (r.rv >= 60) return r.rs < 35 ? '앙숙' : '경쟁자';
+    return r.origin === 'trainee' ? '동기' : '맞수';
+  }
+  function makeRival(o) {
+    const r = {
+      id: 'r' + (++S.rivalSeq), nick: rivalNick(), role: o.role, style: pick(STYLES), grow: pick(['early', 'steady', 'steady', 'late']),
+      age: S.age, home: S.home, ovr: o.ovr, pot: Math.max(o.pot, o.ovr + 1), org: o.org, squad: o.squad, months: 0, origin: o.origin,
+      rv: o.rv, rs: o.rs, w: 0, l: 0, mids: [], hist: [], news: '', titles: 0, debut: o.squad === 'first' ? S.age : 0, peak: o.ovr, moves: 0, out: 0, slump: 0, retired: null, f: {},
+    };
+    S.rivals.push(r); return r;
+  }
+  // 새 커리어: 같은 날 입단한 동기 둘. 하나는 나와 같은 포지션, 하나는 다른 포지션.
+  function spawnRivals() {
+    const o = ovr(), other = pick(D.ROLES.filter(x => x.id !== S.role)).id;
+    const a = makeRival({ role: S.role, ovr: clamp(o + gauss() * 2, 38, 60), pot: clamp(83 + gauss() * 5, 74, 96), org: S.org, squad: 'trainee', origin: 'trainee', rv: 25, rs: 25 });
+    const b = makeRival({ role: other, ovr: clamp(o + gauss() * 2.5, 38, 60), pot: clamp(80 + gauss() * 6, 68, 96), org: S.org, squad: 'trainee', origin: 'trainee', rv: 15, rs: 35 });
+    for (const r of [a, b]) { r.news = '같은 날 입단한 연습생 동기.'; rHist(r, `${org().name} 연습생 동기로 처음 만났다.`); }
+  }
+  // 라이벌이 없는 커리어(예전 저장)에서 리그의 맞수를 만든다. 지나간 일을 지어내지 않고 지금부터의 기록만 쌓는다.
+  function leagueRival() {
+    const o = ovr(), ids = S.lg.ids.filter(id => id !== S.org);
+    const r = makeRival({ role: S.role, ovr: clamp(o + gauss() * 3, 50, 95), pot: clamp(o + 3 + rnd() * 5, 60, 97), org: pick(ids), squad: 'first', origin: 'league', rv: 25, rs: 20 });
+    r.news = '리그에서 의식하기 시작한 선수.'; rHist(r, `${D.ORG[r.org].name} 소속으로 리그에서 처음 의식하게 됐다.`);
+    return r;
+  }
+  function aheadCheck(r) { if (RSQ[r.squad] > RSQ[S.squad]) r.f.ahead = S.year; }
+
+  function rivalGrow(r) {
+    const af = B.ageGrow.find(x => r.age <= x[0])[1];
+    const tm = r.grow === 'early' ? (r.age <= 19 ? 1.2 : .85) : r.grow === 'late' ? (r.age <= 19 ? .85 : 1.25) : 1;
+    r.ovr = clamp(r.ovr + B.rivalGrow * af * tm * Math.max(0, 1 - Math.pow(r.ovr / r.pot, 4)) * (.7 + rnd() * .6), 20, 99);
+    r.peak = Math.max(r.peak, r.ovr);
+  }
+  // 콜업 심사: 선수와 같은 기준을 쓴다(감독 신뢰 조건만 없다).
+  function rivalEval(r) {
+    if (r.f.skip === S.stat.turns) return;               // 이번 심사에서 이미 처리됨(자리 경쟁)
+    const base = S.orgStr[r.org], name = D.ORG[r.org].name;
+    if (r.squad === 'trainee') {
+      if (r.months >= B.toSecondMonths && r.ovr >= base - B.toSecondGap) { r.squad = 'second'; rNote(r, `${name} 2군에 콜업됐다.`); aheadCheck(r); }
+    } else if (r.squad === 'second' && !r.out) {
+      const gap = r.ovr - (base - B.toFirstGap);
+      if (gap >= 0 && rnd() < clamp(B.slotBase + gap * B.slotPerOvr, B.slotBase, B.slotMax)) {
+        r.squad = 'first'; if (!r.debut) r.debut = r.age; rNote(r, `${name} 1군에 콜업됐다.`); aheadCheck(r);
+      }
+    }
+  }
+  function rivalRetire(r) {
+    r.retired = { y: S.year, age: r.age }; r.f.retired = S.year; r.out = 0;
+    rNote(r, r.debut ? `${r.age}세에 은퇴를 발표했다.` : `1군 무대를 밟지 못하고 ${r.age}세에 선수 생활을 접었다.`);
+  }
+  function rivalGo(r, g, squad) {
+    const from = D.ORG[r.org].name;
+    r.org = g.id; r.squad = squad; r.months = 0; r.moves++; if (squad === 'first' && !r.debut) r.debut = r.age;
+    r.f.moved = S.year;
+    rNote(r, `${from}에서 ${g.name} ${SQUAD[squad]}으로 옮겼다.`); aheadCheck(r);
+  }
+  // released: 방출돼 새 팀을 찾는다(못 찾으면 은퇴). 아니면 더 나은 자리가 있을 때만 옮긴다.
+  function rivalMove(r, released) {
+    const agePen = Math.max(0, r.age - B.ageFrom) * B.ageSlope, need = r.debut ? B.offerGap : B.rivalGapUnproven;
+    const orgs = D.ORGS.filter(g => g.region === r.home && g.id !== r.org);
+    const firsts = orgs.filter(g => r.ovr - S.orgStr[g.id] >= -need + agePen).sort((a, b) => S.orgStr[b.id] - S.orgStr[a.id]);
+    if (!released) {
+      const up = r.squad === 'first' ? firsts.filter(g => S.orgStr[g.id] > S.orgStr[r.org] + 2) : firsts;
+      if (up.length) rivalGo(r, up[ri(0, Math.min(1, up.length - 1))], 'first');
+      return;
+    }
+    if (firsts.length) return rivalGo(r, firsts[ri(0, Math.min(1, firsts.length - 1))], 'first');
+    const seconds = r.age <= B.secondOfferAge ? orgs.filter(g => r.ovr >= S.orgStr[g.id] - B.secondOfferGap) : [];
+    if (seconds.length) return rivalGo(r, pick(seconds), 'second');
+    rivalRetire(r);
+  }
+
+  // 매달: 성장, 부상, 연습생 평가전 순위, 스플릿 종료 달의 콜업 심사
+  function rivalsMonth(mi, rep) {
+    const alive = rivalsAlive();
+    for (const r of alive) {
+      r.months++;
+      if (r.out > 0) { if (--r.out === 0) { r.f.back = S.year; rNote(r, '부상에서 돌아왔다.'); } }
+      else {
+        rivalGrow(r);
+        if (r.squad !== 'trainee' && rnd() < B.rivalInjury) { r.out = ri(2, 4); rNote(r, `부상으로 ${r.out}개월 결장한다.`); }
+      }
+    }
+    if (rep.eval) {
+      // 같은 구단 연습생 동기의 평가전 결과. 내 평점과 같은 식으로 계산하고, 순위가 평점 순서와 어긋나지 않게 맞춘다.
+      const used = [rep.eval.rank], list = [];
+      for (const r of alive) {
+        if (r.org !== S.org || r.squad !== 'trainee') continue;
+        const rt = clamp(round1(6 + (r.ovr - (S.orgStr[S.org] - B.toSecondGap)) / 8 + gauss() * .8), 3, 10);
+        let rank = clamp(Math.round(6.5 - (rt - 6) * 3), 1, 12);
+        const above = rt > rep.eval.r || (rt === rep.eval.r && rnd() < .5), step = above ? -1 : 1;
+        if (above ? rank >= rep.eval.rank : rank <= rep.eval.rank) rank = rep.eval.rank + step;
+        while (used.includes(rank)) rank += step;          // 같은 순위가 겹치면 내 순위에서 먼 쪽으로 한 칸
+        if (rank < 1 || rank > 12) continue;               // 순위표에 자리가 없으면 이번 달은 표시하지 않는다
+        used.push(rank); list.push({ id: r.id, nick: r.nick, r: rt, rank });
+        if (Math.abs(rank - rep.eval.rank) <= 2) rRel(r, 1.5, 0);
+      }
+      if (list.length) rep.eval.rivals = list;
+    }
+    if (mi.playoff) for (const r of alive) rivalEval(r);
+  }
+
+  // 스토브리그: 우승 기록, 나이, 노쇠, 부진, 콜업 심사, 방출·이적·은퇴
+  function rivalsYear() {
+    for (const r of rivalsAlive()) {
+      for (const sp of ['spring', 'summer']) {
+        const d = S.dom[sp] && S.dom[sp][r.home];
+        if (d && r.squad === 'first' && !r.out && d.champ === r.org) { r.titles++; rNote(r, `${D.ORG[r.org].name}에서 ${SPLIT[sp]} 우승을 차지했다.`, '', r.org === S.org); }
+      }
+      r.age++;
+      const st = B.fadeFrom + (r.grow === 'late' ? 2 : r.grow === 'early' ? -1 : 0);
+      if (r.age > st) { const d = (r.age - st) * B.rivalFade + rnd(); r.ovr = Math.max(20, r.ovr - d); r.pot = Math.max(r.ovr, r.pot - d); }
+      if (r.slump) { r.slump = 0; r.ovr = Math.min(99, r.ovr + 2.5); r.pot = Math.max(r.pot, r.ovr); r.f.back = S.year; rNote(r, '긴 부진에서 벗어났다.'); }
+      else if (r.squad === 'first' && r.age >= 21 && rnd() < B.rivalSlump) { r.slump = 1; r.ovr = Math.max(20, r.ovr - 3); r.f.slump = S.year; rNote(r, '부진에 빠졌다.'); }
+      rivalEval(r);
+      const base = S.orgStr[r.org], agePen = Math.max(0, r.age - B.ageFrom) * B.ageSlope;
+      const out = r.age >= 34 || (r.squad === 'trainee' && r.age >= B.traineeMaxAge) || (r.squad === 'second' && r.age >= B.secondMaxAge) || (r.squad === 'first' && r.ovr < base - 12 + agePen);
+      if (r.age >= 34) rivalRetire(r);
+      else if (out) rivalMove(r, true);
+      else if (r.months >= 10 && (r.squad === 'first' ? rnd() < B.rivalAmbition : (r.squad === 'second' && r.age >= 20 && r.ovr < base - B.toFirstGap - 2 && rnd() < .7))) rivalMove(r, false);
+    }
+  }
+
+  // 공식전 결과가 확정될 때 호출한다. 상대 구단의 같은 리그 로스터에 있는, 부상이 아닌 라이벌만 기록한다.
+  // mid(경기 ID)가 이미 기록돼 있으면 다시 세지 않는다. 내가 출전하지 않은 경기와 같은 구단 라이벌은 세지 않는다.
+  function rivalMatch(oppOrg, tier, rec, mid, T, O, tourName) {
+    if (!rec.plays || oppOrg === S.org) return;
+    for (const r of rivalsAlive()) {
+      if (r.org !== oppOrg || r.squad !== tier || r.out > 0 || r.mids.includes(mid)) continue;
+      r.mids.push(mid); if (r.mids.length > 80) r.mids.shift();
+      if (rec.win) r.w++; else r.l++;
+      const rt = clamp(round1(6.3 + (r.ovr - (T + O) / 2) / 11 + (rec.win ? -.45 : .45) + gauss() * .7), 3, 10);
+      (rec.rv = rec.rv || []).push({ id: r.id, nick: r.nick, r: rt });
+      rRel(r, rec.label === '결승' ? 6 : rec.label ? 3 : .6, rec.label === '결승' ? 3 : rec.label ? 1.5 : .2);   // 맞붙을수록 조금씩, 큰 경기일수록 크게
+      S.flags.rvLast = { id: r.id, win: !!rec.win, turn: S.stat.turns, used: 0 };
+      if (rec.label) rNote(r, `${tourName} ${rec.label}에서 맞붙어 ${rec.score}로 ${rec.win ? '내가 이겼다' : '내가 졌다'}.`, rec.win ? 'good' : 'bad');
+      else r.news = `${MONTHS[S.m].m}월 리그 맞대결에서 ${rec.win ? '내가 이겼다' : '내가 졌다'}. 통산 ${r.w}승 ${r.l}패.`;
+    }
+  }
+  // 이번 달 리그 일정에서 만나는 라이벌(홈 화면 안내와 이벤트 조건에 쓴다)
+  function rivalFixtures() {
+    const mi = MONTHS[S.m], L = S.lg, out = [];
+    if (!L || mi.type !== 'league') return out;
+    const opps = new Set();
+    for (let r = mi.rounds[0]; r < mi.rounds[1]; r++) for (const [a, b] of L.rounds[r]) { if (a === S.org) opps.add(b); if (b === S.org) opps.add(a); }
+    for (const r of rivalsAlive()) if (opps.has(r.org) && r.squad === L.tier && !r.out && r.org !== S.org) out.push(r);
+    return out;
+  }
+  function rivalView(r) {
+    const same = !r.retired && r.org === S.org;
     return {
-      type: 'event', ev: ev.id, title: ev.title, text: ev.text,
-      choices: ev.c.map(c => { const ch = c.chk ? chance(c.chk) : null; return { label: c.label, p: ch ? ch.p : null, bd: ch ? ch.bd : null, disabled: !!(c.need && S.money < c.need) }; }),
+      id: r.id, nick: r.nick, role: D.ROLES.find(x => x.id === r.role).name, style: r.style, age: r.age, ovr: Math.floor(r.ovr), org: D.ORG[r.org].name, color: D.ORG[r.org].color,
+      squad: SQUAD[r.squad], retired: !!r.retired, same,
+      status: r.retired ? `은퇴 (${r.retired.age}세)` : r.out ? `부상 (${r.out}개월)` : r.slump ? '부진' : same ? '같은 팀' : '활동 중',
+      rv: Math.round(r.rv), rs: Math.round(r.rs), label: relLabel(r), w: r.w, l: r.l, news: r.news, titles: r.titles, hist: r.hist.slice(-6).reverse(), origin: r.origin,
     };
   }
+  // 은퇴 화면의 회고 한 줄. 실제 전적과 관계에서만 문장을 만든다.
+  function rivalEpilogue(r) {
+    const n = r.w + r.l, lab = relLabel(r);
+    const h = n === 0 ? '공식전에서는 끝내 한 번도 마주치지 못했다.' : r.w > r.l ? `공식전 ${n}번 가운데 ${r.w}번을 이겼다.` : r.w < r.l ? `공식전 ${n}번 가운데 ${r.l}번을 졌다.` : `공식전 ${n}번, 정확히 반씩 나눠 가졌다.`;
+    const t = { '호적수': '서로를 가장 높은 벽으로 여겼고, 그래서 여기까지 왔다.', '벗': '유니폼은 달라도 가장 먼저 연락하는 사이로 남았다.', '앙숙': '끝내 악수는 없었다. 그래도 서로의 이름은 잊지 못할 것이다.', '경쟁자': '끝까지 지고 싶지 않은 이름이었다.', '동기': '같은 날 연습실 문을 열었던 동기.', '맞수': '리그에서 오래 의식해 온 이름.' }[lab];
+    const e = r.retired ? (r.debut ? `${r.retired.age}세에 먼저 은퇴했다.` : '1군에 오르지 못하고 먼저 떠났다.') : '아직 현역이다.';
+    return `${h} ${t} ${e}`;
+  }
+
+  /* ---------- 진행 ---------- */
+  // 이벤트 조건에 넘기는 도우미
+  function rivalHelp() {
+    const fx = rivalFixtures(), last = S.flags.rvLast;
+    return {
+      starter: isStarter(), facing: r => fx.includes(r),
+      inLeague: r => !!S.lg && S.lg.ids.includes(r.org) && r.org !== S.org && r.squad === S.lg.tier,
+      last: last && !last.used && S.stat.turns - last.turn <= 2 ? last : null,
+    };
+  }
+  function eventScene() {
+    const free = e => !S.recentEv.includes(e.id) && !(e.once && S.flags['ev_' + e.id]) && !(e.max && (S.evn[e.id] || 0) >= e.max);
+    const norm = D.EVENTS.filter(e => !e.rv && !e.make && e.when(S) && free(e));
+    // 라이벌 이벤트는 따로 모아, 조건이 맞는 것이 있을 때 정해진 비율로만 고른다(일반 이벤트를 밀어내지 않게).
+    const H = rivalHelp(), rvs = [];
+    for (const e of D.EVENTS) {
+      if (!free(e)) continue;
+      if (e.rv) { const r = e.rv(S, H); if (r) rvs.push([e, r]); }
+      else if (e.make && e.when(S)) rvs.push([e, null]);
+    }
+    let ev, r = null;
+    const hot = rvs.filter(x => x[0].news);
+    if (hot.length && rnd() < B.rivalNewsShare) [ev, r] = pick(hot);
+    else if (rvs.length && (!norm.length || rnd() < B.rivalEventShare)) { [ev, r] = pick(rvs); if (ev.make) r = leagueRival(); }
+    else if (norm.length) ev = pick(norm);
+    else return null;
+    S.recentEv.push(ev.id); while (S.recentEv.length > B.eventMemory) S.recentEv.shift();
+    if (ev.once) S.flags['ev_' + ev.id] = S.year;
+    if (ev.max) S.evn[ev.id] = (S.evn[ev.id] || 0) + 1;
+    if (r && ev.shown) ev.shown(S, r);
+    const fill = t => rFill(typeof t === 'function' ? t(S, r) : t, r);
+    return {
+      type: 'event', ev: ev.id, rid: r ? r.id : null, title: fill(ev.title), text: fill(ev.text),
+      choices: ev.c.map(c => { const ch = c.chk ? chance(c.chk) : null; return { label: fill(c.label), p: ch ? ch.p : null, bd: ch ? ch.bd : null, disabled: !!(c.need && S.money < c.need) }; }),
+    };
+  }
+  const rFill = (t, r) => r ? String(t).replace(/\{r\}/g, r.nick).replace(/\{org\}/g, D.ORG[r.org].name) : t;
   function next() {
     if (!S || S.over || S.q.length) return;
     S.used = {};
@@ -677,7 +917,7 @@
     switch (sc.type) {
       case 'pickOrg': {
         const of = sc.offers[arg]; if (!of) return;
-        S.org = of.org; S.car.orgs.push(of.org); done(); startYear();
+        S.org = of.org; S.car.orgs.push(of.org); done(); startYear(); spawnRivals();
         log(`${of.name} 연습생으로 입단했다. 열여섯, 시작이다.`, 'good'); break;
       }
       case 'event': {
@@ -685,9 +925,17 @@
         if (!c || sc.choices[arg].disabled) return;
         let ok = true;
         if (c.chk) { ok = rnd() * 100 < sc.choices[arg].p; S.pity = ok ? 0 : S.pity + 1; }
-        const r = ok ? c.ok : c.no, lines = applyFx(r.fx);
-        S.q[0] = { type: 'result', title: ev.title, ok, checked: !!c.chk, p: sc.choices[arg].p, text: r.t, lines };
-        log(`${ev.title} — ${r.t}`, ok ? '' : 'bad'); break;
+        const r = ok ? c.ok : c.no, lines = applyFx(r.fx || {});
+        const rv = sc.rid ? rivalOf(sc.rid) : null, text = rFill(r.t, rv);
+        if (rv) {
+          // 선택이 관계를 바꾸고, 사건 기록에 남는다.
+          const d = r.rel || [0, 0], b0 = rv.rv, b1 = rv.rs; rRel(rv, d[0], d[1]);
+          if (Math.round(rv.rv - b0)) lines.push(`${rv.nick} 경쟁심 ${sg(Math.round(rv.rv - b0))}`);
+          if (Math.round(rv.rs - b1)) lines.push(`${rv.nick} 존중 ${sg(Math.round(rv.rs - b1))}`);
+          rHist(rv, `${sc.title}: ${sc.choices[arg].label.replace(/ \(.*\)$/, '')} — ${text}`); rv.news = text;
+        }
+        S.q[0] = { type: 'result', title: sc.title, ok, checked: !!c.chk, p: sc.choices[arg].p, text, lines };
+        log(`${sc.title} — ${text}`, ok ? '' : 'bad'); break;
       }
       case 'moment': {
         const t = S.sim && S.sim.tour, c = t && t.cur;
@@ -772,7 +1020,28 @@
     const def = (o, k, v) => { if (o[k] == null) o[k] = v; };
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
-    def(s, 'grow', 1);
+    def(s, 'grow', 1); def(s, 'evn', {});
+    // 라이벌: 없으면 빈 목록(지나간 일을 지어내지 않는다). 손상된 항목은 버리거나 고쳐서 게임이 멈추지 않게 한다.
+    if (!Array.isArray(s.rivals)) s.rivals = [];
+    const ids = new Set(), num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+    s.rivals = s.rivals.filter(r => r && typeof r === 'object' && typeof r.id === 'string' && !ids.has(r.id) && ids.add(r.id));
+    for (const r of s.rivals) {
+      if (typeof r.nick !== 'string' || !r.nick) r.nick = 'Rival' + r.id;
+      if (!D.ROLES.find(x => x.id === r.role)) r.role = s.role;
+      if (!D.REGION[r.home]) r.home = s.home;
+      if (!D.ORG[r.org]) r.org = D.ORGS.find(g => g.region === r.home).id;
+      if (!(r.squad in RSQ)) r.squad = 'second';
+      r.age = num(r.age, s.age, 15, 40); r.ovr = num(r.ovr, 60, 20, 99); r.pot = num(r.pot, r.ovr, r.ovr, 99); r.peak = num(r.peak, r.ovr, 20, 99);
+      r.rv = num(r.rv, 20, 0, 100); r.rs = num(r.rs, 30, 0, 100); r.w = Math.floor(num(r.w, 0, 0, 1e5)); r.l = Math.floor(num(r.l, 0, 0, 1e5));
+      for (const k of ['months', 'titles', 'debut', 'moves', 'out', 'slump']) r[k] = num(r[k], 0, 0, 1e4);
+      if (!Array.isArray(r.mids)) r.mids = []; if (!Array.isArray(r.hist)) r.hist = [];
+      r.hist = r.hist.filter(h => h && typeof h.t === 'string');
+      if (!r.f || typeof r.f !== 'object') r.f = {};
+      if (typeof r.news !== 'string') r.news = ''; if (typeof r.style !== 'string') r.style = STYLES[0]; if (!r.grow) r.grow = 'steady'; if (!r.origin) r.origin = 'league';
+      if (r.retired && typeof r.retired !== 'object') r.retired = { y: s.year, age: r.age };
+      if (!r.retired) r.retired = null;
+    }
+    s.rivalSeq = Math.max(num(s.rivalSeq, 0, 0, 1e6), ...s.rivals.map(r => +String(r.id).replace(/\D/g, '') || 0));
     def(s, 'stat', { turns: 99, t0: 0, t20: 0, ev20: 0 });   // 예전 저장: 첫 20번 측정 대상이 아니다 def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
     s.shop = Object.assign({ gear: 0, coach: 0, care: 0 }, s.shop);
     for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut', 'tryouts', 'retry']) def(s.car, k, 0);
@@ -841,10 +1110,12 @@
     };
     if (S.squad === 'second') {
       const p = Math.round(slotChance() * 100), le = S.flags.lastEval;
+      const seat = rivalsAlive().find(r => r.org === S.org && r.squad === 'second' && r.role === S.role);
       return {
         title: '1군 콜업', items: [it('OVR', o, Math.ceil(base - B.toFirstGap)), it('감독 신뢰', Math.round(S.trust), B.toFirstTrust)],
         note: (p ? `조건 충족. 다음 심사(${when})에서 자리가 날 확률 ${p}%. OVR이 오를수록 확률도 오른다.` : `두 조건을 채우면 심사(${when}) 때 자리 경쟁에 들어간다.`)
-          + ` ${B.secondMaxAge}세가 되는 스토브리그까지 1군에 오르지 못하면 방출된다.` + (le && !le.ok && le.y === S.year ? ' 지난 심사에서는 자리가 나지 않았다.' : ''),
+          + ` ${B.secondMaxAge}세가 되는 스토브리그까지 1군에 오르지 못하면 방출된다.` + (le && !le.ok && le.y === S.year ? ' 지난 심사에서는 자리가 나지 않았다.' : '')
+          + (seat ? ` 같은 포지션의 ${seat.nick}(OVR ${Math.floor(seat.ovr)})도 같은 자리를 노린다.` : ''),
       };
     }
     if (!isStarter()) return { title: '주전 자리', items: [it('감독 신뢰', Math.round(S.trust), 45)], note: '벤치에서는 다섯 경기에 한 번꼴로 나선다. 출전한 경기의 평점과 팀 스크림으로 신뢰가 오른다.' };
@@ -863,6 +1134,8 @@
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,
+    rivals: () => S ? S.rivals.map(rivalView) : [],
+    rivalFixtures: () => (S && S.org ? rivalFixtures().map(r => ({ nick: r.nick, org: D.ORG[r.org].name, w: r.w, l: r.l })) : []),
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },
     hasSave() { return !!(read(KEY) || read(BAK)); },
     // 타이틀 화면에 보여 줄 저장 요약
