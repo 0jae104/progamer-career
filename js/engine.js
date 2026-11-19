@@ -107,7 +107,7 @@
       perks: [], shop: { gear: 0, coach: 0, care: 0 }, used: {}, buff: null, injury: 0, pity: 0, recentEv: [],
       orgStr: {}, lg: null, dom: {}, yr: null, hist: [], log: [], q: [], flags: {}, opt: { fast: false },
       car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0 },
-      pendingSim: false, pendingNewYear: false, over: false,
+      pendingSim: false, pendingNewYear: false, over: false, sim: null, recentMom: [],
     };
     const talent = gauss() * 3.5;
     for (const s of D.STATS) {
@@ -154,14 +154,17 @@
   }
 
   /* ---------- 경기 ---------- */
-  function playGame(T, O, stage, plays) {
+  const winP = (eff, O) => 1 / (1 + Math.pow(10, (O - eff) / 16));
+  // 내가 출전했을 때 팀의 실제 전력. mod.s 는 승부처 선택으로 생긴 그 세트 한정 보정이다.
+  function effStr(T, plays, mod) {
+    if (!plays) return T;
+    return T + (ovr() - T) * .22 + (S.cond - 60) / 40 * 1.2 + (has('dynasty') ? 2 : 0) + (mod ? mod.s : 0);
+  }
+  function playGame(T, O, stage, plays, mod) {
     const o = ovr(), cadj = (S.cond - 60) / 40;
-    let eff = T;
-    if (plays) eff = T + (o - T) * .22 + cadj * 1.2 + (has('dynasty') ? 2 : 0);
-    const p = 1 / (1 + Math.pow(10, (O - eff) / 16));
-    const g = { win: rnd() < p, plays, r: 0, k: 0, d: 0, a: 0 };
+    const g = { win: rnd() < winP(effStr(T, plays, mod), O), plays, r: 0, k: 0, d: 0, a: 0 };
     if (plays) {
-      let r = 6.3 + (o - (T + O) / 2) / 11 + cadj * .5 + (g.win ? .45 : -.45) + gauss() * .75 + (S.buff ? S.buff.r : 0);
+      let r = 6.3 + (o - (T + O) / 2) / 11 + cadj * .5 + (g.win ? .45 : -.45) + gauss() * .75 + (S.buff ? S.buff.r : 0) + (mod ? mod.r : 0);
       if (stage !== 'league') { r += (S.stats.mental - 65) / 50; if (has('clutch')) r += .4; }
       g.r = clamp(Math.round(r * 10) / 10, 3, 10);
       const bk = { gun: 6, core: 5, rov: 4, van: 3, sup: 1 }[S.role], ba = { sup: 11, rov: 8, van: 7, core: 6, gun: 5 }[S.role];
@@ -190,24 +193,85 @@
     if (S.lg && stage === 'league') { S.lg.sg++; S.lg.srs += m.r; }
   }
 
-  // bo 판 다승제. 내 팀이 끼면 내 경기력으로 계산한다.
-  function series(a, b, sa, sb, bo, stage, label, first, lines, nameB) {
-    const need = (bo + 1) / 2; let x = 0, y = 0;
-    if (a !== S.org && b !== S.org || a === null) {
-      const p = 1 / (1 + Math.pow(10, (sb - sa) / 16));
-      while (x < need && y < need) rnd() < p ? x++ : y++;
-      return x > y ? a : b;
-    }
-    const mine = a === S.org, T = mine ? sa : sb, O = mine ? sb : sa, opp = mine ? b : a;
-    const plays = decidePlays(); let rs = 0, n = 0, k = 0, d = 0, as = 0;
-    while (x < need && y < need) {
-      const g = playGame(T, O, stage, plays); g.win ? x++ : y++;
-      if (plays) { rs += g.r; n++; k += g.k; d += g.d; as += g.a; }
-    }
-    const m = { opp: nameB || D.ORG[opp].name, win: x > y, plays, r: n ? Math.round(rs / n * 10) / 10 : 0, k, d, a: as, label, score: x + '-' + y };
-    record(m, first, stage); lines.push(m);
-    return x > y ? S.org : opp;
+  /* ---------- 토너먼트(플레이오프·국제전·네이션스컵)와 승부처 ----------
+     대진과 진행 위치를 S.sim.tour 에 두고 세트 단위로 진행한다. 승부처가 나오면 장면을 띄우고 멈췄다가
+     선택 뒤 같은 자리에서 이어 간다. 상태가 전부 S 안에 있어서 도중에 저장·불러오기를 해도 같은 경기가 이어지고,
+     판정은 선택하는 순간 한 번만 일어난 뒤 바로 저장되므로 다시 불러와도 결과가 두 번 적용되지 않는다. */
+  const tStr = (t, id) => t.kind === 'nations' ? t.teams[id].s : t.kind === 'playoff' ? str(id, t.tier) : S.orgStr[id];
+  const tName = (t, id) => t.kind === 'nations' ? t.teams[id].name : D.ORG[id].name;
+  const tRef = (t, x) => (x && typeof x === 'object') ? t.w[x.w] : x;
+  const newSeries = () => ({ x: 0, y: 0, plays: decidePlays(), rs: 0, n: 0, k: 0, d: 0, a: 0, mom: 0, mod: null, asked: -1, used: [], moms: [] });
+
+  // 승부처가 나오는 세트: 결승은 어느 한쪽이 매치 포인트인 세트마다(시리즈당 최대 3회), 그 밖의 시리즈는 마지막 세트 1회
+  function momentDue(m, c, need) {
+    if (!c.plays) return false;
+    const last = c.x === need - 1 && c.y === need - 1;
+    return m.label === '결승' ? (c.x === need - 1 || c.y === need - 1) && c.mom < 3 : last && c.mom < 1;
   }
+  function momentScene(t, m, c, need, T, O, opp) {
+    const sit = c.x === need - 1 && c.y === need - 1 ? 'last' : c.x === need - 1 ? 'match' : 'elim';
+    let pool = D.MOMENTS.filter(x => !c.used.includes(x.id) && !S.recentMom.includes(x.id) && (x.sit === 'any' || x.sit === sit));
+    const exact = pool.filter(x => x.sit === sit);
+    if (exact.length && rnd() < .5) pool = exact;
+    if (!pool.length) pool = D.MOMENTS.filter(x => x.sit === 'any' && !c.used.includes(x.id));
+    const mo = pick(pool), pct = v => Math.round(v * 100);
+    c.used.push(mo.id); S.recentMom.push(mo.id); if (S.recentMom.length > 6) S.recentMom.shift();
+    return {
+      type: 'moment', mid: mo.id, tour: t.name, label: m.label, bo: m.bo, set: c.x + c.y + 1, me: tName(t, t.me), opp: tName(t, opp), x: c.x, y: c.y, sit,
+      title: mo.title, text: mo.text, base: pct(winP(effStr(T, true), O)),
+      choices: mo.c.map(ch => {
+        const k = chance(ch.chk);
+        return { label: ch.label, p: k.p, bd: k.bd, up: pct(winP(effStr(T, true, { s: ch.s[0] }), O)), down: pct(winP(effStr(T, true, { s: ch.s[1] }), O)) };
+      }),
+    };
+  }
+  // 자동 판단: 기대 세트 승률이 가장 높은 선택
+  function bestChoice(sc) { let b = 0, bv = -1; sc.choices.forEach((c, i) => { const v = c.p * c.up + (100 - c.p) * c.down; if (v > bv) { bv = v; b = i; } }); return b; }
+  // 화면에 표시한 확률 그대로 한 번 판정한다.
+  function decideMoment(sc, i, c, auto) {
+    const ch = D.MOMENTS.find(x => x.id === sc.mid).c[i], ok = rnd() * 100 < sc.choices[i].p;
+    S.pity = ok ? 0 : S.pity + 1;
+    const s = ch.s[ok ? 0 : 1];
+    c.mod = { s, r: s * .06 };
+    c.moms.push({ title: sc.title, label: ch.label, ok, auto: !!auto });
+    return { ok, s, label: ch.label, text: ok ? ch.ok : ch.no };
+  }
+  function playSet(t, c, T, O) {
+    const g = playGame(T, O, t.stage, c.plays, c.mod); c.mod = null;
+    g.win ? c.x++ : c.y++;
+    if (c.plays) { c.rs += g.r; c.n++; c.k += g.k; c.d += g.d; c.a += g.a; }
+    return g;
+  }
+  // 반환: true 대회가 끝남, false 승부처 장면을 띄우고 멈춤
+  function runTour(t) {
+    while (t.i < t.ms.length) {
+      const m = t.ms[t.i], a = tRef(t, m.a), b = tRef(t, m.b), need = (m.bo + 1) / 2;
+      if (!t.me || (a !== t.me && b !== t.me)) {
+        const p = winP(tStr(t, a), tStr(t, b)); let x = 0, y = 0;
+        while (x < need && y < need) rnd() < p ? x++ : y++;
+        t.w[t.i++] = x > y ? a : b; continue;
+      }
+      const opp = a === t.me ? b : a, T = tStr(t, t.me), O = tStr(t, opp);
+      if (!t.cur) t.cur = newSeries();
+      const c = t.cur;
+      while (c.x < need && c.y < need) {
+        const set = c.x + c.y;
+        if (c.asked !== set && momentDue(m, c, need)) {
+          c.asked = set; c.mom++;
+          const sc = momentScene(t, m, c, need, T, O, opp);
+          if (!S.opt.fast) { S.q.push(sc); return false; }
+          decideMoment(sc, bestChoice(sc), c, true);
+        }
+        playSet(t, c, T, O);
+      }
+      const win = c.x > c.y;
+      const rec = { opp: tName(t, opp), win, plays: c.plays, r: c.n ? Math.round(c.rs / c.n * 10) / 10 : 0, k: c.k, d: c.d, a: c.a, label: m.label, score: c.x + '-' + c.y, moms: c.moms };
+      record(rec, t.first, t.stage); t.lines.push(rec);
+      t.w[t.i++] = win ? t.me : opp; t.cur = null;
+    }
+    return true;
+  }
+  const newTour = (o) => Object.assign({ w: [], i: 0, cur: null, lines: [] }, o);
 
   function title(name, tier) {
     S.car.titles.push({ y: S.year, name, tier }); S.yr.titles.push(name);
@@ -244,11 +308,11 @@
     }
   }
 
-  function leagueMonth(mi, rep, after) {
-    const L = S.lg;
+  function leagueMonth(mi, sim) {
+    const L = S.lg, rep = sim.rep;
     if (!L) {
       rep.notes.push('연습생 평가전과 훈련으로 한 달을 보냈다.');
-      if (mi.playoff) { for (const r of D.REGIONS) S.dom[mi.split][r.id] = npcFinalists(r.id); evaluateSquad(after); }
+      if (mi.playoff) { for (const r of D.REGIONS) S.dom[mi.split][r.id] = npcFinalists(r.id); evaluateSquad(sim.after); }
       return;
     }
     const first = L.tier === 'first';
@@ -266,46 +330,23 @@
     const rank = table(), top = rank.slice(0, 4).map(x => x.id), my = rank.findIndex(x => x.me) + 1;
     const lgTag = region().lg + (first ? '' : ' 넥스트');
     rep.notes.push(`${lgTag} ${SPLIT[mi.split]} 정규 리그 ${my}위.`);
-    const ss = id => str(id, L.tier), lines = rep.matches;
-    const s1 = series(top[0], top[3], ss(top[0]), ss(top[3]), 3, 'playoff', '준결승', first, lines);
-    const s2 = series(top[1], top[2], ss(top[1]), ss(top[2]), 3, 'playoff', '준결승', first, lines);
-    const ch = series(s1, s2, ss(s1), ss(s2), 5, 'playoff', '결승', first, lines), ru = ch === s1 ? s2 : s1;
-    for (const r of D.REGIONS) S.dom[mi.split][r.id] = npcFinalists(r.id);
-    if (first) S.dom[mi.split][org().region] = { champ: ch, runner: ru };
-    if (ch === S.org) after.push(title(`${lgTag} ${SPLIT[mi.split]} 우승`, first ? 'dom' : 'second'));
-    else { rep.notes.push(`${SPLIT[mi.split]} 우승: ${D.ORG[ch].name}${ru === S.org ? ' — 준우승으로 마쳤다.' : ''}`); }
-    if (first && L.sg >= 9) {
-      const avg = L.srs / L.sg;
-      if (my <= 3 && avg >= 7.4 && rnd() < clamp((avg - 7.2) * 1.2, .05, .95)) {
-        award(`${region().lg} ${SPLIT[mi.split]} MVP`, 6);
-        after.push(info('스플릿 MVP', `정규 리그 평균 평점 ${avg.toFixed(2)}. 기자단 투표로 MVP에 선정됐다.`, 'gold'));
-      }
-    }
-    evaluateSquad(after);
+    sim.tour = newTour({
+      kind: 'playoff', stage: 'playoff', tier: L.tier, first, me: S.org, split: mi.split, lgTag, my, name: `${lgTag} ${SPLIT[mi.split]} 플레이오프`,
+      ms: [{ a: top[0], b: top[3], bo: 3, label: '준결승' }, { a: top[1], b: top[2], bo: 3, label: '준결승' }, { a: { w: 0 }, b: { w: 1 }, bo: 5, label: '결승' }],
+    });
   }
 
-  function intlMonth(mi, rep, after) {
+  function intlMonth(mi, sim) {
     const q = S.dom[mi.split], regs = D.REGIONS.map(r => r.id), name = mi.cup === 'world' ? '월드 파이널' : '미드시즌 컵';
     const champs = regs.map(r => q[r].champ), runners = regs.map(r => q[r].runner), off = ri(1, 3);
     const inIt = S.squad === 'first' && (champs.includes(S.org) || runners.includes(S.org));
-    const st = id => S.orgStr[id], lines = [], hold = S.org;
-    if (!inIt) S.org = '__none';
-    const qf = regs.map((_, i) => series(champs[i], runners[(i + off) % 4], st(champs[i]), st(runners[(i + off) % 4]), 5, 'intl', '8강', true, lines));
-    const sf = [series(qf[0], qf[1], st(qf[0]), st(qf[1]), 5, 'intl', '4강', true, lines), series(qf[2], qf[3], st(qf[2]), st(qf[3]), 5, 'intl', '4강', true, lines)];
-    const ch = series(sf[0], sf[1], st(sf[0]), st(sf[1]), 5, 'intl', '결승', true, lines);
-    S.org = hold;
-    if (!inIt) { rep.notes.push(`${name}: ${D.ORG[ch].name} 우승. 나는 화면으로 지켜봤다.`); return; }
-    rep.matches.push(...lines);
-    if (ch === S.org) after.push(title(`${name} 우승`, mi.cup));
-    else {
-      const last = lines[lines.length - 1];
-      rep.notes.push(`${name} ${last.label}에서 ${last.opp}에 막혔다. 우승은 ${D.ORG[ch].name}.`);
-      log(`${name} ${last.label} 탈락.`);
-      if (last.label === '결승') { addFame(4); earn(mi.cup === 'world' ? 6000 : 2500); }
-    }
+    const ms = regs.map((_, i) => ({ a: champs[i], b: runners[(i + off) % 4], bo: 5, label: '8강' }));
+    ms.push({ a: { w: 0 }, b: { w: 1 }, bo: 5, label: '4강' }, { a: { w: 2 }, b: { w: 3 }, bo: 5, label: '4강' }, { a: { w: 4 }, b: { w: 5 }, bo: 5, label: '결승' });
+    sim.tour = newTour({ kind: 'intl', stage: 'intl', first: true, me: inIt ? S.org : null, cup: mi.cup, name, ms });
   }
 
-  function nationsMonth(rep, after) {
+  function nationsMonth(sim) {
+    const rep = sim.rep;
     if (S.year % 2) { rep.notes.push('리그 휴식기. 팀 훈련으로 서머의 피로를 풀었다.'); return; }
     const me = D.REGION[S.home], others = D.REGIONS.filter(r => r.id !== S.home).sort(() => rnd() - .5);
     const sel = S.squad === 'first' && isStarter() && S.injury === 0 && ovr() >= me.natThr;
@@ -314,17 +355,47 @@
       rep.notes.push(`네이션스컵: ${w.name} 대표팀 우승. ${S.squad === 'first' ? '대표팀 명단에 내 이름은 없었다.' : ''}`); return;
     }
     log(`${me.name} 국가대표로 선발됐다.`, 'good');
-    const lines = [], hold = S.org; S.org = '__nat';
-    const T = me.nat + 1.5;
-    let res = series('__nat', 'x', T, others[0].nat, 3, 'intl', '준결승', true, lines, others[0].name + ' 대표팀');
-    let gold = false;
-    if (res === '__nat') {
-      const f = rnd() < 1 / (1 + Math.pow(10, (others[2].nat - others[1].nat) / 16)) ? others[1] : others[2];
-      gold = series('__nat', 'x', T, f.nat, 5, 'intl', '결승', true, lines, f.name + ' 대표팀') === '__nat';
+    const teams = { me: { s: me.nat + 1.5, name: me.name + ' 대표팀' } };
+    others.forEach((r, i) => { teams['n' + i] = { s: r.nat, name: r.name + ' 대표팀' }; });
+    sim.tour = newTour({
+      kind: 'nations', stage: 'intl', first: true, me: 'me', teams, name: '네이션스컵',
+      ms: [{ a: 'me', b: 'n0', bo: 3, label: '준결승' }, { a: 'n1', b: 'n2', bo: 3, label: '준결승' }, { a: { w: 0 }, b: { w: 1 }, bo: 5, label: '결승' }],
+    });
+  }
+
+  // 대회가 끝난 뒤 한 번만 실행된다: 경기 기록을 월간 보고에 옮기고 우승·수상을 처리한다.
+  function tourEnd(t, sim) {
+    const rep = sim.rep, after = sim.after, last = t.lines[t.lines.length - 1], ch = t.w[t.ms.length - 1];
+    if (t.kind === 'playoff') {
+      const ru = ch === t.w[0] ? t.w[1] : t.w[0];
+      rep.matches.push(...t.lines);
+      for (const r of D.REGIONS) S.dom[t.split][r.id] = npcFinalists(r.id);
+      if (t.first) S.dom[t.split][org().region] = { champ: ch, runner: ru };
+      if (ch === S.org) after.push(title(`${t.lgTag} ${SPLIT[t.split]} 우승`, t.first ? 'dom' : 'second'));
+      else rep.notes.push(`${SPLIT[t.split]} 우승: ${D.ORG[ch].name}${ru === S.org ? ' — 준우승으로 마쳤다.' : ''}`);
+      const L = S.lg;
+      if (t.first && L && L.sg >= 9) {
+        const avg = L.srs / L.sg;
+        if (t.my <= 3 && avg >= 7.4 && rnd() < clamp((avg - 7.2) * 1.2, .05, .95)) {
+          award(`${region().lg} ${SPLIT[t.split]} MVP`, 6);
+          after.push(info('스플릿 MVP', `정규 리그 평균 평점 ${avg.toFixed(2)}. 기자단 투표로 MVP에 선정됐다.`, 'gold'));
+        }
+      }
+      evaluateSquad(after);
+    } else if (t.kind === 'intl') {
+      if (!t.me) { rep.notes.push(`${t.name}: ${D.ORG[ch].name} 우승. 나는 화면으로 지켜봤다.`); return; }
+      rep.matches.push(...t.lines);
+      if (ch === S.org) after.push(title(`${t.name} 우승`, t.cup));
+      else {
+        rep.notes.push(`${t.name} ${last.label}에서 ${last.opp}에 막혔다. 우승은 ${D.ORG[ch].name}.`);
+        log(`${t.name} ${last.label} 탈락.`);
+        if (last.label === '결승') { addFame(4); earn(t.cup === 'world' ? 6000 : 2500); }
+      }
+    } else {
+      rep.matches.push(...t.lines);
+      if (ch === 'me') after.push(title('네이션스컵 금메달', 'nations'));
+      else rep.notes.push(t.lines.length > 1 ? '네이션스컵 은메달. 시상대에서 고개를 들지 못했다.' : '네이션스컵 4강에서 탈락했다.');
     }
-    S.org = hold; rep.matches.push(...lines);
-    if (gold) after.push(title('네이션스컵 금메달', 'nations'));
-    else rep.notes.push(lines.length > 1 ? '네이션스컵 은메달. 시상대에서 고개를 들지 못했다.' : '네이션스컵 4강에서 탈락했다.');
   }
 
   /* ---------- 성장 ---------- */
@@ -351,19 +422,30 @@
     return 0;
   }
 
+  // 한 달은 simMonth(시작) → runSim(대회 진행, 승부처에서 멈출 수 있음) → finishMonth(마무리) 순서로 처리한다.
   function simMonth() {
-    const mi = MONTHS[S.m], before = Object.assign({}, S.stats), after = [];
+    const mi = MONTHS[S.m];
     const rep = { type: 'month', title: `${S.year}년차 ${mi.m}월`, sub: mi.label, matches: [], notes: [], growth: [] };
     let plan = D.PLANS.find(p => p.id === S.plan);
     const REST = D.PLANS.find(p => p.id === 'rest');
     if (S.injury > 0) { plan = REST; rep.notes.push('손목 부상으로 재활 중. 경기에 나서지 못했다.'); }
     else if (S.cond < 15) { plan = REST; S.stats.mental = Math.max(1, S.stats.mental - 1); rep.notes.push('번아웃이 왔다. 이번 달은 아무것도 하지 못하고 쉬었다.'); }
     rep.plan = plan.name;
-    const g0 = S.yr.g;
-    if (mi.type === 'league') leagueMonth(mi, rep, after);
-    else if (mi.type === 'intl') intlMonth(mi, rep, after);
-    else if (mi.type === 'nations') nationsMonth(rep, after);
-    const played = S.yr.g - g0;
+    const sim = S.sim = { before: Object.assign({}, S.stats), after: [], rep, plan: plan.id, g0: S.yr.g, tour: null };
+    if (mi.type === 'league') leagueMonth(mi, sim);
+    else if (mi.type === 'intl') intlMonth(mi, sim);
+    else if (mi.type === 'nations') nationsMonth(sim);
+    runSim();
+  }
+  function runSim() {
+    const sim = S.sim;
+    if (sim.tour) { if (!runTour(sim.tour)) return; tourEnd(sim.tour, sim); sim.tour = null; }
+    finishMonth(sim);
+  }
+  function finishMonth(sim) {
+    const mi = MONTHS[S.m], rep = sim.rep, after = sim.after, before = sim.before, plan = D.PLANS.find(p => p.id === sim.plan);
+    S.sim = null;
+    const played = S.yr.g - sim.g0;
     const inc = applyPlan(plan, S.squad === 'trainee' ? .9 : played > 0 ? 1.15 : .85);
     if (inc) rep.notes.push(`방송 수입 ${fmtMoney(inc)}.`);
     const o = ovr();
@@ -531,7 +613,8 @@
   }
   function flush() {
     while (!S.q.length && !S.over) {
-      if (S.pendingSim) { S.pendingSim = false; simMonth(); }
+      if (S.sim) runSim();
+      else if (S.pendingSim) { S.pendingSim = false; simMonth(); }
       else if (S.pendingNewYear) { S.pendingNewYear = false; startYear(); break; }
       else break;
     }
@@ -553,6 +636,19 @@
         const r = ok ? c.ok : c.no, lines = applyFx(r.fx);
         S.q[0] = { type: 'result', title: ev.title, ok, checked: !!c.chk, p: sc.choices[arg].p, text: r.t, lines };
         log(`${ev.title} — ${r.t}`, ok ? '' : 'bad'); break;
+      }
+      case 'moment': {
+        const t = S.sim && S.sim.tour, c = t && t.cur;
+        if (!c) { done(); break; }                       // 대회 상태가 없으면 장면만 닫는다
+        const i = arg === 'auto' ? bestChoice(sc) : arg; if (!sc.choices[i]) return;
+        const m = t.ms[t.i], a = tRef(t, m.a), b = tRef(t, m.b), opp = a === t.me ? b : a, need = (m.bo + 1) / 2;
+        const d = decideMoment(sc, i, c, arg === 'auto');
+        const g = playSet(t, c, tStr(t, t.me), tStr(t, opp));
+        S.q[0] = {
+          type: 'mresult', ok: d.ok, p: sc.choices[i].p, i, title: sc.title, choice: d.label, text: d.text, eff: d.s,
+          tour: sc.tour, label: sc.label, set: sc.set, me: sc.me, opp: sc.opp, x: c.x, y: c.y, setWin: g.win, over: c.x >= need || c.y >= need,
+        };
+        break;
       }
       case 'cards': {
         if (arg === 'reroll') { if (sc.reroll > 0) { sc.reroll--; sc.cards = rollCards(); } break; }
@@ -613,7 +709,7 @@
     if (!s || typeof s !== 'object' || s.v !== 1 || !s.stats || !s.car || !Array.isArray(s.q)) return null;
     const def = (o, k, v) => { if (o[k] == null) o[k] = v; };
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
-    def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
+    def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null; def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
     s.shop = Object.assign({ gear: 0, coach: 0, care: 0 }, s.shop);
     for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut']) def(s.car, k, 0);
     for (const k of ['titles', 'awards', 'orgs']) def(s.car, k, []);
@@ -654,6 +750,7 @@
     if (!sc) { S.plan = S.cond < 38 || S.wrist < 35 ? 'rest' : ['solo', 'scrim', 'review'][(S.year * 10 + S.m) % 3]; next(); return; }
     if (sc.type === 'pickOrg' || sc.type === 'cards') return resolve(ri(0, 2));
     if (sc.type === 'event') { let b = 0, bv = -1; sc.choices.forEach((c, i) => { const v = c.disabled ? -2 : c.p == null ? 55 : c.p; if (v > bv) { bv = v; b = i; } }); return resolve(b); }
+    if (sc.type === 'moment') return resolve('auto');
     if (sc.type === 'offers') return resolve({ i: 0, act: 'accept' });
     if (sc.type === 'stove') return resolve('stay');
     if (sc.type === 'tryout') return resolve('try');

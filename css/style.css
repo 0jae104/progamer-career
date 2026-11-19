@@ -156,6 +156,20 @@ tr.me td { background: #2a1b3a; font-weight: 700; } tr.cut td { border-bottom: 2
 .gcard.r2 { border-left-color: #c58cff; } .gcard.r2 small { color: #c58cff; }
 .gcard.r3 { border-left-color: var(--gold); background: #2b2636; } .gcard.r3 small { color: var(--gold); }
 
+/* ---- 승부처 ---- */
+.sheet.clutch { border-top-color: var(--gold); }
+.board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; background: var(--ink); padding: 10px 12px; border: 1px solid var(--line); }
+.board .side { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.board .side span { font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.board .side.opp span { text-align: right; color: var(--dim); }
+.board b { font: 400 40px/1 var(--display); color: var(--gold); flex: none; }
+.board .opp b { color: var(--text); }
+.board i { font: 400 24px var(--display); color: var(--dim); font-style: normal; }
+.choice .swing { color: #d5d8f5; } .choice .swing em { font-style: normal; font-weight: 700; }
+.swing .up { color: var(--ok); } .swing .down { color: var(--bad); }
+.matches .mom { grid-column: 1 / -1; font-size: 11px; color: var(--dim); margin-top: -4px; }
+.matches .mom.ok { color: var(--ok); } .matches .mom.no { color: var(--bad); }
+
 /* ---- 은퇴 ---- */
 .retire .grade { display: flex; align-items: center; gap: 16px; }
 .retire .grade b { font: 400 84px/1 var(--display); color: var(--gold); }

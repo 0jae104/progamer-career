@@ -114,7 +114,7 @@
       <div><p class="sec">트로피·수상</p>${c.titles.length + c.awards.length ? `<div class="chips">${c.titles.map(t => `<span class="chip gold">${t.y}년차 ${t.name}</span>`).join('')}${c.awards.map(a => `<span class="chip">${a.y}년차 ${a.name}</span>`).join('')}</div>` : '<p class="dim">아직 비어 있다.</p>'}</div>
       <div><p class="sec">시즌 기록</p>${S.hist.length ? `<div class="scroll-x"><table><tr><th>연차</th><th class="l">팀</th><th>경기</th><th>승</th><th>평점</th><th>OVR</th></tr>${S.hist.map(h => `<tr><td>${h.year} <span class="dim">${h.age}세</span></td><td class="l">${h.tag} ${G.SQUAD[h.squad]}</td><td>${h.g}</td><td>${h.w}</td><td>${h.g ? f1(h.avg) : '-'}</td><td>${h.ovr}</td></tr>`).join('')}</table></div>` : '<p class="dim">첫 시즌을 마치면 기록이 쌓인다.</p>'}</div>
       <div class="stack"><p class="sec">설정</p>
-        <button class="btn line" data-act="fast">빠른 진행 ${S.opt.fast ? '켜짐' : '꺼짐'} — 평범한 달의 결과 화면을 건너뛴다</button>
+        <button class="btn line" data-act="fast">빠른 진행 ${S.opt.fast ? '켜짐' : '꺼짐'} — 평범한 달의 결과 화면을 건너뛰고 승부처는 자동으로 고른다</button>
         <button class="btn line" data-act="title">타이틀로 (자동 저장됨)</button>
         <button class="btn line" data-act="wipe">${U.confirm === 'wipe' ? '한 번 더 누르면 이 커리어가 삭제된다' : '커리어 삭제'}</button></div>`;
   }
@@ -122,7 +122,9 @@
   /* ---- 장면 ---- */
   const okBtn = t => `<button class="btn" data-act="ok">${t || '확인'}</button>`;
   const pill = p => p == null ? '<span class="pill sure">확정</span>' : `<span class="pill ${p >= 65 ? 'hi' : p < 40 ? 'lo' : ''}">${p}%</span>`;
-  const matchList = ms => ms.length ? `<ul class="matches">${ms.map(m => `<li><span class="opp">${m.label ? `<small>${m.label}</small>` : ''}vs ${m.opp}</span><span class="res ${m.win ? 'W' : 'L'}">${m.score ? m.score + ' ' : ''}${m.win ? '승' : '패'}</span>${m.plays ? `<span class="rt">${f1(m.r)}</span><span class="kda">${m.k}/${m.d}/${m.a}${m.mvp ? '<span class="mvp">MVP</span>' : ''}</span>` : '<span class="rt dim">-</span><span class="kda">벤치</span>'}</li>`).join('')}</ul>` : '';
+  const matchList = ms => ms.length ? `<ul class="matches">${ms.map(m => `<li><span class="opp">${m.label ? `<small>${m.label}</small>` : ''}vs ${m.opp}</span><span class="res ${m.win ? 'W' : 'L'}">${m.score ? m.score + ' ' : ''}${m.win ? '승' : '패'}</span>${m.plays ? `<span class="rt">${f1(m.r)}</span><span class="kda">${m.k}/${m.d}/${m.a}${m.mvp ? '<span class="mvp">MVP</span>' : ''}</span>` : '<span class="rt dim">-</span><span class="kda">벤치</span>'}${(m.moms || []).map(o => `<small class="mom ${o.ok ? 'ok' : 'no'}">승부처 · ${o.title} — ${o.label} · ${o.ok ? '성공' : '실패'}${o.auto ? ' (자동)' : ''}</small>`).join('')}</li>`).join('')}</ul>` : '';
+  const board = (sc, x, y) => `<div class="board"><div class="side"><span>${sc.me}</span><b>${x}</b></div><i>:</i><div class="side opp"><b>${y}</b><span>${sc.opp}</span></div></div>`;
+  const SIT = { last: '마지막 세트', match: '매치 포인트', elim: '탈락 위기' };
   function retireBtn() { return `<button class="btn line" data-act="retire">${U.confirm === 'retire' ? '한 번 더 누르면 은퇴한다. 되돌릴 수 없다' : '은퇴한다'}</button>`; }
 
   function vScene(sc, S) {
@@ -135,6 +137,18 @@
         h = `<p class="eyebrow">선택의 순간</p><h2>${sc.title}</h2><p>${sc.text}</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${i}" ${c.disabled ? 'disabled' : ''}><div class="grow"><b>${c.label}</b>${c.bd ? `<small>${c.bd.map(b => `${b[0]} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${b[1]}`).join(' · ')}</small>` : ''}${c.disabled ? '<small>자금이 부족하다</small>' : ''}</div>${pill(c.p)}</button>`).join('')}
           <p class="fine">표시된 숫자가 실제 성공 확률이다. 실패가 이어지면 다음 판정에 보정이 붙는다.</p>`; break;
+      case 'moment':
+        cls = 'clutch';
+        h = `<p class="eyebrow">${sc.tour} · ${sc.label} ${sc.set}세트 · ${SIT[sc.sit]}</p>${board(sc, sc.x, sc.y)}
+          <h2>${sc.title}</h2><p>${sc.text}</p><p class="fine">지금 이 세트를 이길 확률은 ${sc.base}%. 선택이 성공하면 오르고 실패하면 내려간다.</p>
+          ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${i}"><div class="grow"><b>${c.label}</b><small>${c.bd.map(b => `${b[0]} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${b[1]}`).join(' · ')}</small><small class="swing">성공하면 세트 승률 <em class="up">${c.up}%</em> · 실패하면 <em class="down">${c.down}%</em></small></div>${pill(c.p)}</button>`).join('')}
+          <button class="btn line" data-act="auto">감독 판단에 맡긴다 (자동 선택)</button>`; break;
+      case 'mresult':
+        cls = sc.ok ? 'good' : 'bad';
+        h = `<p class="eyebrow">${sc.tour} · ${sc.label} ${sc.set}세트</p><span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${sc.p}%</span>
+          <h2>${sc.title}</h2><p class="dim">${sc.choice}</p><p>${sc.text}</p>
+          <div class="chips"><span class="chip ${sc.eff > 0 ? 'up' : 'down'}">이 세트 팀 전력 ${sc.eff > 0 ? '+' : ''}${sc.eff}</span><span class="chip ${sc.setWin ? 'up' : 'down'}">${sc.set}세트 ${sc.setWin ? '승리' : '패배'}</span></div>
+          ${board(sc, sc.x, sc.y)}<p>${sc.over ? (sc.x > sc.y ? '시리즈를 가져왔다.' : '시리즈를 내줬다.') : '경기는 계속된다.'}</p>${okBtn(sc.over ? '결과 보기' : '다음 세트로')}`; break;
       case 'result':
         cls = sc.checked ? (sc.ok ? 'good' : 'bad') : '';
         h = `${sc.checked ? `<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${sc.p}%</span>` : ''}<h2>${sc.title}</h2><p>${sc.text}</p>
@@ -237,6 +251,7 @@
       case 'ok': G.resolve(); break;
       case 'res': G.resolve(i); break;
       case 'reroll': G.resolve('reroll'); break;
+      case 'auto': G.resolve('auto'); break;
       case 'stay': G.resolve('stay'); break;
       case 'transfer': G.resolve('transfer'); break;
       case 'try': G.resolve('try'); break;
