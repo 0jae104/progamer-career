@@ -2,7 +2,7 @@
 (function () {
   const G = window.PG, D = G.D, app = document.getElementById('app');
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const U = { view: 'title', tab: 'home', C: { nick: '', region: 'kr', role: 'core', trait: 'genius' }, confirm: '' };
+  const U = { view: 'title', tab: 'home', C: { nick: '', region: 'kr', role: 'core', trait: 'genius' }, confirm: '', notice: '' };
   const money = G.fmtMoney, f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 
   /* ---- 도트 아바타 (직접 그린 14×14 스프라이트) ---- */
@@ -26,17 +26,20 @@
 
   /* ---- 화면 ---- */
   function vTitle() {
+    const sv = G.saveInfo(), live = sv && !sv.over;
     return `<section class="title">
       <p class="eyebrow onair">E-SPORTS CAREER SIM</p>
       <h1>프로<br>게이머<br><em>키우기</em></h1>
       <p class="lede">열여섯 연습생에서 월드 파이널까지. 팀이 아니라 선수 한 명의 커리어 전체를 살아 본다.</p>
       <div class="stage"><canvas class="av" data-seed="title" data-color="#ff4d6d"></canvas><p>연습생 → 2군 → 1군 벤치 → 주전 → 국가대표 → 올해의 선수</p></div>
       <div class="stack">
-        ${G.hasSave() ? '<button class="btn" data-act="continue">이어하기</button>' : ''}
-        <button class="btn ${G.hasSave() ? 'ghost' : ''}" data-act="create">새 커리어</button>
+        ${sv ? `<button class="btn cta" data-act="continue">${sv.over ? '지난 커리어 결과 보기' : '이어하기'}<small>${esc(sv.nick)} · ${sv.started ? `${sv.year}년차 ${sv.age}세` : '입단 구단 선택 중'}</small></button>` : ''}
+        <button class="btn ${sv ? 'ghost' : ''}" data-act="create">${live && U.confirm === 'new' ? '한 번 더 누르면 진행 중인 커리어가 삭제된다' : '새 커리어'}</button>
         <button class="btn line" data-act="hall">명예의 전당</button>
       </div>
-      <p class="fine">등장하는 리그·구단·선수·대회는 모두 창작이며 실제와 관계가 없습니다. 진행 상황은 이 기기에 저장됩니다.</p>
+      ${U.notice ? `<p class="warn">${U.notice}</p>` : ''}
+      ${G.storageOk() ? '' : '<p class="warn">이 브라우저에서는 저장이 되지 않는다. 사생활 보호 모드를 끄거나 다른 브라우저로 열어야 진행 상황이 남는다.</p>'}
+      <p class="fine">등장하는 리그·구단·선수·대회는 모두 창작이며 실제와 관계가 없습니다. 진행 상황은 이 기기의 브라우저에 저장되며, 브라우저 데이터를 지우면 함께 사라집니다.</p>
     </section>`;
   }
   const opt = (grp, id, name, desc) => `<button class="opt" data-act="pick" data-grp="${grp}" data-id="${id}" aria-pressed="${U.C[grp] === id}"><b>${name}</b>${desc ? `<span>${desc}</span>` : ''}</button>`;
@@ -190,7 +193,8 @@
     if (S.over && sc) return vRetire(sc);
     const mi = G.month(), tabs = [['home', '홈'], ['stats', '능력'], ['league', '리그'], ['shop', '투자'], ['record', '기록']];
     const body = S.org ? { home: tHome, stats: tStats, league: tLeague, shop: tShop, record: tRecord }[U.tab](S) : '';
-    return `${S.org ? header(S) : ''}<main class="content">${body}</main>
+    const warn = G.saveFailed() ? '<p class="warn">저장에 실패했다. 이 브라우저에서는 진행 상황이 남지 않는다.</p>' : U.notice ? `<p class="warn">${U.notice}</p>` : '';
+    return `${S.org ? header(S) : ''}<main class="content">${warn}${body}</main>
       ${S.org ? `<footer class="foot"><nav class="tabs" role="tablist">${tabs.map(t => `<button role="tab" data-act="tab" data-id="${t[0]}" aria-selected="${U.tab === t[0]}">${t[1]}</button>`).join('')}</nav>
       <button class="btn cta" data-act="next" ${sc ? 'disabled' : ''}>${mi.m}월 진행<small>${mi.label} · ${D.PLANS.find(p => p.id === S.plan).name}</small></button></footer>` : ''}
       ${sc ? vScene(sc, S) : ''}`;
@@ -208,12 +212,20 @@
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
-    if (a !== 'retire' && a !== 'wipe') U.confirm = U.confirm && '';
+    const live = a === 'create' && U.view === 'title' && G.saveInfo() && !G.saveInfo().over;
+    if (live && U.confirm !== 'new') { U.confirm = 'new'; return render(); }
+    if (a !== 'retire' && a !== 'wipe') U.confirm = '';
+    if (a !== 'continue') U.notice = '';
     switch (a) {
       case 'create': return go('create');
       case 'title': return go('title');
       case 'hall': return go('hall');
-      case 'continue': if (G.load()) go('game'); return;
+      case 'continue': {
+        const r = G.load();
+        if (r === 'backup') U.notice = '저장 데이터가 손상되어 이번 시즌 시작 시점으로 되돌렸다.';
+        if (r) { U.view = 'game'; U.tab = 'home'; render(); window.scrollTo(0, 0); } else { U.notice = '저장 데이터를 열 수 없다.'; render(); }
+        return;
+      }
       case 'pick': U.C[b.dataset.grp] = id; break;
       case 'start': G.newGame({ nick: U.C.nick.trim() || 'Rookie', region: U.C.region, role: U.C.role, trait: U.C.trait }); U.tab = 'home'; return go('game');
       case 'again': G.wipe(); return go('create');

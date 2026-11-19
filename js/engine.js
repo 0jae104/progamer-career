@@ -1,13 +1,16 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const KEY = 'pg_career_v1', HALL = 'pg_hall_v1';
+  const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
   const mem = {};
   const store = {
     get(k) { try { if (root.localStorage) return root.localStorage.getItem(k); } catch (e) {} return mem[k] || null; },
     set(k, v) { mem[k] = v; try { if (root.localStorage) root.localStorage.setItem(k, v); } catch (e) {} },
     del(k) { delete mem[k]; try { if (root.localStorage) root.localStorage.removeItem(k); } catch (e) {} },
+    // 브라우저 저장소에 실제로 쓸 수 있는지 (사생활 보호 모드, 용량 초과 등에서는 false)
+    ok() { try { if (!root.localStorage) return false; root.localStorage.setItem('pg_probe', '1'); root.localStorage.removeItem('pg_probe'); return true; } catch (e) { return false; } },
   };
+  let saveFailed = false;
 
   const MONTHS = [
     { m: 2, label: '스프링 1라운드', type: 'league', split: 'spring', rounds: [0, 5] },
@@ -24,7 +27,7 @@
   const SPLIT = { spring: '스프링', summer: '서머' };
   const SQUAD = { trainee: '연습생', second: '2군', first: '1군' };
 
-  let S = null;
+  let S = null, backupNext = false;
   const rnd = Math.random;
   const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
   const gauss = () => { let u = 0; for (let i = 0; i < 6; i++) u += rnd(); return (u - 3) / 0.7071; };
@@ -96,13 +99,14 @@
   /* ---------- 시작 ---------- */
   function newGame(o) {
     const r = D.ROLES.find(x => x.id === o.role);
+    store.del(BAK);
     S = {
       v: 1, nick: String(o.nick || 'Player').slice(0, 12), home: o.region, role: o.role, trait: o.trait,
       age: 16, year: 1, m: 0, stats: {}, caps: {}, cond: 80, trust: 30, fame: 0, money: 100, wrist: 100,
       org: null, squad: 'trainee', contract: { salary: 600, years: 3 }, plan: 'solo', monthsInOrg: 0,
       perks: [], shop: { gear: 0, coach: 0, care: 0 }, used: {}, buff: null, injury: 0, pity: 0, recentEv: [],
       orgStr: {}, lg: null, dom: {}, yr: null, hist: [], log: [], q: [], flags: {}, opt: { fast: false },
-      car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [] },
+      car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0 },
       pendingSim: false, pendingNewYear: false, over: false,
     };
     const talent = gauss() * 3.5;
@@ -125,6 +129,7 @@
   function startYear() {
     for (const g of D.ORGS) S.orgStr[g.id] = clamp(S.orgStr[g.id] + gauss() * 2.2 + (g.str - S.orgStr[g.id]) * .25, 58, 93);
     S.m = 0; S.dom = { spring: {}, summer: {} };
+    backupNext = true;
     S.yr = { g: 0, w: 0, rs: 0, mvp: 0, g1: 0, rs1: 0, titles: [], awards: [] };
     setupSplit('spring');
   }
@@ -228,7 +233,7 @@
       }
     } else if (S.squad === 'second') {
       if (o >= base - 8 && S.trust >= 55) {
-        S.squad = 'first'; S.trust = 30; S.contract.salary = Math.max(S.contract.salary, r100(salaryFor(org(), o) * .5)); S.contract.years = Math.max(S.contract.years, 2);
+        S.squad = 'first'; S.trust = 30; if (!S.car.debut) S.car.debut = S.age; S.contract.salary = Math.max(S.contract.salary, r100(salaryFor(org(), o) * .5)); S.contract.years = Math.max(S.contract.years, 2);
         after.push(info('1군 콜업', `${org().name} 1군에 합류했다. 감독 신뢰 45 이상이면 주전으로 나선다. 자리는 스스로 만들어야 한다.`, 'good'));
         log('1군 콜업. 꿈의 무대가 눈앞이다.', 'good');
       }
@@ -368,7 +373,7 @@
     if (S.buff && --S.buff.m <= 0) S.buff = null;
     if (S.injury > 0) S.injury--;
     else if (S.wrist <= 20) {
-      S.injury = 2; S.wrist = 50;
+      S.injury = 2; S.wrist = 50; S.car.inj++;
       after.push(info('손목 부상', '버티던 손목이 결국 탈이 났다. 두 달간 경기에 나설 수 없다. 휴식과 물리치료로 손목을 관리하자.', 'bad'));
       log('손목 부상. 2개월 결장.', 'bad');
     }
@@ -425,12 +430,13 @@
   function joinOrg(of) {
     const moved = of.org !== S.org;
     S.org = of.org; S.squad = of.squad; S.contract = { salary: of.salary, years: of.years };
-    if (moved) { S.trust = of.squad === 'first' ? 35 : 45; S.monthsInOrg = 0; if (!S.car.orgs.includes(of.org)) S.car.orgs.push(of.org); }
+    if (moved) { S.trust = of.squad === 'first' ? 35 : 45; S.monthsInOrg = 0; S.car.moves++; if (!S.car.orgs.includes(of.org)) S.car.orgs.push(of.org); }
+    if (of.squad === 'first' && !S.car.debut) S.car.debut = S.age;
     log(`${of.name}와(과) ${of.years}년 계약. ${SQUAD[of.squad]}, 연봉 ${fmtMoney(of.salary)}.`, 'good');
   }
 
   function offseason() {
-    const y = S.yr, after = S.q;
+    const y = S.yr, after = S.q, squadPlayed = S.squad;   // 시즌 기록에는 승격·강등 전 소속을 남긴다
     evaluateSquad(after);
     const avg1 = y.g1 ? y.rs1 / y.g1 : 0;
     if (S.squad === 'first' && y.g1 >= 12) {
@@ -440,7 +446,7 @@
       for (const t of S.car.titles) if (t.y === S.year) sc += { world: 6, mid: 3, nations: 3, dom: 2, second: 0 }[t.tier];
       if (sc > 84.5 + gauss() * 2) { award('올해의 선수', 12); earn(5000); }
     }
-    const rec = { year: S.year, age: S.age, org: org().name, tag: org().tag, squad: S.squad, g: y.g, w: y.w, avg: y.g ? y.rs / y.g : 0, mvp: y.mvp, titles: y.titles.slice(), awards: y.awards.slice(), ovr: Math.floor(ovr()), salary: S.contract.salary };
+    const rec = { year: S.year, age: S.age, org: org().name, tag: org().tag, squad: squadPlayed, g: y.g, w: y.w, avg: y.g ? y.rs / y.g : 0, mvp: y.mvp, titles: y.titles.slice(), awards: y.awards.slice(), ovr: Math.floor(ovr()), salary: S.contract.salary };
     S.hist.push(rec);
     after.push(Object.assign({ type: 'season' }, rec));
     if (y.awards.includes('올해의 선수')) after.push(info('올해의 선수', '전 세계 기자단과 선수단 투표 1위. 올해 이 종목에서 가장 빛난 이름은 나였다.', 'gold', ['상금 5,000만']));
@@ -593,8 +599,42 @@
     flush(); save();
   }
 
-  function save() { if (S) store.set(KEY, JSON.stringify(S)); }
-  function load() { try { const s = JSON.parse(store.get(KEY) || 'null'); if (s && s.v === 1) { S = s; return true; } } catch (e) {} return false; }
+  /* ---------- 저장 ----------
+     KEY: 현재 진행 상황(행동마다 자동 저장). BAK: 매 시즌 시작 시점의 복구용 사본.
+     저장 형식을 바꿀 때는 migrate() 에 기본값을 추가해 예전 저장도 열리게 한다. */
+  function save() {
+    if (!S) return;
+    const json = JSON.stringify(S);
+    store.set(KEY, json);
+    if (backupNext) { backupNext = false; store.set(BAK, json); }
+    saveFailed = store.get(KEY) !== json;
+  }
+  function migrate(s) {
+    if (!s || typeof s !== 'object' || s.v !== 1 || !s.stats || !s.car || !Array.isArray(s.q)) return null;
+    const def = (o, k, v) => { if (o[k] == null) o[k] = v; };
+    def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
+    def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
+    s.shop = Object.assign({ gear: 0, coach: 0, care: 0 }, s.shop);
+    for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut']) def(s.car, k, 0);
+    for (const k of ['titles', 'awards', 'orgs']) def(s.car, k, []);
+    if (!(s.m >= 0 && s.m < MONTHS.length)) s.m = 0;
+    if (s.org && !D.ORG[s.org]) return null;
+    if (!s.org && !(s.q[0] && s.q[0].type === 'pickOrg')) return null;
+    if (s.org && !s.yr) s.yr = { g: 0, w: 0, rs: 0, mvp: 0, g1: 0, rs1: 0, titles: [], awards: [] };
+    return s;
+  }
+  function read(key) { try { return migrate(JSON.parse(store.get(key) || 'null')); } catch (e) { return null; } }
+  // 반환: 'ok' 정상, 'backup' 손상되어 시즌 시작 시점 사본으로 복구, '' 불러올 것이 없음
+  function load() {
+    let s = read(KEY), from = 'ok';
+    if (!s) {
+      const raw = store.get(KEY);
+      s = read(BAK); from = 'backup';
+      if (!s) return '';
+      if (raw) store.set(BAD, raw);   // 손상된 원본은 지우지 않고 따로 둔다
+    }
+    S = s; flush(); save(); return from;
+  }
   function buy(id) {
     const it = D.SHOP.find(x => x.id === id); if (!it || !S) return false;
     if (it.once) {
@@ -627,9 +667,12 @@
     setFast(v) { S.opt.fast = !!v; save(); },
     month: () => MONTHS[S.m],
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },
-    hasSave() { try { const s = JSON.parse(store.get(KEY) || 'null'); return !!(s && s.v === 1); } catch (e) { return false; } },
+    hasSave() { return !!(read(KEY) || read(BAK)); },
+    // 타이틀 화면에 보여 줄 저장 요약
+    saveInfo() { const s = read(KEY) || read(BAK); return s ? { nick: s.nick, year: s.year, age: s.age, over: !!s.over, started: !!s.org } : null; },
+    storageOk: () => store.ok(), saveFailed: () => saveFailed,
     hall() { try { return JSON.parse(store.get(HALL) || '[]'); } catch (e) { return []; } },
-    wipe() { store.del(KEY); S = null; },
+    wipe() { store.del(KEY); store.del(BAK); S = null; },
   };
   root.PG = Game;
   if (typeof module !== 'undefined') module.exports = Game;

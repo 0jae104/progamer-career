@@ -24,9 +24,12 @@
 | `js/engine.js` | 게임 규칙과 시뮬레이션 (화면과 분리) |
 | `js/ui.js` | 화면 |
 | `sw.js`, `manifest.webmanifest`, `icon.svg` | 홈 화면 추가, 오프라인 실행 |
-| `test/sim.js` | 자동 커리어 시뮬레이션. `node test/sim.js 1000` |
+| `test/sim.js` | 자동 커리어 시뮬레이션과 저장 검사. `node test/sim.js 3000` |
+| `docs/roadmap.md` | 피드백 대조 결과와 단계별 개선 계획 |
 
-밸런스를 바꾼 뒤에는 `node test/sim.js 3000`을 돌려 오류가 없는지 확인하고, 출력되는 `PCT` 값을 `js/data.js`의 `D.PCT`에 옮깁니다.
+진행 상황은 브라우저에 자동 저장되고, 시즌이 시작될 때마다 복구용 사본을 하나 더 남깁니다. 저장 형식에 필드를 추가할 때는 `js/engine.js`의 `migrate()`에 기본값을 넣어 예전 저장이 열리게 합니다.
+
+코드를 바꾼 뒤에는 `node test/sim.js 3000`을 돌려 오류가 없는지 확인하고, 출력되는 `PCT` 값을 `js/data.js`의 `D.PCT`에 옮깁니다.
 
 ## 권리와 출처
 
