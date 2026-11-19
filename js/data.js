@@ -22,7 +22,7 @@
 
   D.TRAITS = [
     { id: 'genius', name: '천재형', desc: '피지컬·반응속도 한계가 높고 10대 성장이 빠르다. 멘탈은 약하게 시작한다.' },
-    { id: 'grinder', name: '노력형', desc: '모든 성장이 12% 빠르고 컨디션 소모가 적다. 한계는 평범하다.' },
+    { id: 'grinder', name: '노력형', desc: '모든 성장이 18% 빠르고 컨디션 소모가 적다. 한계는 평범하다.' },
     { id: 'brain', name: '두뇌형', desc: '판단력·숙련 폭 한계가 높고 노쇠가 늦게 온다.' },
   ];
 
@@ -33,6 +33,66 @@
     { id: 'rest', name: '휴식', desc: '컨디션과 손목 회복. 멘탈이 조금 오른다', g: { mental: .4 }, cond: 24, wrist: 5, base: .5 },
     { id: 'stream', name: '개인 방송', desc: '인기와 수입. 성장은 더디다', g: {}, cond: -4, wrist: -1, fame: 1.5, base: .6 },
   ];
+
+  /* 밸런스 상수. 난이도와 커리어 길이를 정하는 숫자는 여기에 모아 둔다.
+     바꾼 뒤에는 `node test/sim.js 3000 --seed=1` 로 target 범위와 비교한다(자동 진행 기준이며 사람은 더 잘한다). */
+  D.BAL = {
+    // ── 재능과 성장 ──
+    talentSd: 8,       // 선수마다 다른 숨은 재능(모든 능력치 한계에 더해지는 값)의 표준편차. 클수록 커리어 간 격차가 커진다
+    talentGrow: .1,    // 같은 재능이 성장 속도에 주는 영향(표준편차 1 만큼 재능이 높으면 성장이 이 비율만큼 빠르다)
+    capBase: 64,       // 능력치 한계 = capBase + 재능 + 0~capRand 무작위 + 포지션 비중 × capRole
+    capRand: 12,
+    capRole: 22,
+    growBase: .4,      // 계획과 상관없이 모든 능력치가 매달 오르는 기본량
+    grinderGrow: 1.18, // 노력형의 성장 배율
+    ageGrow: [[17, 1.35], [19, 1.15], [21, .85], [23, .55], [25, .3], [99, .15]],   // [이 나이까지, 성장 배율]
+    // ── 리그 수준 ──
+    orgShift: 5,       // 모든 구단 전력에 더하는 값. 올리면 데뷔·우승이 어려워지고 은퇴가 빨라진다
+    // ── 승격과 강등 ──
+    toSecondGap: 26,   // 2군 콜업: OVR 이 (구단 전력 − 이 값) 이상
+    toSecondMonths: 5, //            입단 후 이 개월 수 이상
+    toSecondTrust: 40, //            코치 평가가 이 값 이상
+    toFirstGap: 2,     // 1군 콜업 심사 자격: OVR 이 (구단 전력 − 이 값) 이상
+    toFirstTrust: 55,  //                      감독 신뢰가 이 값 이상
+    slotBase: .1,      // 자격을 딱 채웠을 때 1군에 자리가 날 확률(심사 1회당)
+    slotPerOvr: .07,   // 기준보다 OVR 1 높을 때마다 더해지는 확률
+    slotMax: .9,
+    demoteTrust: 25, demoteGap: 12,   // 1군에서 신뢰가 이 값 미만이고 OVR 이 (전력 − demoteGap) 미만이면 2군행
+    traineeMaxAge: 19, // 이 나이의 스토브리그까지 2군에 못 오른 연습생은 방출
+    secondMaxAge: 22,  // 이 나이의 스토브리그까지 1군에 못 오른 2군 선수는 방출
+    secondRenewAge: 21,// 2군 재계약은 이 나이까지
+    // ── 계약 제안 ──
+    offerGap: 5,          // 1군 경력자: OVR 이 (구단 전력 − 이 값) 이상이면 1군 제안
+    offerGapUnproven: -6,  // 1군 경력이 없는 선수에게는 더 엄격하다
+    provenGames: 20,      // 1군 경기 수가 이 이상이면 경력자
+    ageFrom: 24,          // 이 나이를 넘으면 한 살마다 요구 OVR 이 ageSlope 씩 오른다(제안·재계약 공통)
+    ageSlope: 4,
+    secondOfferAge: 21, secondOfferGap: 26,   // 2군 제안: 이 나이 이하, OVR 이 (전력 − 값) 이상
+    traineeOfferAge: 18, traineeOfferGap: 42,
+    tryoutBase: 30, tryoutPerOvr: 2, tryoutOvr: 58, tryoutAgeFrom: 22, tryoutAgeSlope: 9,   // 공개 테스트 합격 확률(%)
+    retryMax: 1,          // 공개 테스트에 떨어져도 아카데미 재입단으로 다시 도전할 수 있는 횟수
+    retryMaxAge: 23,
+    // ── 노쇠 ──
+    fadeFrom: 23,      // 이 나이를 넘으면 매년 능력치와 한계가 함께 내려간다(두뇌형 +1, 대기만성 +2)
+    fadeReflex: [1.15, .8],   // 반응속도: (넘은 햇수 × 앞 값) + 뒤 값
+    fadeMech: [.95, .4],    // 피지컬: 1년 늦게 시작
+    fadeOther: 1.3,         // 나머지: 3년 늦게 시작, 매년 이 값
+    fadeOtherDelay: 2,
+    wristAge: .3,      // 24세를 넘으면 한 살마다 매달 손목이 이만큼 더 닳는다
+    // ── 경기 ──
+    impact: .26,       // 내가 출전했을 때 (내 OVR − 팀 전력) 이 팀 전력에 반영되는 비율
+    // 포지션별 경기 영향력. 사수·코어는 전성기에 승패와 평점을 크게 움직이지만 반응속도 노쇠를 가장 먼저 맞고,
+    // 지원은 영향이 작은 대신 오래 뛴다. impact 와 평점의 OVR 차이 항에 곱해진다.
+    carry: { gun: 1.45, core: 1.3, rov: 1, van: 1.1, sup: .8 },
+    // ── 이벤트 ──
+    eventChance: .5,        // 매달 선택 이벤트가 나올 확률
+    eventChanceTrainee: .5, // 경기가 없는 연습생 기간
+    eventMemory: 7,          // 최근 이 개수의 이벤트는 다시 나오지 않는다
+    // ── 은퇴 등급: 커리어 점수가 이 값 이상이면 그 등급(자동 진행 분포에서 대략 상위 3, 7, 16, 31, 58, 85%) ──
+    grades: [['S+', 93], ['S', 75], ['A', 55], ['B', 40], ['C', 28], ['D', 15], ['F', 0]],
+    // ── 목표 범위(자동 진행 3000회 기준). test/sim.js 가 결과 옆에 충족 여부를 표시한다 ──
+    target: { debut: [80, 90], retireAge: [28, 30], roleSpread: [0, 5], titles: [1.6, 2.4], poy: [0, 10] },
+  };
 
   D.REGIONS = [
     { id: 'kr', name: '한국', lg: 'KGL', lgName: '코리아 그랜드 리그', pay: 1, nat: 86, natThr: 82 },
@@ -52,7 +112,7 @@
       ['데저트 호크스', 'DHK', 69, '#e1b382'], ['퍼시픽 웨이브', 'PCW', 67, '#48c9e5'], ['스틸 래쿤즈', 'STR', 64, '#95a5a6'], ['미드나잇 다이너', 'MND', 62, '#a29bfe']],
   };
   D.ORGS = [];
-  for (const r in orgs) orgs[r].forEach((o, i) => D.ORGS.push({ id: r + i, region: r, name: o[0], tag: o[1], str: o[2], color: o[3] }));
+  for (const r in orgs) orgs[r].forEach((o, i) => D.ORGS.push({ id: r + i, region: r, name: o[0], tag: o[1], str: o[2] + D.BAL.orgShift, color: o[3] }));
   D.ORG = {}; D.ORGS.forEach(o => D.ORG[o.id] = o);
   D.REGION = {}; D.REGIONS.forEach(r => D.REGION[r.id] = r);
 
@@ -91,7 +151,7 @@
   /* 이벤트. chk: { base, 능력치: 계수, trust: 계수 } 가 있으면 확률 판정, 없으면 확정 결과(ok). */
   const isTr = s => s.squad === 'trainee', isPro = s => s.squad !== 'trainee', isFirst = s => s.squad === 'first';
   D.EVENTS = [
-    { id: 'parents', when: s => isTr(s) && s.age <= 17, title: '부모님의 반대',
+    { id: 'parents', once: true, when: s => isTr(s) && s.age <= 17, title: '부모님의 반대',
       text: '성적표를 본 부모님이 연습을 그만두고 공부하라고 하신다.',
       c: [
         { label: '다음 평가 결과로 증명하겠다고 약속한다', chk: { base: 45, mental: .6, mech: .3 },
@@ -231,6 +291,101 @@
         { label: '답장을 쓴다', ok: { t: '내가 왜 이 일을 하는지 떠올랐다.', fx: { mental: 2, fame: 1, cond: -2 } } },
         { label: '마음만 받고 연습한다', ok: { t: '편지는 모니터 옆에 붙여 뒀다.', fx: { mech: .5, mental: 1 } } },
       ] },
+    /* ── 연습생·2군 구간 이벤트 (3단계) ── once: 커리어에 한 번만 나온다 */
+    { id: 'roommate', when: isTr, title: '잠들지 않는 숙소',
+      text: '같은 방 연습생이 새벽 네 시까지 키보드를 두드린다. 벌써 일주일째다.',
+      c: [
+        { label: '나도 일어나 같이 연습한다', ok: { t: '둘이서 새벽 랭크를 돌렸다. 손은 빨라졌고 눈 밑은 검어졌다.', fx: { mech: 1, reflex: .5, cond: -10 } } },
+        { label: '숙소 규칙을 정하자고 말을 꺼낸다', chk: { base: 50, team: .7, mental: .3 },
+          ok: { t: '자정 이후에는 연습실을 쓰기로 했다. 사이도 나빠지지 않았다.', fx: { team: 1.5, cond: 6 } },
+          no: { t: '"불만이면 방을 바꾸든가." 서먹해졌다.', fx: { team: -1, cond: -4 } } },
+        { label: '귀마개를 산다', ok: { t: '잠은 지켰다.', fx: { cond: 4 } } },
+      ] },
+    { id: 'mentor', when: isTr, title: '1군 선배의 한마디',
+      text: '복도에서 마주친 1군 주전이 내 평가전 영상을 봤다고 한다. "시간 되면 같이 볼래?"',
+      c: [
+        { label: '지금 바로 따라간다', ok: { t: '한 시간 동안 실수 스무 개를 짚어 줬다. 아프지만 전부 맞는 말이었다.', fx: { sense: 1.5, pool: .5, mental: -1 } } },
+        { label: '질문을 준비해서 내일 찾아간다', chk: { base: 55, sense: .6, mental: .3 },
+          ok: { t: '준비해 간 질문에 선배가 놀랐다. 코치 귀에도 들어갔다.', fx: { sense: 2, trust: 5 } },
+          no: { t: '다음 날 선배는 원정을 떠나고 없었다.', fx: { mental: -1 } } },
+      ] },
+    { id: 'cut', when: s => isTr(s) && s.monthsInOrg >= 3, title: '중간 심사',
+      text: '코치가 공지를 붙였다. 이번 달 심사에서 연습생 열두 명 중 넷이 나간다.',
+      c: [
+        { label: '남은 기간 가장 약한 부분만 판다', ok: { t: '약점이 눈에 띄게 줄었다는 평가를 받았다.', fx: { weak: 2, trust: 3, cond: -6 } } },
+        { label: '가장 자신 있는 무기를 더 날카롭게 간다', chk: { base: 45, mech: .6, reflex: .4 },
+          ok: { t: '심사 경기에서 그 무기 하나로 판을 끝냈다.', fx: { trust: 9, mech: 1 } },
+          no: { t: '무기는 통했지만 약점도 그대로 드러났다.', fx: { trust: -3 } } },
+        { label: '같이 남고 싶은 동료와 호흡을 맞춘다', chk: { base: 50, team: .8 },
+          ok: { t: '둘 다 남았다.', fx: { trust: 6, team: 1.5 } },
+          no: { t: '나는 남았고 동료는 짐을 쌌다.', fx: { trust: 2, mental: -2 } } },
+      ] },
+    { id: 'subcall', when: isTr, title: '2군 스크림 대타',
+      text: '2군 선수 하나가 몸살로 빠졌다. 코치가 연습생 방 문을 연다. "지금 들어올 수 있는 사람?"',
+      c: [
+        { label: '손을 든다', chk: { base: 42, reflex: .5, team: .5, mental: .3 },
+          ok: { t: '형들 사이에서 제 몫을 했다. 2군 코치가 이름을 적어 갔다.', fx: { trust: 9, sense: 1 } },
+          no: { t: '속도를 따라가지 못했다. 그래도 손을 든 것은 기억해 줄 것이다.', fx: { trust: -2, mental: -1, sense: .5 } } },
+        { label: '아직 이르다. 뒤에서 지켜본다', ok: { t: '2군의 속도를 눈에 담았다.', fx: { sense: .5 } } },
+      ] },
+    { id: 'homesick', once: true, when: s => isTr(s) && s.age <= 17, title: '집 생각',
+      text: '엄마가 저녁상 사진을 보냈다. 숙소 생활 몇 달째, 주말 외출은 평가에 반영된다는 소문이 있다.',
+      c: [
+        { label: '주말에 집에 다녀온다', ok: { t: '집밥을 먹고 푹 잤다. 코치는 아무 말도 하지 않았다.', fx: { cond: 16, mental: 1, trust: -2 } } },
+        { label: '영상 통화만 하고 연습실에 남는다', chk: { base: 50, mental: .9 },
+          ok: { t: '통화를 끊고 나니 오히려 마음이 단단해졌다.', fx: { mental: 2, trust: 2 } },
+          no: { t: '연습이 손에 잡히지 않았다.', fx: { cond: -8, mental: -1 } } },
+      ] },
+    { id: 'sleep', when: s => !isFirst(s) && s.cond < 70, title: '수면 기록',
+      text: '트레이너가 내 수면 기록을 보고 고개를 젓는다. "이대로면 반응속도부터 떨어진다."',
+      c: [
+        { label: '한 달간 자정 전에 눕는다', ok: { t: '아침 연습의 집중력이 달라졌다.', fx: { cond: 14, reflex: .5 } } },
+        { label: '새벽 연습은 포기 못 한다', ok: { t: '연습량은 지켰다. 손목이 조금 뻐근하다.', fx: { mech: 1, cond: -6, wrist: -4 } } },
+      ] },
+    { id: 'debut2', once: true, when: s => s.squad === 'second' && s.car.g2 < 4, title: '첫 공식전',
+      text: '넥스트 리그 데뷔전. 관중석은 듬성듬성하지만 중계 카메라는 돌아간다. 손에 땀이 찬다.',
+      c: [
+        { label: '첫 교전부터 과감하게 간다', chk: { base: 42, mech: .6, mental: .5 },
+          ok: { t: '첫 득점을 올리자 긴장이 사라졌다.', fx: { buff: [.4, 1], trust: 4, fame: 1 } },
+          no: { t: '첫 교전에서 잘렸다. 한동안 손이 굳었다.', fx: { buff: [-.3, 1], mental: -1 } } },
+        { label: '콜을 잘 듣고 실수 없이 간다', chk: { base: 58, team: .6 },
+          ok: { t: '눈에 띄지는 않았지만 실수도 없었다.', fx: { trust: 3, buff: [.15, 1] } },
+          no: { t: '콜을 놓쳐 한 번 크게 잘렸다.', fx: { trust: -2 } } },
+      ] },
+    { id: 'watch', when: s => s.squad === 'second', title: '1군 감독의 참관',
+      text: '오늘 2군 경기에 1군 감독이 와 있다. 다들 평소보다 말이 없다.',
+      c: [
+        { label: '눈에 띄는 장면을 만든다', chk: { base: 38, mech: .7, reflex: .4 },
+          ok: { t: '감독이 수첩에 무언가를 적었다.', fx: { trust: 10, fame: 1 } },
+          no: { t: '무리한 플레이가 두 번. 감독은 일찍 자리를 떴다.', fx: { trust: -5 } } },
+        { label: '팀이 이기는 플레이를 한다', chk: { base: 52, team: .5, sense: .5 },
+          ok: { t: '"저 친구, 판을 볼 줄 아네." 그 말이 전해졌다.', fx: { trust: 7 } },
+          no: { t: '무난했다. 기억에 남지는 않았을 것이다.', fx: { trust: 1 } } },
+      ] },
+    { id: 'scout', once: true, when: s => s.squad === 'second' && s.yr && s.yr.g >= 12 && s.yr.rs / s.yr.g >= 6.8, title: '낯선 번호',
+      text: '다른 구단 스카우터라는 사람이 연락해 왔다. "우리 1군에 자리가 날 수도 있습니다. 관심 있습니까?"',
+      c: [
+        { label: '관심 있다고 답한다', ok: { t: '스토브리그에 다시 이야기하기로 했다. 다만 소문은 금방 돈다.', fx: { flag: 'scout', trust: -4 } } },
+        { label: '감독에게 먼저 알린다', ok: { t: '감독이 고개를 끄덕였다. "말해 줘서 고맙다."', fx: { trust: 6 } } },
+      ] },
+    { id: 'vet2', when: s => s.squad === 'second', title: '2군에 내려온 베테랑',
+      text: '지난 시즌까지 1군 주전이던 선배가 2군 연습실에 앉아 있다. 나와 같은 포지션이다.',
+      c: [
+        { label: '옆자리에 앉아 배운다', ok: { t: '화면을 보는 순서부터 달랐다.', fx: { sense: 1.5, pool: 1 } } },
+        { label: '스크림에서 정면으로 붙어 본다', chk: { base: 40, mech: .7, reflex: .5 },
+          ok: { t: '내가 이겼다. 코치진의 눈빛이 달라졌다.', fx: { trust: 8, mental: 1 } },
+          no: { t: '노련함에 말렸다. 그래도 배운 것은 있다.', fx: { trust: -2, sense: 1 } } },
+      ] },
+    { id: 'duo', when: s => !isFirst(s), title: '우연한 매칭',
+      text: '솔로 랭크에서 우리 구단 1군 주전과 같은 팀이 됐다. 상대는 내 아이디를 모른다.',
+      c: [
+        { label: '평소대로 내 플레이를 한다', chk: { base: 48, mech: .6, sense: .4 },
+          ok: { t: '경기 뒤 친구 신청이 왔다. "너 우리 팀 소속이라며?"', fx: { trust: 6, fame: 1 } },
+          no: { t: '긴장해서 경기를 그르쳤다. 채팅창이 조용했다.', fx: { mental: -1 } } },
+        { label: '주전의 움직임에 맞춰 준다', chk: { base: 58, team: .8 },
+          ok: { t: '"받쳐 주는 거 좋네." 한 줄 칭찬을 받았다.', fx: { trust: 4, team: 1 } },
+          no: { t: '맞추려다 내 플레이가 사라졌다.', fx: { mental: -.5 } } },
+      ] },
   ];
 
   /* 승부처: 플레이오프·국제전의 중요한 세트에서 나오는 경기 중 선택.
@@ -330,7 +485,7 @@
   D.SYL_B = ['ro', 'ven', 'mi', 'zen', 'ka', 'lo', 'rin', 'dus', 'pa', 'nyx', 'bit', 'han', 'so', 'ty', 'gon', 'wi'];
 
   // 은퇴 점수 → 상위 % (자동 시뮬레이션 커리어 분포 기준. test/sim.js 로 갱신)
-  D.PCT = [[95, 1], [93, 3], [83, 8], [74, 16], [65, 28], [57, 42], [50, 58], [44, 74], [38, 90]];
+  D.PCT = [[98, 1], [91, 3], [72, 8], [55, 16], [42, 28], [34, 42], [28, 58], [22, 74], [12, 90]];
 
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;

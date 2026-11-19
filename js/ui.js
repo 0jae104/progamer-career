@@ -39,7 +39,7 @@
       </div>
       ${U.notice ? `<p class="warn">${U.notice}</p>` : ''}
       ${G.storageOk() ? '' : '<p class="warn">이 브라우저에서는 저장이 되지 않는다. 사생활 보호 모드를 끄거나 다른 브라우저로 열어야 진행 상황이 남는다.</p>'}
-      <p class="fine">등장하는 리그·구단·선수·대회는 모두 창작이며 실제와 관계가 없습니다. 진행 상황은 이 기기의 브라우저에 저장되며, 브라우저 데이터를 지우면 함께 사라집니다.</p>
+      <p class="fine">등장하는 리그·구단·선수·대회는 모두 창작이며 실제와 관계가 없습니다. 진행 상황은 이 기기의 브라우저에 저장되며, 브라우저 데이터를 지우면 함께 사라집니다. v${G.VERSION}</p>
     </section>`;
   }
   const opt = (grp, id, name, desc) => `<button class="opt" data-act="pick" data-grp="${grp}" data-id="${id}" aria-pressed="${U.C[grp] === id}"><b>${name}</b>${desc ? `<span>${desc}</span>` : ''}</button>`;
@@ -76,8 +76,15 @@
     const mi = G.month(), c = S.contract;
     return `<div class="now"><div><p class="eyebrow">${S.year}년차 · ${mi.m}월</p><h2>${mi.label}</h2></div><p>${hint(S, mi)}</p></div>
       <div class="kv"><div><span>자금</span><b>${money(S.money)}</b></div><div><span>연봉</span><b>${money(c.salary)}</b></div><div><span>계약</span><b>${c.years}년 남음</b></div></div>
+      ${goalCard()}
       <div><p class="sec">이번 달 계획</p>${D.PLANS.map(p => `<button class="plan" data-act="plan" data-id="${p.id}" aria-pressed="${S.plan === p.id}"><i></i><div><b>${p.name}</b><span>${p.desc}</span></div></button>`).join('')}</div>
       <div><p class="sec">소식</p><ul class="log">${S.log.slice(0, 12).map(l => `<li class="${l.tone}"><time>${l.y}년차 ${l.m}월</time><span>${esc(l.msg)}</span></li>`).join('') || '<li class="dim">아직 소식이 없다.</li>'}</ul></div>`;
+  }
+  function goalCard() {
+    const g = G.goal();
+    return `<div class="goal"><p class="sec">다음 목표 · ${g.title}</p>
+      ${g.items.map(i => `<div class="gi ${i.ok ? 'ok' : ''}"><span>${i.label}</span><div class="bar"><i style="width:${i.low ? (i.ok ? 100 : 40) : Math.max(4, Math.min(100, Math.round(i.cur / i.need * 100)))}%"></i></div><b>${i.cur}${i.low ? '위' : ''} <em>/ ${i.need}${i.low ? '위 안' : ''}</em></b></div>`).join('')}
+      <p class="fine">${g.note}</p></div>`;
   }
   function hint(S, mi) {
     if (S.injury) return `부상 재활 ${S.injury}개월 남음`;
@@ -132,7 +139,7 @@
     switch (sc.type) {
       case 'pickOrg':
         h = `<p class="eyebrow">TRYOUT PASSED</p><h2>세 구단의 제안</h2><p>입단 테스트를 통과했다. 연습생 계약을 맺을 구단을 고르자.</p>
-          ${sc.offers.map((o, i) => `<button class="choice" data-act="res" data-i="${i}"><div class="grow"><b>${o.name}</b><small>${o.note}</small></div><span class="pill sure">전력 ${o.str}</span></button>`).join('')}`; break;
+          ${sc.offers.map((o, i) => `<button class="choice" data-act="res" data-i="${i}"><div class="grow"><b>${o.name}</b><small>${o.note}</small>${o.need2 ? `<small class="swing">콜업 기준 — 2군 OVR ${o.need2} · 1군 OVR ${o.need1} (지금 내 OVR ${Math.floor(G.ovr())})</small>` : ''}</div><span class="pill sure">전력 ${o.str}</span></button>`).join('')}`; break;
       case 'event':
         h = `<p class="eyebrow">선택의 순간</p><h2>${sc.title}</h2><p>${sc.text}</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${i}" ${c.disabled ? 'disabled' : ''}><div class="grow"><b>${c.label}</b>${c.bd ? `<small>${c.bd.map(b => `${b[0]} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${b[1]}`).join(' · ')}</small>` : ''}${c.disabled ? '<small>자금이 부족하다</small>' : ''}</div>${pill(c.p)}</button>`).join('')}
@@ -155,6 +162,7 @@
           <div class="chips">${sc.lines.map(l => `<span class="chip ${/[-]\d|하락/.test(l) ? 'down' : 'up'}">${l}</span>`).join('')}</div>${okBtn()}`; break;
       case 'month':
         h = `<p class="eyebrow">${sc.title} · ${sc.plan}</p><h2>${sc.sub}</h2>${matchList(sc.matches)}
+          ${sc.eval ? `<div class="kv"><div><span>월말 평가전 평점</span><b>${f1(sc.eval.r)}</b></div><div><span>연습생 순위</span><b>12명 중 ${sc.eval.rank}위</b></div><div><span>코치 평가</span><b>${sc.eval.d == null ? '-' : (sc.eval.d > 0 ? '+' : '') + sc.eval.d}</b></div></div>` : ''}
           ${sc.notes.map(n => `<p>${n}</p>`).join('')}
           <div class="chips">${sc.growth.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]}</span>`).join('')}<span class="chip">OVR ${sc.ovr}</span><span class="chip">월급 +${money(sc.salary)}</span></div>${okBtn()}`; break;
       case 'info':
@@ -170,7 +178,7 @@
       case 'stove':
         h = `<p class="eyebrow">STOVE LEAGUE</p><h2>스토브리그</h2><p>${G.org().name}와의 계약이 ${sc.years}년 남았다. 연봉 ${money(sc.salary)}.</p>
           <button class="btn" data-act="stay">잔류한다</button><button class="btn ghost" data-act="transfer">이적을 요청한다</button>${sc.canRetire ? retireBtn() : ''}
-          <p class="fine">이적을 요청했다가 잔류하면 감독 신뢰가 떨어진다.</p>`; break;
+          <p class="fine">${sc.scouted ? '시즌 중 연락해 온 스카우터가 있다. 이적을 요청하면 1군 제안이 올 가능성이 높다. ' : ''}이적을 요청했다가 잔류하면 감독 신뢰가 떨어진다.</p>`; break;
       case 'offers':
         h = `<p class="eyebrow">CONTRACT</p><h2>계약 제안</h2><p>${sc.msg}</p>
           ${sc.offers.map((o, i) => `<div class="offer"><div class="row"><div class="grow"><b>${o.name}</b> <span class="dim">${o.region}${o.renew ? ' · 재계약' : ''}</span><br><span class="dim">${G.SQUAD[o.squad]} · ${o.years}년 · 연봉</span> <b>${money(o.salary)}</b></div></div>
@@ -179,7 +187,7 @@
           <p class="fine">인상 요구가 실패하면 제안이 철회될 수 있다.</p>`; break;
       case 'tryout':
         cls = 'bad';
-        h = `<h2>무소속</h2><p>${sc.text}</p><button class="choice" data-act="try"><div class="grow"><b>공개 테스트에 지원한다</b><small>떨어지면 그대로 은퇴한다</small></div>${pill(sc.p)}</button>${retireBtn()}`; break;
+        h = `<h2>${sc.vet ? '갈림길' : '무소속'}</h2><p>${sc.text}</p><button class="choice" data-act="try"><div class="grow"><b>공개 테스트에 지원한다</b><small>${sc.vet ? '합격하면 하위 구단 1군과 1년 계약. 떨어지면 은퇴한다' : sc.retry ? '합격하면 2군 1년 계약. 떨어져도 최하위 구단에서 한 번은 더 기회를 준다' : '합격하면 2군 1년 계약. 떨어지면 그대로 은퇴한다'}</small></div>${pill(sc.p)}</button>${retireBtn()}`; break;
     }
     return `<div class="veil"><section class="sheet ${cls}" role="dialog" aria-modal="true">${h}</section></div>`;
   }

@@ -1,6 +1,8 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
+  const VERSION = '0.3.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const B = D.BAL;
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
   const mem = {};
   const store = {
@@ -28,7 +30,13 @@
   const SQUAD = { trainee: '연습생', second: '2군', first: '1군' };
 
   let S = null, backupNext = false;
-  const rnd = Math.random;
+  // 난수. 평소에는 Math.random, 테스트에서는 seed(n) 으로 같은 결과를 다시 만들 수 있다.
+  let rnd = Math.random;
+  function seed(n) {
+    if (n == null) { rnd = Math.random; return; }
+    let a = n >>> 0;
+    rnd = function () { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
   const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
   const gauss = () => { let u = 0; for (let i = 0; i < 6; i++) u += rnd(); return (u - 3) / 0.7071; };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -71,9 +79,14 @@
       }
       else if (k === 'cap') { for (const s of D.STATS) S.caps[s.id] = Math.min(99, S.caps[s.id] + v); out.push(`모든 한계 +${v}`); }
       else if (k === 'all') { for (const s of D.STATS) S.stats[s.id] = clamp(S.stats[s.id] + v, 1, 99); out.push(`모든 능력치 +${v}`); }
+      else if (k === 'flag') { S.flags[v] = S.year; if (v === 'scout') out.push('스토브리그에 1군 제안이 올 수 있다'); }
+      else if (k === 'weak') {   // 가장 낮은 능력치를 올린다
+        const low = D.STATS.map(x => x.id).sort((a, b) => S.stats[a] - S.stats[b])[0];
+        S.stats[low] = Math.min(99, S.stats[low] + v); out.push(`${statName(low)} ${sg(v)}`);
+      }
       else if (k === 'cond') { setCond(S.cond + v); out.push(`컨디션 ${sg(v)}`); }
       else if (k === 'wrist') { addWrist(v); out.push(`손목 ${sg(v)}`); }
-      else if (k === 'trust') { addTrust(v); out.push(`감독 신뢰 ${sg(v)}`); }
+      else if (k === 'trust') { addTrust(v); out.push(`${S.squad === 'trainee' ? '코치 평가' : '감독 신뢰'} ${sg(v)}`); }
       else if (k === 'fame') { addFame(v); out.push(`인기 ${sg(v)}`); }
       else {
         const cur = S.stats[k];
@@ -106,28 +119,30 @@
       org: null, squad: 'trainee', contract: { salary: 600, years: 3 }, plan: 'solo', monthsInOrg: 0,
       perks: [], shop: { gear: 0, coach: 0, care: 0 }, used: {}, buff: null, injury: 0, pity: 0, recentEv: [],
       orgStr: {}, lg: null, dom: {}, yr: null, hist: [], log: [], q: [], flags: {}, opt: { fast: false },
-      car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0 },
+      car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0, tryouts: 0, retry: 0 },
+      stat: { turns: 0, t0: Date.now(), t20: 0, ev20: 0 },
       pendingSim: false, pendingNewYear: false, over: false, sim: null, recentMom: [],
     };
-    const talent = gauss() * 3.5;
+    const t = gauss(), talent = t * B.talentSd;
+    S.grow = clamp(1 + t * B.talentGrow, .7, 1.3);   // 숨은 재능은 한계뿐 아니라 성장 속도에도 작용한다
     for (const s of D.STATS) {
       const w = r.w[s.id];
-      let v = 34 + rnd() * 8 + w * 45, c = 70 + talent + rnd() * 12 + w * 22;
+      let v = 34 + rnd() * 8 + w * 45, c = B.capBase + talent + rnd() * B.capRand + w * B.capRole;
       if (o.trait === 'genius') { if (s.id === 'mech' || s.id === 'reflex') { v += 4; c += 5; } if (s.id === 'mental') v -= 4; }
       if (o.trait === 'grinder') { v += 1; c -= 1; }
       if (o.trait === 'brain') { if (s.id === 'sense') { v += 5; c += 6; } if (s.id === 'pool') { v += 3; c += 5; } if (s.id === 'mental') c += 2; }
-      S.stats[s.id] = v; S.caps[s.id] = clamp(c, 60, 99);
+      S.stats[s.id] = v; S.caps[s.id] = clamp(c, 55, 99);
     }
     for (const g of D.ORGS) S.orgStr[g.id] = g.str;
     const list = D.ORGS.filter(g => g.region === o.region);
     const picks = [list[ri(0, 1)], list[ri(3, 4)], list[ri(6, 7)]];
-    const notes = ['명문 구단. 코치진이 좋아 성장이 빠르지만 1군 문턱이 매우 높다.', '중위권 구단. 성장과 기회의 균형이 좋다.', '하위권 구단. 데뷔는 빠르지만 팀 전력이 약하다.'];
-    S.q.push({ type: 'pickOrg', offers: picks.map((g, i) => ({ org: g.id, name: g.name, str: g.str, note: notes[i] })) });
+    const notes = ['명문 구단. 코치진이 좋아 성장이 가장 빠르다. 다만 기준이 높아 이 팀 1군에 오르기는 매우 어렵고, 실력을 키운 뒤 다른 팀에서 데뷔하는 길도 생각해야 한다.', '중위권 구단. 성장과 기회의 균형이 좋다.', '하위권 구단. 성장은 더디지만 콜업 기준이 낮아 데뷔가 빠르다. 팀 전력은 약하다.'];
+    S.q.push({ type: 'pickOrg', offers: picks.map((g, i) => ({ org: g.id, name: g.name, str: g.str, note: notes[i], need2: Math.ceil(g.str - B.toSecondGap), need1: Math.ceil(g.str - B.toFirstGap) })) });
     save(); return S;
   }
 
   function startYear() {
-    for (const g of D.ORGS) S.orgStr[g.id] = clamp(S.orgStr[g.id] + gauss() * 2.2 + (g.str - S.orgStr[g.id]) * .25, 58, 93);
+    for (const g of D.ORGS) S.orgStr[g.id] = clamp(S.orgStr[g.id] + gauss() * 2.2 + (g.str - S.orgStr[g.id]) * .25, 58, 96);
     S.m = 0; S.dom = { spring: {}, summer: {} };
     backupNext = true;
     S.yr = { g: 0, w: 0, rs: 0, mvp: 0, g1: 0, rs1: 0, titles: [], awards: [] };
@@ -156,15 +171,17 @@
   /* ---------- 경기 ---------- */
   const winP = (eff, O) => 1 / (1 + Math.pow(10, (O - eff) / 16));
   // 내가 출전했을 때 팀의 실제 전력. mod.s 는 승부처 선택으로 생긴 그 세트 한정 보정이다.
+  // 포지션별 경기 영향력: 기준보다 잘하는 만큼만 배율이 붙는다(못할 때의 손해는 포지션과 무관하게 같다).
+  const carried = d => d > 0 ? d * (B.carry[S.role] || 1) : d;
   function effStr(T, plays, mod) {
     if (!plays) return T;
-    return T + (ovr() - T) * .22 + (S.cond - 60) / 40 * 1.2 + (has('dynasty') ? 2 : 0) + (mod ? mod.s : 0);
+    return T + carried(ovr() - T) * B.impact + (S.cond - 60) / 40 * 1.2 + (has('dynasty') ? 2 : 0) + (mod ? mod.s : 0);
   }
   function playGame(T, O, stage, plays, mod) {
     const o = ovr(), cadj = (S.cond - 60) / 40;
     const g = { win: rnd() < winP(effStr(T, plays, mod), O), plays, r: 0, k: 0, d: 0, a: 0 };
     if (plays) {
-      let r = 6.3 + (o - (T + O) / 2) / 11 + cadj * .5 + (g.win ? .45 : -.45) + gauss() * .75 + (S.buff ? S.buff.r : 0) + (mod ? mod.r : 0);
+      let r = 6.3 + carried(o - (T + O) / 2) / 11 + cadj * .5 + (g.win ? .45 : -.45) + gauss() * .75 + (S.buff ? S.buff.r : 0) + (mod ? mod.r : 0);
       if (stage !== 'league') { r += (S.stats.mental - 65) / 50; if (has('clutch')) r += .4; }
       g.r = clamp(Math.round(r * 10) / 10, 3, 10);
       const bk = { gun: 6, core: 5, rov: 4, van: 3, sup: 1 }[S.role], ba = { sup: 11, rov: 8, van: 7, core: 6, gun: 5 }[S.role];
@@ -287,21 +304,36 @@
     return { champ: a[0].id, runner: a[1].id };
   }
 
-  function evaluateSquad(after) {
+  // 1군 콜업 심사에서 자리가 날 확률. 자격(OVR, 감독 신뢰)을 못 채우면 0.
+  function slotChance() {
+    const gap = ovr() - (S.orgStr[S.org] - B.toFirstGap);
+    if (S.squad !== 'second' || gap < 0 || S.trust < B.toFirstTrust) return 0;
+    return clamp(B.slotBase + gap * B.slotPerOvr, B.slotBase, B.slotMax);
+  }
+  // 승격·강등 심사. 스플릿이 끝날 때(4월, 8월)와 스토브리그(11월)에 한 번씩 한다.
+  function evaluateSquad(after, notes) {
     const o = ovr(), base = S.orgStr[S.org], pay = region().pay;
     if (S.squad === 'trainee') {
-      if (S.monthsInOrg >= 5 && o >= base - 26) {
-        S.squad = 'second'; S.trust = 40; S.contract.salary = Math.max(S.contract.salary, r100(2400 * pay));
+      if (S.monthsInOrg >= B.toSecondMonths && o >= base - B.toSecondGap && S.trust >= B.toSecondTrust) {
+        S.squad = 'second'; S.trust = 40; S.contract.salary = Math.max(S.contract.salary, r100(2400 * pay)); S.contract.years = Math.max(S.contract.years, 2);
         after.push(info('2군 콜업', `${org().name} 2군 로스터에 이름을 올렸다. 다음 스플릿부터 ${region().lg} 넥스트에 출전한다.`, 'good'));
         log('2군 콜업. 연습생 딱지를 뗐다.', 'good');
       }
     } else if (S.squad === 'second') {
-      if (o >= base - 8 && S.trust >= 55) {
-        S.squad = 'first'; S.trust = 30; if (!S.car.debut) S.car.debut = S.age; S.contract.salary = Math.max(S.contract.salary, r100(salaryFor(org(), o) * .5)); S.contract.years = Math.max(S.contract.years, 2);
-        after.push(info('1군 콜업', `${org().name} 1군에 합류했다. 감독 신뢰 45 이상이면 주전으로 나선다. 자리는 스스로 만들어야 한다.`, 'good'));
-        log('1군 콜업. 꿈의 무대가 눈앞이다.', 'good');
+      const p = slotChance();
+      if (p > 0) {
+        const ok = rnd() < p, pct = Math.round(p * 100);
+        S.flags.lastEval = { y: S.year, m: MONTHS[S.m].m, p: pct, ok };
+        if (ok) {
+          S.squad = 'first'; S.trust = 30; if (!S.car.debut) { S.car.debut = S.age; S.car.via = 'callup'; } S.contract.salary = Math.max(S.contract.salary, r100(salaryFor(org(), o) * .5)); S.contract.years = Math.max(S.contract.years, 2);
+          after.push(info('1군 콜업', `${org().name} 1군에 합류했다. 감독 신뢰 45 이상이면 주전으로 나선다. 자리는 스스로 만들어야 한다.`, 'good'));
+          log('1군 콜업. 꿈의 무대가 눈앞이다.', 'good');
+        } else {
+          const msg = `1군 콜업 심사: 기준은 넘었지만 이번에는 자리가 나지 않았다(자리가 날 확률 ${pct}%). OVR을 더 올리면 확률이 오른다.`;
+          log(msg); if (notes) notes.push(msg);
+        }
       }
-    } else if (S.trust < 25 && o < base - 12) {
+    } else if (S.trust < B.demoteTrust && o < base - B.demoteGap) {
       S.squad = 'second'; S.trust = 45;
       after.push(info('2군행 통보', '감독이 2군에서 다시 증명하고 오라고 했다.', 'bad'));
       log('2군으로 내려갔다.', 'bad');
@@ -312,7 +344,7 @@
     const L = S.lg, rep = sim.rep;
     if (!L) {
       rep.notes.push('연습생 평가전과 훈련으로 한 달을 보냈다.');
-      if (mi.playoff) { for (const r of D.REGIONS) S.dom[mi.split][r.id] = npcFinalists(r.id); evaluateSquad(sim.after); }
+      if (mi.playoff) { for (const r of D.REGIONS) S.dom[mi.split][r.id] = npcFinalists(r.id); evaluateSquad(sim.after, rep.notes); }
       return;
     }
     const first = L.tier === 'first';
@@ -381,7 +413,7 @@
           after.push(info('스플릿 MVP', `정규 리그 평균 평점 ${avg.toFixed(2)}. 기자단 투표로 MVP에 선정됐다.`, 'gold'));
         }
       }
-      evaluateSquad(after);
+      evaluateSquad(after, rep.notes);
     } else if (t.kind === 'intl') {
       if (!t.me) { rep.notes.push(`${t.name}: ${D.ORG[ch].name} 우승. 나는 화면으로 지켜봤다.`); return; }
       rep.matches.push(...t.lines);
@@ -400,23 +432,23 @@
 
   /* ---------- 성장 ---------- */
   function ageFactor() {
-    const a = S.age; let f = a <= 17 ? 1.35 : a <= 19 ? 1.15 : a <= 21 ? .85 : a <= 23 ? .55 : a <= 25 ? .3 : .15;
+    const a = S.age; let f = B.ageGrow.find(x => a <= x[0])[1];
     if (S.trait === 'genius' && a <= 19) f += .15;
     return f;
   }
   function applyPlan(plan, playFactor) {
-    const coachF = .92 + (org().str - 62) / 160, tf = S.trait === 'grinder' ? 1.12 : 1, af = ageFactor();
+    const coachF = .92 + (org().str - 62) / 160, tf = S.trait === 'grinder' ? B.grinderGrow : 1, af = ageFactor();
     for (const s of D.STATS) {
       const k = s.id, cur = S.stats[k], cap = S.caps[k];
-      let g = .4 * (plan.base == null ? 1 : plan.base) * playFactor + (plan.g[k] || 0) * (plan.id === 'solo' && has('grind') ? 1.3 : 1);
-      g *= af * tf * coachF;
+      let g = B.growBase * (plan.base == null ? 1 : plan.base) * playFactor + (plan.g[k] || 0) * (plan.id === 'solo' && has('grind') ? 1.3 : 1);
+      g *= af * tf * coachF * (S.grow || 1);
       if (k === 'mech' || k === 'reflex') g *= 1 + .05 * S.shop.gear; else if (k !== 'mental') g *= 1 + .05 * S.shop.coach;
       g *= Math.max(0, 1 - Math.pow(cur / cap, 4)) * (.7 + rnd() * .6);
       S.stats[k] = clamp(cur + g, 1, 99);
     }
     let c = plan.cond; if (c < 0 && S.trait === 'grinder') c *= .75;
     setCond(S.cond + c + 4 + S.shop.care * 1.5);
-    addWrist(plan.wrist + 1 - (S.age > 24 ? .5 : 0));
+    addWrist(plan.wrist + 1 - Math.max(0, S.age - 24) * B.wristAge);
     if (plan.trust && S.squad !== 'trainee') addTrust(plan.trust);
     if (plan.fame) { addFame(plan.fame); const inc = 30 + Math.round(S.fame * 8); earn(inc); return inc; }
     return 0;
@@ -449,7 +481,14 @@
     const inc = applyPlan(plan, S.squad === 'trainee' ? .9 : played > 0 ? 1.15 : .85);
     if (inc) rep.notes.push(`방송 수입 ${fmtMoney(inc)}.`);
     const o = ovr();
-    if (S.squad === 'trainee') addTrust(o >= S.orgStr[S.org] - 26 ? 3 : 1);
+    if (S.squad === 'trainee') {
+      // 월말 평가전: 2군 기준 대비 실력에 운이 더해진 평점. 코치 평가가 이 평점을 따라 오르내린다.
+      const r = clamp(Math.round((6 + (o - (S.orgStr[S.org] - B.toSecondGap)) / 8 + gauss() * .8) * 10) / 10, 3, 10);
+      // 코치 평가는 평점이 가리키는 수준으로 조금씩 따라간다(평점 6.0 이면 콜업 기준인 40 근처). 한 번 떨어져도 실력이 오르면 회복된다.
+      const before = S.trust, tgt = clamp(B.toSecondTrust + (r - 6) * 12, 5, 95);
+      S.trust = clamp(S.trust + (tgt - S.trust) * .35, 0, 100);
+      rep.eval = { r, rank: clamp(Math.round(6.5 - (r - 6) * 3), 1, 12), d: Math.round((S.trust - before) * 10) / 10 };
+    }
     else { const T = str(S.org, S.squad); addTrust(o >= T ? 3 : o >= T - 5 ? 1.5 : o < T - 14 ? -2 : 0); }
     const sal = Math.round(S.contract.salary / 10); earn(sal); rep.salary = sal;
     if (S.buff && --S.buff.m <= 0) S.buff = null;
@@ -483,28 +522,37 @@
   }
   function genOffers(withRenew) {
     const o = ovr(), cand = [], out = [];
+    const agePen = Math.max(0, S.age - B.ageFrom) * B.ageSlope;
+    const scouted = S.flags.scout != null && S.flags.scout >= S.year - 1;       // 스카우터가 지켜본 선수는 경력자처럼 평가받는다
+    const need = (S.car.g >= B.provenGames || scouted) ? B.offerGap : B.offerGapUnproven;
     for (const g of D.ORGS) {
       if (g.id === S.org) continue;
       if (g.region !== S.home && !(o >= 76 || S.fame >= 45)) continue;
       const gap = o - S.orgStr[g.id] + gauss() * 3;
-      if (gap >= -9 + Math.max(0, S.age - 24) * 3.5) cand.push(makeOffer(g, 'first'));
-      else if (S.age <= 20 && gap >= -28) cand.push(makeOffer(g, 'second'));
-      else if (S.age <= 18 && gap >= -42) cand.push(makeOffer(g, 'trainee'));
+      if (gap >= -need + agePen) cand.push(makeOffer(g, 'first'));
+      else if (S.age <= B.secondOfferAge && gap >= -B.secondOfferGap) cand.push(makeOffer(g, 'second'));
+      else if (S.age <= B.traineeOfferAge && gap >= -B.traineeOfferGap) cand.push(makeOffer(g, 'trainee'));
     }
     cand.sort((a, b) => b.salary - a.salary);
     out.push(...cand.splice(0, 2)); if (cand.length) out.push(cand.splice(ri(0, cand.length - 1), 1)[0]);
     if (withRenew) {
       const base = S.orgStr[S.org];
-      const want = S.squad === 'first' ? o >= base - 12 - (S.trust - 50) / 10 + Math.max(0, S.age - 24) * 3.5 : S.squad === 'second' ? S.age <= 22 : S.age < 19;
+      const want = S.squad === 'first' ? o >= base - 12 - (S.trust - 50) / 10 + agePen : S.squad === 'second' ? S.age <= B.secondRenewAge : S.age < B.traineeMaxAge;
       if (want) out.unshift(makeOffer(org(), S.squad, true));
     }
     return out;
   }
+  const canRetry = () => S.car.retry < B.retryMax && S.age <= B.retryMaxAge;
   function negoP(of) { return clamp(Math.round(40 + (ovr() - S.orgStr[of.org]) * 2 + S.fame * .2 - of.tries * 15), 5, 90); }
   function offersScene(offers, canStay, msg) {
     if (!offers.length && !canStay) {
-      const p = clamp(Math.round(50 + (ovr() - 55) * 2 - Math.max(0, S.age - 23) * 9), 5, 90);
-      return { type: 'tryout', p, text: '계약을 제안한 팀이 없다. 공개 테스트에 지원해 2군 자리를 노리거나, 여기서 선수 생활을 마칠 수 있다.' };
+      const p = clamp(Math.round(B.tryoutBase + (ovr() - B.tryoutOvr) * B.tryoutPerOvr - Math.max(0, S.age - B.tryoutAgeFrom) * B.tryoutAgeSlope), 5, 90);
+      const vet = S.car.g >= B.provenGames;
+      return {
+        type: 'tryout', p, vet, retry: !vet && canRetry(),
+        text: vet ? '재계약 제안도, 다른 팀의 연락도 오지 않았다. 입단 테스트를 자청해 한 시즌 더 뛸 자리를 찾거나, 여기서 선수 생활을 마칠 수 있다.'
+          : '계약을 제안한 팀이 없다. 공개 테스트에 지원해 2군 자리를 노리거나, 여기서 선수 생활을 마칠 수 있다.',
+      };
     }
     offers.forEach(of => { of.p = of.squad === 'first' ? negoP(of) : null; });
     return { type: 'offers', offers, canStay, msg: msg || '' };
@@ -513,7 +561,7 @@
     const moved = of.org !== S.org;
     S.org = of.org; S.squad = of.squad; S.contract = { salary: of.salary, years: of.years };
     if (moved) { S.trust = of.squad === 'first' ? 35 : 45; S.monthsInOrg = 0; S.car.moves++; if (!S.car.orgs.includes(of.org)) S.car.orgs.push(of.org); }
-    if (of.squad === 'first' && !S.car.debut) S.car.debut = S.age;
+    if (of.squad === 'first' && !S.car.debut) { S.car.debut = S.age; S.car.via = 'offer'; }
     log(`${of.name}와(과) ${of.years}년 계약. ${SQUAD[of.squad]}, 연봉 ${fmtMoney(of.salary)}.`, 'good');
   }
 
@@ -534,19 +582,19 @@
     if (y.awards.includes('올해의 선수')) after.push(info('올해의 선수', '전 세계 기자단과 선수단 투표 1위. 올해 이 종목에서 가장 빛난 이름은 나였다.', 'gold', ['상금 5,000만']));
     // 나이
     S.age++; S.year++;
-    const st = (S.trait === 'brain' ? 24 : 23) + (has('late') ? 2 : 0), a = S.age;
+    const st = B.fadeFrom + (S.trait === 'brain' ? 1 : 0) + (has('late') ? 2 : 0), a = S.age;
     const fade = (k, v) => { if (v > 0) { S.stats[k] = Math.max(20, S.stats[k] - v); S.caps[k] = Math.max(30, S.caps[k] - v); } };
-    if (a > st) fade('reflex', (a - st) * 1.5 + 1 + rnd());
-    if (a > st + 1) fade('mech', (a - st - 1) * 1.3 + .5 + rnd() * .5);
-    if (a > st + 3) for (const k of ['sense', 'team', 'pool', 'mental']) fade(k, 1.2);
+    if (a > st) fade('reflex', (a - st) * B.fadeReflex[0] + B.fadeReflex[1] + rnd());
+    if (a > st + 1) fade('mech', (a - st - 1) * B.fadeMech[0] + B.fadeMech[1] + rnd() * .5);
+    if (a > st + B.fadeOtherDelay) for (const k of ['sense', 'team', 'pool', 'mental']) fade(k, B.fadeOther);
     S.fame *= .97; S.pendingNewYear = true;
     if (S.age >= 36) { retire('서른여섯. 손이 더는 따라오지 않는다.'); return; }
     after.push({ type: 'cards', cards: rollCards(), reroll: 1 });
     S.contract.years--;
-    const released = (S.squad === 'trainee' && S.age >= 19) || (S.squad === 'second' && S.age >= 25);
+    const released = (S.squad === 'trainee' && S.age >= B.traineeMaxAge) || (S.squad === 'second' && S.age >= B.secondMaxAge);
     if (released) after.push(info('방출 통보', S.squad === 'trainee' ? '연습생 계약이 끝났다. 구단은 재계약 의사가 없다고 전했다.' : '구단이 2군 로스터를 젊은 선수들로 채우기로 했다. 계약 해지 통보를 받았다.', 'bad'));
     if (released || S.contract.years <= 0) after.push(offersScene(genOffers(!released), false, '계약이 만료됐다. 다음 행선지를 정하자.'));
-    else after.push({ type: 'stove', years: S.contract.years, salary: S.contract.salary, canRetire: S.age >= 20 });
+    else after.push({ type: 'stove', years: S.contract.years, salary: S.contract.salary, canRetire: S.age >= 20, scouted: S.flags.scout != null && S.flags.scout >= S.year - 1 });
   }
 
   function rollCards() {
@@ -569,7 +617,7 @@
       '인기': clamp(S.fame * 1.1, 0, 100), '롱런': clamp(c.g / 3.2, 0, 100),
     };
     const score = Math.round(ax['기량'] * .28 + ax['우승'] * .27 + ax['개인상'] * .2 + ax['인기'] * .1 + ax['롱런'] * .15);
-    const grade = score >= 90 ? 'S+' : score >= 76 ? 'S' : score >= 58 ? 'A' : score >= 44 ? 'B' : score >= 30 ? 'C' : score >= 16 ? 'D' : 'F';
+    const grade = B.grades.find(g => score >= g[1])[0];
     let pct = 95; for (const [t, p] of D.PCT) if (score >= t) { pct = p; break; }
     const big = c.titles.filter(t => t.tier !== 'second').length, worlds = c.titles.filter(t => t.tier === 'world').length;
     let ep = { 'S+': '살아 있는 전설', S: '시대를 풍미한 스타', A: '리그의 간판', B: '믿음직한 주전', C: '묵묵한 프로', D: '짧았던 1군의 꿈', F: '끝내 닿지 못한 무대' }[grade];
@@ -596,9 +644,10 @@
 
   /* ---------- 진행 ---------- */
   function eventScene() {
-    const ok = D.EVENTS.filter(e => e.when(S) && !S.recentEv.includes(e.id));
+    const ok = D.EVENTS.filter(e => e.when(S) && !S.recentEv.includes(e.id) && !(e.once && S.flags['ev_' + e.id]));
     if (!ok.length) return null;
-    const ev = pick(ok); S.recentEv.push(ev.id); if (S.recentEv.length > 5) S.recentEv.shift();
+    const ev = pick(ok); S.recentEv.push(ev.id); while (S.recentEv.length > B.eventMemory) S.recentEv.shift();
+    if (ev.once) S.flags['ev_' + ev.id] = S.year;
     return {
       type: 'event', ev: ev.id, title: ev.title, text: ev.text,
       choices: ev.c.map(c => { const ch = c.chk ? chance(c.chk) : null; return { label: c.label, p: ch ? ch.p : null, bd: ch ? ch.bd : null, disabled: !!(c.need && S.money < c.need) }; }),
@@ -607,7 +656,10 @@
   function next() {
     if (!S || S.over || S.q.length) return;
     S.used = {};
-    const sc = MONTHS[S.m].type !== 'off' && S.injury === 0 && rnd() < .55 ? eventScene() : null;
+    S.stat.turns++;
+    if (S.stat.turns === 20) S.stat.t20 = Date.now() - S.stat.t0;   // 첫 20번 진행에 걸린 시간(기기 안에만 기록)
+    const sc = MONTHS[S.m].type !== 'off' && S.injury === 0 && rnd() < (S.squad === 'trainee' ? B.eventChanceTrainee : B.eventChance) ? eventScene() : null;
+    if (sc && S.stat.turns <= 20) S.stat.ev20++;
     if (sc) { S.q.push(sc); S.pendingSim = true; } else simMonth();
     save();
   }
@@ -682,12 +734,22 @@
         joinOrg(of); done(); break;
       }
       case 'tryout': {
-        if (arg !== 'try') { retire('불러 주는 팀이 없었다. 조용히 무대를 떠났다.'); break; }
+        const vet = S.car.g >= B.provenGames;
+        if (arg !== 'try') { retire(vet ? '불러 주는 팀이 없었다. 미련 없이 헤드셋을 내려놓았다.' : '불러 주는 팀이 없었다. 조용히 무대를 떠났다.'); break; }
+        S.car.tryouts++;
+        const list = D.ORGS.filter(g => g.region === S.home).sort((a, b) => S.orgStr[a.id] - S.orgStr[b.id]);
         if (rnd() * 100 < sc.p) {
-          const list = D.ORGS.filter(g => g.region === S.home).sort((a, b) => S.orgStr[a.id] - S.orgStr[b.id]);
-          const of = makeOffer(pick(list.slice(0, 4)), 'second'); of.years = 1; joinOrg(of); done();
-          S.q.unshift(info('테스트 합격', `${of.name} 2군과 1년 계약을 맺었다. 다시 시작이다.`, 'good'));
-        } else retire('공개 테스트에서 떨어졌다. 받아 주는 팀은 끝내 없었다.');
+          // 경력자는 하위 구단 1군과 낮은 연봉의 1년 계약, 신인은 2군 1년 계약
+          const of = makeOffer(pick(list.slice(0, vet ? 3 : 4)), vet ? 'first' : 'second'); of.years = 1; if (vet) of.salary = Math.max(3000, r100(of.salary * .5));
+          joinOrg(of); done();
+          S.q.unshift(info('테스트 합격', vet ? `${of.name}와(과) 1년 계약을 맺었다. 한 시즌 더 뛴다.` : `${of.name} 2군과 1년 계약을 맺었다. 다시 시작이다.`, 'good'));
+        } else if (!vet && canRetry()) {
+          // 한 번은 다시 도전할 수 있다: 최하위 구단이 최저 연봉으로 1년을 준다.
+          S.car.retry++;
+          const of = makeOffer(list[0], 'second'); of.years = 1; of.salary = 1200; joinOrg(of); S.trust = 30; done();
+          S.stats.mental = Math.max(1, S.stats.mental - 2);
+          S.q.unshift(info('마지막 기회', `테스트에는 떨어졌다. 그런데 ${of.name} 코치가 연락해 왔다. "연습 상대가 필요하다. 1년, 최저 연봉. 그 안에 보여 줘라." 다음 기회는 없다.`, 'bad', ['2군 1년 계약', '멘탈 -2']));
+        } else retire(vet ? '마지막 입단 테스트에서도 자리를 얻지 못했다. 헤드셋을 내려놓을 때가 됐다.' : S.car.g ? '공개 테스트에서 떨어졌다. 받아 주는 팀은 끝내 없었다.' : '끝내 1군 무대를 밟지 못했다. 다른 길을 찾기로 했다.');
         break;
       }
       default: done();
@@ -709,9 +771,11 @@
     if (!s || typeof s !== 'object' || s.v !== 1 || !s.stats || !s.car || !Array.isArray(s.q)) return null;
     const def = (o, k, v) => { if (o[k] == null) o[k] = v; };
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
-    def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null; def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
+    def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
+    def(s, 'grow', 1);
+    def(s, 'stat', { turns: 99, t0: 0, t20: 0, ev20: 0 });   // 예전 저장: 첫 20번 측정 대상이 아니다 def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
     s.shop = Object.assign({ gear: 0, coach: 0, care: 0 }, s.shop);
-    for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut']) def(s.car, k, 0);
+    for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut', 'tryouts', 'retry']) def(s.car, k, 0);
     for (const k of ['titles', 'awards', 'orgs']) def(s.car, k, []);
     if (!(s.m >= 0 && s.m < MONTHS.length)) s.m = 0;
     if (s.org && !D.ORG[s.org]) return null;
@@ -751,18 +815,54 @@
     if (sc.type === 'pickOrg' || sc.type === 'cards') return resolve(ri(0, 2));
     if (sc.type === 'event') { let b = 0, bv = -1; sc.choices.forEach((c, i) => { const v = c.disabled ? -2 : c.p == null ? 55 : c.p; if (v > bv) { bv = v; b = i; } }); return resolve(b); }
     if (sc.type === 'moment') return resolve('auto');
-    if (sc.type === 'offers') return resolve({ i: 0, act: 'accept' });
-    if (sc.type === 'stove') return resolve('stay');
-    if (sc.type === 'tryout') return resolve('try');
+    if (sc.type === 'offers') {
+      // 1군 제안을 가장 먼저, 그다음 2군, 연습생 순으로 받는다. 잔류할 수 있을 때는 1군 제안이 있을 때만 옮긴다.
+      const rank = { first: 0, second: 1, trainee: 2 };
+      let b = 0; sc.offers.forEach((o, i) => { const c = sc.offers[b]; if (rank[o.squad] < rank[c.squad] || (rank[o.squad] === rank[c.squad] && o.salary > c.salary)) b = i; });
+      if (sc.canStay && sc.offers[b].squad !== 'first') return resolve('stay');
+      return resolve({ i: b, act: 'accept' });
+    }
+    if (sc.type === 'stove') {
+      // 2군에서 스무 살을 넘겼는데 1군 기준에 한참 못 미치면 기회를 찾아 이적을 요청한다.
+      const stuck = S.squad === 'second' && S.age >= 20 && ovr() < S.orgStr[S.org] - B.toFirstGap - 2;
+      return resolve(stuck ? 'transfer' : 'stay');
+    }
+    if (sc.type === 'tryout') return resolve(sc.p >= 15 ? 'try' : 'retire');   // 가망이 거의 없으면 받아들인다
     resolve();
   }
 
+  // 홈 화면의 "다음 목표": 지금 소속에서 다음 단계로 가는 조건과 현재 수치
+  function goal() {
+    const o = Math.floor(ovr()), base = S.orgStr[S.org], when = S.m <= 2 ? '4월 말' : S.m <= 6 ? '8월 말' : '11월 스토브리그';
+    const it = (label, cur, need) => ({ label, cur, need, ok: cur >= need });
+    if (S.squad === 'trainee') return {
+      title: '2군 콜업', items: [it('OVR', o, Math.ceil(base - B.toSecondGap)), it('코치 평가', Math.round(S.trust), B.toSecondTrust), it('입단 개월', S.monthsInOrg, B.toSecondMonths)],
+      note: `다음 심사는 ${when}. ${B.traineeMaxAge}세가 되는 스토브리그까지 2군에 오르지 못하면 방출된다.`,
+    };
+    if (S.squad === 'second') {
+      const p = Math.round(slotChance() * 100), le = S.flags.lastEval;
+      return {
+        title: '1군 콜업', items: [it('OVR', o, Math.ceil(base - B.toFirstGap)), it('감독 신뢰', Math.round(S.trust), B.toFirstTrust)],
+        note: (p ? `조건 충족. 다음 심사(${when})에서 자리가 날 확률 ${p}%. OVR이 오를수록 확률도 오른다.` : `두 조건을 채우면 심사(${when}) 때 자리 경쟁에 들어간다.`)
+          + ` ${B.secondMaxAge}세가 되는 스토브리그까지 1군에 오르지 못하면 방출된다.` + (le && !le.ok && le.y === S.year ? ' 지난 심사에서는 자리가 나지 않았다.' : ''),
+      };
+    }
+    if (!isStarter()) return { title: '주전 자리', items: [it('감독 신뢰', Math.round(S.trust), 45)], note: '벤치에서는 다섯 경기에 한 번꼴로 나선다. 출전한 경기의 평점과 팀 스크림으로 신뢰가 오른다.' };
+    const rank = table().findIndex(x => x.me) + 1;
+    return {
+      title: '플레이오프와 국제 대회', items: rank ? [{ label: '리그 순위', cur: rank, need: 4, ok: rank <= 4, low: true }] : [],
+      note: '4위 안에 들면 플레이오프, 결승에 오르면 국제 대회에 나간다.' + (S.trust < 35 ? ' 감독 신뢰가 낮다. 더 떨어지면 2군으로 내려갈 수 있다.' : ''),
+    };
+  }
+
   const Game = {
-    D, MONTHS, SQUAD, newGame, load, save, next, resolve, buy, table, fmtMoney, autoStep, evaluate,
+    D, MONTHS, SQUAD, VERSION, seed, rand: () => rnd(), goal, newGame, load, save, next, resolve, buy, table, fmtMoney, autoStep, evaluate,
     state: () => S, scene: () => S && S.q[0], ovr: () => S ? ovr() : 0, isStarter, org, region, role,
     setPlan(id) { if (S && D.PLANS.find(p => p.id === id)) { S.plan = id; save(); } },
     setFast(v) { S.opt.fast = !!v; save(); },
     month: () => MONTHS[S.m],
+    // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
+    metrics: () => S ? Object.assign({}, S.stat) : null,
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },
     hasSave() { return !!(read(KEY) || read(BAK)); },
     // 타이틀 화면에 보여 줄 저장 요약
