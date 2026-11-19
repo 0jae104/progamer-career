@@ -165,6 +165,26 @@ tr.me td { background: #2a1b3a; font-weight: 700; } tr.cut td { border-bottom: 2
 .goal .gi.ok .bar i { background: var(--ok); } .goal .gi.ok b { color: var(--ok); }
 .goal .fine { margin-top: 2px; line-height: 1.5; }
 
+/* ---- 라이벌 ---- */
+.rival { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--team); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.rival + .rival { margin-top: 10px; }
+.rival.gone { opacity: .78; border-left-color: var(--dim); }
+.rival .rhead { display: flex; gap: 10px; align-items: center; }
+.rival .rhead canvas { width: 48px; height: 48px; flex: none; }
+.rival .rhead .grow { flex: 1; min-width: 0; }
+.rival .rhead b { display: block; font: 400 20px/1.15 var(--display); overflow-wrap: anywhere; }
+.rival .rhead span { display: block; font-size: 12px; color: var(--dim); line-height: 1.4; }
+.rival .rovr { flex: none; text-align: center; padding: 4px 10px; background: var(--panel2); }
+.rival .rovr b { font: 400 24px/1 var(--display); } .rival .rovr span { font-size: 10px; letter-spacing: .1em; color: var(--dim); }
+.rival .rmid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; align-items: end; }
+.rival .h2h span { display: block; font-size: 11px; color: var(--dim); } .rival .h2h b { font-size: 15px; white-space: nowrap; }
+.rival .rnews { font-size: 13px; color: #d5d8f5; line-height: 1.5; } .rival .rnews .chip { margin-right: 4px; }
+.rival .epi { font-size: 13px; border-top: 1px solid var(--line); padding-top: 8px; }
+.rival details summary { font-size: 12px; color: var(--cy); cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.rival details .log li { font-size: 12px; }
+.rvnote { font-size: 13px; color: var(--gold); border-left: 3px solid var(--gold); padding: 6px 10px; background: #2b2636; }
+.matches .mom.rvl { color: var(--gold); }
+
 /* ---- 승부처 ---- */
 .sheet.clutch { border-top-color: var(--gold); }
 .board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; background: var(--ink); padding: 10px 12px; border: 1px solid var(--line); }

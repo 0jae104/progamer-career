@@ -88,6 +88,15 @@
     eventChance: .5,        // 매달 선택 이벤트가 나올 확률
     eventChanceTrainee: .5, // 경기가 없는 연습생 기간
     eventMemory: 7,          // 최근 이 개수의 이벤트는 다시 나오지 않는다
+    // ── 라이벌(OVR 하나로 가볍게 진행한다) ──
+    rivalGrow: .68,        // 매달 성장량의 기본값(나이 배율과 한계 대비 감속은 선수와 같은 식)
+    rivalFade: .5,         // 노쇠: fadeFrom 을 넘은 햇수 × 이 값만큼 매년 OVR 이 내려간다
+    rivalGapUnproven: 0,   // 1군 경력이 없는 라이벌이 다른 구단 1군에 가려면 OVR 이 (구단 전력 − 이 값) 이상(유망주라 선수 기준보다 너그럽다)
+    rivalInjury: .006,     // 2군·1군 라이벌이 한 달에 부상을 당할 확률
+    rivalSlump: .08,       // 1군 라이벌이 한 해 부진에 빠질 확률
+    rivalAmbition: .15,     // 1군 라이벌이 스토브리그에 더 강한 팀으로 옮길 확률(갈 수 있는 팀이 있을 때)
+    rivalNewsShare: .6,    // 라이벌에게 방금 일어난 일(콜업, 이적, 맞대결 결과, 부진, 복귀, 은퇴)에 대한 이벤트가 있을 때 그것을 고를 확률
+    rivalEventShare: .3,   // 이벤트가 나올 때 라이벌 이벤트를 고를 확률(조건이 맞는 라이벌 이벤트가 있을 때)
     // ── 은퇴 등급: 커리어 점수가 이 값 이상이면 그 등급(자동 진행 분포에서 대략 상위 3, 7, 16, 31, 58, 85%) ──
     grades: [['S+', 93], ['S', 75], ['A', 55], ['B', 40], ['C', 28], ['D', 15], ['F', 0]],
     // ── 목표 범위(자동 진행 3000회 기준). test/sim.js 가 결과 옆에 충족 여부를 표시한다 ──
@@ -150,6 +159,10 @@
 
   /* 이벤트. chk: { base, 능력치: 계수, trust: 계수 } 가 있으면 확률 판정, 없으면 확정 결과(ok). */
   const isTr = s => s.squad === 'trainee', isPro = s => s.squad !== 'trainee', isFirst = s => s.squad === 'first';
+  // 라이벌 이벤트용: 활동 중인 라이벌, 같은 구단 여부, 스쿼드 순서
+  const act = s => (s.rivals || []).filter(r => !r.retired), mate = (s, r) => r.org === s.org, RQ = { trainee: 0, second: 1, first: 2 };
+  // 알림 표시(일어난 연차)가 올해나 지난해 것일 때만 소식으로 다룬다. 오래된 일을 방금 일어난 것처럼 말하지 않게 한다.
+  const fresh = (s, y) => !!y && y >= s.year - 1;
   D.EVENTS = [
     { id: 'parents', once: true, when: s => isTr(s) && s.age <= 17, title: '부모님의 반대',
       text: '성적표를 본 부모님이 연습을 그만두고 공부하라고 하신다.',
@@ -386,6 +399,142 @@
           ok: { t: '"받쳐 주는 거 좋네." 한 줄 칭찬을 받았다.', fx: { trust: 4, team: 1 } },
           no: { t: '맞추려다 내 플레이가 사라졌다.', fx: { mental: -.5 } } },
       ] },
+    /* ── 라이벌 이벤트 (4단계) ──
+       rv(s, H): 이 사건의 상대가 될 라이벌을 고른다. 없으면 사건이 나오지 않는다. H 는 엔진이 주는 도우미(이번 달 상대 구단 등).
+       make: 라이벌이 없는 커리어(예전 저장)에서 리그의 맞수를 새로 만든다.
+       문구의 {r} 은 라이벌 아이디, {org} 는 라이벌의 소속 구단으로 바뀐다. 조사가 받침에 따라 달라지지 않게 "{r}의, {r}에게, {r}도, {r} 쪽" 꼴만 쓴다.
+       news: 방금 일어난 일에 대한 반응이라 제때 나오도록 우선한다. max: 한 커리어에서 이 사건이 나오는 최대 횟수. rel: [경쟁심 변화, 존중 변화]. shown(s, r): 사건이 화면에 나올 때 한 번 실행(알림 표시를 지운다). */
+    { id: 'rv_rank', max: 2, rv: s => isTr(s) && act(s).find(r => mate(s, r) && r.squad === 'trainee'), title: '순위표',
+      text: '이번 달 평가전 순위표가 붙었다. 내 이름 가까이에 {r}의 이름이 있다. 동기들은 벌써 둘을 묶어서 부른다.',
+      c: [
+        { label: '{r}에게 같이 리플레이를 보자고 한다', ok: { t: '서로의 실수를 번갈아 짚었다. 생각보다 말이 잘 통했다.', fx: { sense: 1 }, rel: [0, 8] } },
+        { label: '다음 달 목표를 "{r}보다 위"로 잡는다', chk: { base: 45, mech: .5, mental: .5 },
+          ok: { t: '다음 평가전에서 한 칸 위에 이름을 올렸다. {r}의 표정이 굳었다.', fx: { trust: 5, mental: 1 }, rel: [8, 0] },
+          no: { t: '의식할수록 손이 굳었다. 순위는 그대로였다.', fx: { mental: -1 }, rel: [5, 0] } },
+      ] },
+    { id: 'rv_cut', max: 1, rv: s => isTr(s) && s.monthsInOrg >= 3 && act(s).find(r => mate(s, r) && r.squad === 'trainee'), title: '둘 중 하나',
+      text: '중간 심사 마지막 경기에서 {r}도 같은 팀에 배정됐다. 코치가 말했다. "이 팀에서는 한 명만 눈여겨본다."',
+      c: [
+        { label: '{r}의 플레이가 살도록 받쳐 준다', chk: { base: 50, team: .8 },
+          ok: { t: '둘 다 좋은 평가를 받았다. {r} 쪽에서 먼저 주먹을 내밀었다.', fx: { trust: 5, team: 1 }, rel: [0, 10] },
+          no: { t: '{r}만 돋보였다. 고맙다는 말은 들었다.', fx: { trust: -2 }, rel: [2, 6] } },
+        { label: '내가 돋보이는 플레이를 한다', chk: { base: 45, mech: .6, reflex: .4 },
+          ok: { t: '코치의 눈은 내 쪽에 머물렀다. {r}도 말없이 헤드셋을 벗었다.', fx: { trust: 9 }, rel: [10, -5] },
+          no: { t: '욕심이 판을 그르쳤다. {r}의 눈빛이 차갑다.', fx: { trust: -3 }, rel: [6, -6] } },
+      ] },
+    { id: 'rv_night', max: 2, rv: s => !isFirst(s) && act(s).find(r => mate(s, r) && r.squad === s.squad && r.rv >= 25), title: '새벽 연습실',
+      text: '새벽 두 시, 연습실에 불이 켜져 있다. {r}의 자리다. 눈이 마주치자 턱짓을 한다. "한 판 할래?"',
+      c: [
+        { label: '받아들인다 (연습이라 전적에는 남지 않는다)', chk: { base: 45, mech: .6, reflex: .5 },
+          ok: { t: '세 판을 내리 이겼다. {r}의 입에서 "한 판 더"가 나왔다.', fx: { mech: 1, mental: 1, cond: -6 }, rel: [6, 4] },
+          no: { t: '내리 졌다. 분해서 잠이 오지 않았다.', fx: { mech: .5, cond: -8 }, rel: [8, 2] } },
+        { label: '옆자리에 앉아 각자 연습한다', ok: { t: '말은 없었지만 둘 다 해가 뜰 때까지 남았다.', fx: { mech: .5, cond: -5 }, rel: [2, 5] } },
+      ] },
+    { id: 'rv_favor', max: 1, rv: s => !isFirst(s) && act(s).find(r => mate(s, r) && r.squad === s.squad && r.rs >= 30), title: '{r}의 부탁',
+      text: '{r}에게서 메시지가 왔다. "손목이 좀 안 좋아. 내일 평가 경기 순서 좀 바꿔 줄 수 있어? 코치님한테는 말하지 말고."',
+      c: [
+        { label: '순서를 바꿔 준다', ok: { t: '{r}에게 하루를 벌어 줬다. 내 컨디션 조절은 조금 꼬였다.', fx: { cond: -5 }, rel: [-3, 10] } },
+        { label: '코치에게 알린다', ok: { t: '코치는 고맙다고 했다. {r}의 답장은 오지 않았다.', fx: { trust: 4 }, rel: [8, -10] } },
+        { label: '거절하고 스트레칭 영상을 보내 준다', ok: { t: '"…고맙다." 짧은 답장이 왔다.', fx: {}, rel: [0, 4] } },
+      ] },
+    { id: 'rv_ahead', news: true, rv: s => act(s).find(r => fresh(s, r.f.ahead) && RQ[r.squad] > RQ[s.squad]), shown: (s, r) => { r.f.ahead = 0; }, title: '먼저 간 사람',
+      text: (s, r) => r.squad === 'first' ? '{r}의 1군 콜업 소식이 올라왔다. 나는 아직 ' + (s.squad === 'second' ? '2군 숙소' : '연습생 방') + '에 있다.' : '{r}의 2군 콜업이 발표됐다. 같은 날 입단했는데, 방을 먼저 옮긴 것은 저쪽이다.',
+      c: [
+        { label: '축하 메시지를 보낸다', ok: { t: '"금방 올라와. 기다린다." 답장이 왔다.', fx: { mental: 1 }, rel: [0, 8] } },
+        { label: '말없이 연습량을 늘린다', ok: { t: '한 달 동안 연습실 불을 가장 늦게 껐다.', fx: { mech: 1, cond: -8 }, rel: [8, 0] } },
+        { label: '"금방 따라간다"고 보낸다', chk: { base: 50, mental: .8 },
+          ok: { t: '보내고 나니 오히려 마음이 가벼워졌다.', fx: { mental: 2 }, rel: [6, 3] },
+          no: { t: '보내 놓고 며칠을 초조해했다.', fx: { mental: -2 }, rel: [6, 0] } },
+      ] },
+    { id: 'rv_scrim', max: 2, rv: s => s.squad === 'second' && act(s).find(r => !mate(s, r) && r.squad !== 'trainee' && !r.out), title: '스크림 상대',
+      text: '오늘 스크림 상대는 {org}. 상대 로스터에 낯익은 아이디가 있다. {r}.',
+      c: [
+        { label: '전력으로 누른다 (스크림이라 전적에는 남지 않는다)', chk: { base: 45, mech: .5, sense: .5 },
+          ok: { t: '연습 경기였지만 봐주지 않았다. 감독이 고개를 끄덕였다.', fx: { trust: 5 }, rel: [6, 0] },
+          no: { t: '오늘은 {r} 쪽이 한 수 위였다.', fx: { trust: -2 }, rel: [5, 2] } },
+        { label: '끝나고 서로의 플레이를 이야기한다', ok: { t: '소속은 달라도 보는 눈은 비슷했다.', fx: { sense: 1 }, rel: [0, 8] } },
+      ] },
+    { id: 'rv_seat', max: 2, rv: s => s.squad === 'second' && act(s).find(r => mate(s, r) && r.squad === 'second' && r.role === s.role), title: '한 자리',
+      text: '1군에 내 포지션 자리가 하나 난다는 소문이 돈다. 후보는 둘이다. 나, 그리고 {r}.',
+      c: [
+        { label: '스크림 성적으로 증명한다', chk: { base: 42, mech: .6, sense: .4 },
+          ok: { t: '이번 주 스크림 지표는 내가 앞섰다.', fx: { trust: 8 }, rel: [8, 0] },
+          no: { t: '지표는 {r} 쪽이 좋았다.', fx: { trust: -4 }, rel: [8, 0] } },
+        { label: '다른 역할도 맡을 수 있다고 보여 준다', chk: { base: 50, pool: .8 },
+          ok: { t: '감독이 메모를 했다. "쓸모가 많네."', fx: { trust: 6, pool: 1 }, rel: [3, 0] },
+          no: { t: '어설픈 시도는 역효과였다.', fx: { trust: -2 }, rel: [3, 0] } },
+        { label: '{r}에게 "누가 올라가든 축하하자"고 한다', ok: { t: '{r}도 웃었다. "그래도 내가 간다."', fx: { mental: 1 }, rel: [2, 8] } },
+      ] },
+    { id: 'rv_moved', news: true, rv: (s, H) => isFirst(s) && act(s).find(r => fresh(s, r.f.moved) && H.inLeague(r)), shown: (s, r) => { r.f.moved = 0; }, title: '이적 소식',
+      text: '{r}의 {org} 이적이 발표됐다. 이제 같은 리그에서 서로를 상대한다.',
+      c: [
+        { label: '"리그에서 보자"고 보낸다', ok: { t: '"봐주지 않는다." 답이 왔다.', fx: {}, rel: [3, 6] } },
+        { label: '인터뷰에서 "이제는 적"이라고 말한다', ok: { t: '기사 제목이 됐다. 다음 맞대결 표가 빨리 팔렸다고 한다.', fx: { fame: 2 }, rel: [10, -2] } },
+      ] },
+    { id: 'rv_eve', max: 4, rv: (s, H) => H.starter && act(s).find(r => H.facing(r)), title: '맞대결 전날',
+      text: '이번 달 일정에 {org}전이 있다. {r} 상대 공식전이다. 기자가 소감을 묻는다.',
+      c: [
+        { label: '"이번에는 내가 이긴다"', chk: { base: 45, mental: .8 },
+          ok: { t: '말에 힘이 실렸다. 연습실 공기도 달라졌다.', fx: { fame: 2, buff: [.3, 1] }, rel: [10, 0] },
+          no: { t: '말해 놓고 부담이 됐다.', fx: { mental: -1, buff: [-.2, 1] }, rel: [8, 0] } },
+        { label: '"좋은 선수다. 좋은 경기가 될 것"', ok: { t: '{r}도 같은 말을 했다는 기사가 났다.', fx: { mental: 1 }, rel: [0, 8] } },
+        { label: '말을 아끼고 상대 영상을 본다', ok: { t: '{r}의 습관 몇 가지를 적어 뒀다.', fx: { sense: .5, buff: [.15, 1] }, rel: [2, 2] } },
+      ] },
+    { id: 'rv_won', max: 3, news: true, rv: (s, H) => H.last && H.last.win && act(s).find(r => r.id === H.last.id), shown: s => { s.flags.rvLast.used = 1; }, title: '경기 뒤 복도',
+      text: '이긴 경기가 끝나고, 복도에서 {r}에게 붙잡혔다. "다음에는 다를 거다."',
+      c: [
+        { label: '손을 내민다', ok: { t: '{r}도 손을 잡았다. 힘이 꽤 들어가 있었다.', fx: {}, rel: [0, 8] } },
+        { label: '"다음에도 내가 이긴다"', ok: { t: '{r}의 입꼬리가 올라갔다. "두고 보자."', fx: { fame: 1 }, rel: [8, 0] } },
+      ] },
+    { id: 'rv_lost', max: 3, news: true, rv: (s, H) => H.last && !H.last.win && act(s).find(r => r.id === H.last.id), shown: s => { s.flags.rvLast.used = 1; }, title: '진 날 밤',
+      text: '진 경기가 끝났다. 대기실 화면에 {r}의 승리 인터뷰가 나오고 있다.',
+      c: [
+        { label: '그 경기 리플레이를 끝까지 본다', ok: { t: '어디서 졌는지 알았다. 인정할 것은 인정했다.', fx: { sense: 1 }, rel: [2, 5] } },
+        { label: '그날 밤 연습실에 남는다', ok: { t: '새벽까지 손을 풀었다.', fx: { mech: 1, cond: -8 }, rel: [8, 0] } },
+        { label: '{r}에게 "잘하더라"고 보낸다', ok: { t: '"다음에 또 붙자." 답이 왔다.', fx: { mental: 1 }, rel: [0, 8] } },
+      ] },
+    { id: 'rv_slump', max: 2, news: true, rv: s => act(s).find(r => r.f.slump && r.slump), shown: (s, r) => { r.f.slump = 0; }, title: '{r}의 부진',
+      text: '{r}에 대한 기사가 좋지 않다. 주전에서 밀렸다는 이야기도 들린다.',
+      c: [
+        { label: '연락해서 밥을 산다', ok: { t: '경기 이야기는 한마디도 하지 않았다. 헤어질 때 {r}에게서 "고맙다"는 말을 들었다.', fx: { mental: 1, cond: -2 }, rel: [-2, 10] } },
+        { label: '지켜만 본다', ok: { t: '알아서 올라올 선수다.', fx: {}, rel: [0, 1] } },
+      ] },
+    { id: 'rv_back', max: 2, news: true, rv: s => act(s).find(r => fresh(s, r.f.back) && !r.slump && !r.out), shown: (s, r) => { r.f.back = 0; }, title: '돌아온 {r}',
+      text: '{r}의 복귀전 하이라이트가 돌고 있다. 손은 여전했다.',
+      c: [
+        { label: '"늦었다"고 보낸다', ok: { t: '"기다렸냐?" 바로 답이 왔다.', fx: {}, rel: [5, 5] } },
+        { label: '다음 맞대결을 준비한다', ok: { t: '{r}의 복귀전을 두 번 돌려 봤다.', fx: { sense: .5 }, rel: [5, 0] } },
+      ] },
+    { id: 'rv_retire', news: true, rv: s => (s.rivals || []).find(r => r.retired && fresh(s, r.f.retired)), shown: (s, r) => { r.f.retired = 0; }, title: '{r}의 은퇴',
+      text: (s, r) => !r.debut ? '{r}에게서 긴 메시지가 왔다. 선수 생활을 그만둔다고 한다. 1군 무대는 끝내 밟지 못했다.'
+        : r.origin === 'trainee' ? '{r}의 은퇴 발표가 났다. 같은 날 연습실 문을 열었던 사람이 먼저 헤드셋을 내려놓는다.' : '{r}의 은퇴 발표가 났다. 오랫동안 대진표에서 가장 먼저 찾던 이름이다.',
+      c: [
+        { label: '직접 찾아간다', ok: { t: '둘이서 오래 걸었다. "네 경기는 계속 볼 거다."', fx: { mental: 2, cond: -3 }, rel: [0, 15] } },
+        { label: '긴 답장을 쓴다', ok: { t: '쓰다 보니 지난 이야기가 길어졌다.', fx: { mental: 1 }, rel: [0, 8] } },
+        { label: '마음속으로만 보낸다', ok: { t: '연습실로 돌아갔다. 한동안 손이 무거웠다.', fx: { mental: -1 }, rel: [0, 0] } },
+      ] },
+    { id: 'rv_old', rv: s => s.age >= 26 && isFirst(s) && act(s).find(r => r.squad === 'first' && r.w + r.l >= 6 && !r.f.old), shown: (s, r) => { r.f.old = 1; }, title: '가장 기억에 남는 상대',
+      text: '시즌 특집 인터뷰. "선수 생활에서 가장 기억에 남는 상대는 누구입니까?" {r}의 얼굴이 먼저 떠오른다.',
+      c: [
+        { label: '{r}의 이름을 댄다', ok: { t: '{r}도 같은 질문에 내 이름을 댔다고 한다.', fx: { fame: 2 }, rel: [0, 12] } },
+        { label: '"특별히 없습니다"', ok: { t: '기사를 본 {r}에게서 메시지가 왔다. "서운한데."', fx: {}, rel: [5, -6] } },
+      ] },
+    { id: 'rv_mate', max: 2, rv: s => isFirst(s) && act(s).find(r => mate(s, r) && r.squad === 'first'), title: '같은 유니폼',
+      text: (s, r) => r.origin === 'trainee' ? '{r}도 같은 유니폼을 입고 있다. 연습생 방에서 순위를 다투던 둘이 이제 한 팀의 1군이다.' : '{r}도 같은 유니폼을 입게 됐다. 상대 팀에서만 보던 아이디가 이제 내 옆자리에 있다.',
+      c: [
+        { label: '둘만의 연계를 연습한다', chk: { base: 55, team: .7 },
+          ok: { t: '눈빛만으로 통하는 연계가 하나 생겼다.', fx: { team: 1.5, trust: 3 }, rel: [0, 8] },
+          no: { t: '서로 주도하려다 엇박자가 났다.', fx: {}, rel: [4, 0] } },
+        { label: '팀의 중심이 나라는 것을 보여 준다', chk: { base: 42, mech: .6, mental: .4 },
+          ok: { t: '콜이 내 쪽으로 모이기 시작했다.', fx: { trust: 6 }, rel: [8, -3] },
+          no: { t: '콜은 {r}에게 더 모였다.', fx: { trust: -3 }, rel: [8, 0] } },
+      ] },
+    { id: 'rv_new', make: true, once: true, when: s => (s.rivals || []).length === 0 && isFirst(s) && s.car.g >= 10 && !!s.lg && s.lg.tier === 'first', title: '눈에 밟히는 이름',
+      text: '{org} 경기를 볼 때마다 한 선수에게 눈이 간다. 나와 동갑이고 같은 포지션이다. 아이디는 {r}.',
+      c: [
+        { label: '그 선수의 경기를 찾아본다', ok: { t: '볼수록 닮은 데가 있다. 저쪽도 내 경기를 본다는 이야기를 들었다.', fx: { sense: .5 }, rel: [5, 8] } },
+        { label: '신경 쓰지 않기로 한다', ok: { t: '그래도 대진표에서 그 팀부터 찾게 된다.', fx: {}, rel: [5, 0] } },
+      ] },
   ];
 
   /* 승부처: 플레이오프·국제전의 중요한 세트에서 나오는 경기 중 선택.
@@ -485,7 +634,7 @@
   D.SYL_B = ['ro', 'ven', 'mi', 'zen', 'ka', 'lo', 'rin', 'dus', 'pa', 'nyx', 'bit', 'han', 'so', 'ty', 'gon', 'wi'];
 
   // 은퇴 점수 → 상위 % (자동 시뮬레이션 커리어 분포 기준. test/sim.js 로 갱신)
-  D.PCT = [[98, 1], [91, 3], [72, 8], [55, 16], [42, 28], [34, 42], [28, 58], [22, 74], [12, 90]];
+  D.PCT = [[99, 1], [94, 3], [75, 8], [55, 16], [43, 28], [34, 42], [28, 58], [22, 74], [11, 90]];
 
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;

@@ -76,6 +76,7 @@
     const mi = G.month(), c = S.contract;
     return `<div class="now"><div><p class="eyebrow">${S.year}년차 · ${mi.m}월</p><h2>${mi.label}</h2></div><p>${hint(S, mi)}</p></div>
       <div class="kv"><div><span>자금</span><b>${money(S.money)}</b></div><div><span>연봉</span><b>${money(c.salary)}</b></div><div><span>계약</span><b>${c.years}년 남음</b></div></div>
+      ${(() => { const fx = G.rivalFixtures(); return fx.length ? `<p class="rvnote">이번 달 라이벌전 · ${fx.map(f => `${esc(f.nick)}의 ${f.org} (통산 ${f.w}승 ${f.l}패)`).join(', ')}</p>` : ''; })()}
       ${goalCard()}
       <div><p class="sec">이번 달 계획</p>${D.PLANS.map(p => `<button class="plan" data-act="plan" data-id="${p.id}" aria-pressed="${S.plan === p.id}"><i></i><div><b>${p.name}</b><span>${p.desc}</span></div></button>`).join('')}</div>
       <div><p class="sec">소식</p><ul class="log">${S.log.slice(0, 12).map(l => `<li class="${l.tone}"><time>${l.y}년차 ${l.m}월</time><span>${esc(l.msg)}</span></li>`).join('') || '<li class="dim">아직 소식이 없다.</li>'}</ul></div>`;
@@ -97,8 +98,25 @@
     const perks = D.CARDS.filter(c => c.perk && S.perks.includes(c.perk));
     return `<div><p class="sec">능력치 <span class="chip">오른쪽 글자는 잠재력</span></p>
       ${D.STATS.map(s => `<div class="stat"><span class="nm">${s.name}</span><div class="bar"><i style="width:${Math.floor(S.stats[s.id])}%"></i></div><span class="v">${Math.floor(S.stats[s.id])}</span><span class="pot ${G.pot(s.id)}">${G.pot(s.id)}</span><small>${s.tip} · 포지션 비중 ${Math.round(G.role().w[s.id] * 100)}%</small></div>`).join('')}</div>
+      ${rivalCards()}
       <div><p class="sec">특성</p>${perks.length ? `<div class="stack">${perks.map(c => `<div class="card"><b>${c.name}</b><br><span class="dim">${c.desc}</span></div>`).join('')}</div>` : '<p class="dim">시즌이 끝날 때마다 성장 카드를 한 장 고른다.</p>'}</div>
       <div class="card"><b>${D.TRAITS.find(t => t.id === S.trait).name}</b><br><span class="dim">${D.TRAITS.find(t => t.id === S.trait).desc}</span></div>`;
+  }
+  const relBar = (name, v) => `<div class="meter"><span>${name}<b>${v}</b></span><div class="bar"><i style="width:${v}%"></i></div></div>`;
+  function rivalCard(r, extra) {
+    return `<div class="rival ${r.retired ? 'gone' : ''}" style="--team:${r.color}">
+      <div class="rhead"><canvas class="av" data-seed="${esc(r.nick)}" data-color="${r.color}"></canvas>
+        <div class="grow"><b>${esc(r.nick)}</b><span>${r.role} · ${r.style} · ${r.age}세</span><span>${r.org} ${r.squad} · ${r.status}</span></div>
+        <div class="rovr"><b>${r.ovr}</b><span>OVR</span></div></div>
+      <div class="rmid"><div class="h2h"><span>상대 전적</span><b>${r.w}승 ${r.l}패</b></div>${relBar('경쟁심', r.rv)}${relBar('존중', r.rs)}</div>
+      <p class="rnews"><span class="chip">${r.label}</span>${r.titles ? `<span class="chip gold">우승 ${r.titles}회</span>` : ''} ${esc(r.news)}</p>
+      ${extra || ''}
+      ${r.hist.length ? `<details><summary>함께한 기록</summary><ul class="log">${r.hist.map(h => `<li><time>${h.y}년차 ${h.m}월</time><span>${esc(h.t)}</span></li>`).join('')}</ul></details>` : ''}</div>`;
+  }
+  function rivalCards() {
+    const rs = G.rivals();
+    return `<div><p class="sec">라이벌</p>${rs.length ? rs.map(r => rivalCard(r)).join('') : '<p class="dim">아직 의식하는 상대가 없다. 1군에서 뛰다 보면 눈에 밟히는 이름이 생긴다.</p>'}
+      ${rs.length ? '<p class="fine">상대 전적은 내가 출전한 공식전에서 라이벌이 상대 팀 로스터에 있을 때만 쌓인다. 스크림과 연습은 들어가지 않는다.</p>' : ''}</div>`;
   }
   function tLeague(S) {
     const t = G.table(), y = S.yr, r = G.region();
@@ -129,7 +147,7 @@
   /* ---- 장면 ---- */
   const okBtn = t => `<button class="btn" data-act="ok">${t || '확인'}</button>`;
   const pill = p => p == null ? '<span class="pill sure">확정</span>' : `<span class="pill ${p >= 65 ? 'hi' : p < 40 ? 'lo' : ''}">${p}%</span>`;
-  const matchList = ms => ms.length ? `<ul class="matches">${ms.map(m => `<li><span class="opp">${m.label ? `<small>${m.label}</small>` : ''}vs ${m.opp}</span><span class="res ${m.win ? 'W' : 'L'}">${m.score ? m.score + ' ' : ''}${m.win ? '승' : '패'}</span>${m.plays ? `<span class="rt">${f1(m.r)}</span><span class="kda">${m.k}/${m.d}/${m.a}${m.mvp ? '<span class="mvp">MVP</span>' : ''}</span>` : '<span class="rt dim">-</span><span class="kda">벤치</span>'}${(m.moms || []).map(o => `<small class="mom ${o.ok ? 'ok' : 'no'}">승부처 · ${o.title} — ${o.label} · ${o.ok ? '성공' : '실패'}${o.auto ? ' (자동)' : ''}</small>`).join('')}</li>`).join('')}</ul>` : '';
+  const matchList = ms => ms.length ? `<ul class="matches">${ms.map(m => `<li><span class="opp">${m.label ? `<small>${m.label}</small>` : ''}vs ${m.opp}</span><span class="res ${m.win ? 'W' : 'L'}">${m.score ? m.score + ' ' : ''}${m.win ? '승' : '패'}</span>${m.plays ? `<span class="rt">${f1(m.r)}</span><span class="kda">${m.k}/${m.d}/${m.a}${m.mvp ? '<span class="mvp">MVP</span>' : ''}</span>` : '<span class="rt dim">-</span><span class="kda">벤치</span>'}${(m.rv || []).map(v => `<small class="mom rvl">라이벌전 · ${esc(v.nick)} 평점 ${f1(v.r)}</small>`).join('')}${(m.moms || []).map(o => `<small class="mom ${o.ok ? 'ok' : 'no'}">승부처 · ${o.title} — ${o.label} · ${o.ok ? '성공' : '실패'}${o.auto ? ' (자동)' : ''}</small>`).join('')}</li>`).join('')}</ul>` : '';
   const board = (sc, x, y) => `<div class="board"><div class="side"><span>${sc.me}</span><b>${x}</b></div><i>:</i><div class="side opp"><b>${y}</b><span>${sc.opp}</span></div></div>`;
   const SIT = { last: '마지막 세트', match: '매치 포인트', elim: '탈락 위기' };
   function retireBtn() { return `<button class="btn line" data-act="retire">${U.confirm === 'retire' ? '한 번 더 누르면 은퇴한다. 되돌릴 수 없다' : '은퇴한다'}</button>`; }
@@ -147,7 +165,7 @@
       case 'moment':
         cls = 'clutch';
         h = `<p class="eyebrow">${sc.tour} · ${sc.label} ${sc.set}세트 · ${SIT[sc.sit]}</p>${board(sc, sc.x, sc.y)}
-          <h2>${sc.title}</h2><p>${sc.text}</p><p class="fine">지금 이 세트를 이길 확률은 ${sc.base}%. 선택이 성공하면 오르고 실패하면 내려간다.</p>
+          <h2>${sc.title}</h2><p>${sc.text}</p>${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. 이 시리즈 결과가 상대 전적에 남는다.</p>` : ''}<p class="fine">지금 이 세트를 이길 확률은 ${sc.base}%. 선택이 성공하면 오르고 실패하면 내려간다.</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${i}"><div class="grow"><b>${c.label}</b><small>${c.bd.map(b => `${b[0]} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${b[1]}`).join(' · ')}</small><small class="swing">성공하면 세트 승률 <em class="up">${c.up}%</em> · 실패하면 <em class="down">${c.down}%</em></small></div>${pill(c.p)}</button>`).join('')}
           <button class="btn line" data-act="auto">감독 판단에 맡긴다 (자동 선택)</button>`; break;
       case 'mresult':
@@ -163,6 +181,7 @@
       case 'month':
         h = `<p class="eyebrow">${sc.title} · ${sc.plan}</p><h2>${sc.sub}</h2>${matchList(sc.matches)}
           ${sc.eval ? `<div class="kv"><div><span>월말 평가전 평점</span><b>${f1(sc.eval.r)}</b></div><div><span>연습생 순위</span><b>12명 중 ${sc.eval.rank}위</b></div><div><span>코치 평가</span><b>${sc.eval.d == null ? '-' : (sc.eval.d > 0 ? '+' : '') + sc.eval.d}</b></div></div>` : ''}
+          ${sc.eval && sc.eval.rivals ? `<p class="fine">동기 순위 · ${sc.eval.rivals.map(v => `${esc(v.nick)} ${v.rank}위 (평점 ${f1(v.r)})`).join(' · ')}</p>` : ''}
           ${sc.notes.map(n => `<p>${n}</p>`).join('')}
           <div class="chips">${sc.growth.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]}</span>`).join('')}<span class="chip">OVR ${sc.ovr}</span><span class="chip">월급 +${money(sc.salary)}</span></div>${okBtn()}`; break;
       case 'info':
@@ -207,6 +226,7 @@
         <div><span>최고 OVR</span><b>${r.peak}</b></div><div><span>경기 MVP</span><b>${r.mvp}</b></div><div><span>통산 수입</span><b>${money(r.earn)}</b></div></div>
       <div><p class="sec">트로피·수상</p>${r.titles.length + r.awards.length ? `<div class="chips">${r.titles.map(t => `<span class="chip gold">${t.y}년차 ${t.name}</span>`).join('')}${r.awards.map(a => `<span class="chip">${a.y}년차 ${a.name}</span>`).join('')}</div>` : '<p class="dim">트로피 없이 커리어를 마쳤다.</p>'}</div>
       <div><p class="sec">거쳐 간 팀</p><p>${r.orgs.join(' → ')}</p></div>
+      ${r.rivals && r.rivals.length ? `<div><p class="sec">라이벌</p>${r.rivals.map(v => rivalCard(v, `<p class="epi">${esc(v.epilogue)}</p>`)).join('')}</div>` : ''}
       <button class="btn" data-act="again">새 커리어</button><button class="btn line" data-act="hall">명예의 전당</button></section>`;
   }
 

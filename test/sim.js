@@ -9,6 +9,7 @@
 //   4) 같은 이벤트가 짧은 기간에 몰려 나오지 않는지
 //   5) test/fixtures 의 예전 저장(1단계, 2단계)을 열어 은퇴까지 진행되는지, 손상된 저장이 복구되는지
 //   6) index.html, sw.js, 엔진의 버전 표기가 서로 같은지
+//   7) 라이벌: 고유 ID 유지, 능력치·구단·관계 범위, 실제 경기 결과와 맞대결 전적 일치, 불러오기 반복 시 전적 불변, 손상된 라이벌 데이터 복구
 // 집계(밸런스 지표. 목표 범위는 js/data.js 의 D.BAL.target, 없으면 표시만 한다)
 const fs = require('fs'), path = require('path');
 const store = {};
@@ -37,6 +38,17 @@ function invariants(tag) {
   if (!(s.age >= 16 && s.age <= 36)) fail(`${tag} 나이 ${s.age}`);
   if (s.org && !G.D.ORG[s.org]) fail(`${tag} 없는 구단 ${s.org}`);
   if (s.contract.years < 0) fail(`${tag} 계약 기간 ${s.contract.years}`);
+  const seen = new Set();
+  for (const r of s.rivals) {
+    if (typeof r.id !== 'string' || seen.has(r.id)) fail(`${tag} 라이벌 ID 중복 또는 이상 ${r.id}`); seen.add(r.id);
+    if (!(r.ovr >= 20 && r.ovr <= 99) || !(r.pot >= 20 && r.pot <= 99)) fail(`${tag} 라이벌 능력치 ${r.nick} ${r.ovr}/${r.pot}`);
+    if (!G.D.ORG[r.org]) fail(`${tag} 라이벌이 없는 구단을 가리킴 ${r.org}`);
+    if (!['trainee', 'second', 'first'].includes(r.squad)) fail(`${tag} 라이벌 스쿼드 ${r.squad}`);
+    if (!(r.rv >= 0 && r.rv <= 100 && r.rs >= 0 && r.rs <= 100)) fail(`${tag} 라이벌 관계 범위 ${r.rv}/${r.rs}`);
+    if (!Number.isInteger(r.w) || !Number.isInteger(r.l) || r.w < 0 || r.l < 0) fail(`${tag} 라이벌 전적 ${r.w}/${r.l}`);
+    if (new Set(r.mids).size !== r.mids.length) fail(`${tag} 같은 경기가 전적에 두 번 기록됨`);
+    if (!(r.age >= 15 && r.age <= 40) || !r.nick) fail(`${tag} 라이벌 나이·이름 이상`);
+  }
   const sc = G.scene(); if (sc && !SCENES.includes(sc.type)) fail(`${tag} 알 수 없는 장면 ${sc.type}`);
   if (!sc && !s.over && (s.pendingSim || s.pendingNewYear || s.sim)) fail(`${tag} 진행이 멈춘 상태`);
   if (sc && sc.type === 'moment') {
@@ -58,10 +70,11 @@ function playMoment(tag) {
   const ch = sc.choices[r.i], b = MO.byChoice[r.i]; MO.n++; b.n++; b.p += ch.p; if (r.ok) b.ok++;
   const st = r.ok ? MO.okSet : MO.noSet; st.n++; st.exp += r.ok ? ch.up : ch.down; if (r.setWin) st.w++;
   if (r.x + r.y !== sc.x + sc.y + 1) fail(`${tag} 승부처 뒤 세트가 한 번만 진행되지 않음`);
-  const g0 = G.state().yr.g, money = G.state().money, snap2 = store[KEY];
+  const g0 = G.state().yr.g, money = G.state().money, snap2 = store[KEY], h0 = JSON.stringify(G.state().rivals.map(v => [v.id, v.w, v.l]));
   for (let k = 0; k < 2; k++) if (G.load() !== 'ok') fail(`${tag} 결과 화면 저장 불러오기 실패`);
   const c = G.state().sim.tour.cur;
   if (store[KEY] !== snap2 || c.x !== r.x || c.y !== r.y || G.state().yr.g !== g0 || G.state().money !== money) fail(`${tag} 반복 불러오기로 결과가 달라짐`);
+  if (JSON.stringify(G.state().rivals.map(v => [v.id, v.w, v.l])) !== h0) fail(`${tag} 반복 불러오기로 라이벌 전적이 달라짐`);
   MO.resume++;
 }
 
@@ -74,7 +87,8 @@ function playEvent(car) {
   EV.n++; EV.idx[b]++; EV.ids[sc.ev] = (EV.ids[sc.ev] || 0) + 1;
   car.evTurns.push([car.turn, sc.ev]);
   if (car.evTurns.filter(e => e[1] === sc.ev && car.turn - e[0] < 12).length > 2) fail(`#${car.i} 같은 이벤트 ${sc.ev} 가 12번 진행 안에 3번 나옴`);
-  if (car.turn <= 20) { F.events++; car.f20.add(sc.ev); F.idx[b]++; if (ch.p == null) F.sure++; else { F.chk++; F.pSum += ch.p; } }
+  if (sc.ev.startsWith('rv_')) { car.rvEv++; if (!sc.rid) fail(`#${car.i} 라이벌 이벤트에 상대가 없음`); }
+  if (car.turn <= 20 && car.fresh) { F.events++; if (sc.ev.startsWith('rv_')) F.rv = (F.rv || 0) + 1; car.f20.add(sc.ev); F.idx[b]++; if (ch.p == null) F.sure++; else { F.chk++; F.pSum += ch.p; } }
   G.resolve(b);
   const r = G.scene();
   if (ch.p == null) EV.sure++; else { EV.chk++; EV.pSum += ch.p; if (r.ok) EV.ok++; }
@@ -87,9 +101,12 @@ const F = { n: 0, events: 0, distinct: 0, sure: 0, chk: 0, pSum: 0, idx: [0, 0, 
 const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, titles: 0, big: [], worlds: 0, poy: 0, awards: 0, inj: 0, moves: 0, peak: [], g: 0, roundTrips: 0, tryouts: 0, via: {}, debutDist: {} };
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
+const FX = { n: 0, withRival: 0 };   // 라이벌이 없던 예전 저장에서 이어 간 커리어
+// 라이벌 집계
+const RV = { n: 0, second: 0, first: 0, moved: 0, retired: 0, full: 0, noDebut: 0, games: 0, met: 0, metCareers: 0, finals: 0, finalCareers: 0, h2hChecked: 0, h2hLines: 0, rvSum: 0, rsSum: 0, labels: {}, ev: 0, evCareers: 0, evMax: 0, late: 0, age: [], peak: [], titles: 0, sameOrgEnd: 0 };
 
 function runCareer(i, tag, onEnd) {
-  const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false };
+  const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false, ids: {}, exp: {}, rvEv: 0, finals: 0, fresh: !!onEnd };
   let guard = 0, lastYear = 0;
   while (!G.state().over) {
     const sc = G.scene();
@@ -97,16 +114,25 @@ function runCareer(i, tag, onEnd) {
     else if (sc.type === 'moment') playMoment(`${tag} ${guard}`);
     else if (sc.type === 'event') playEvent(car);
     else G.autoStep();
-    if (sc && car.turn <= 20) F.scenes++;
+    if (sc && car.turn <= 20 && onEnd) F.scenes++;
     if (++guard > 20000) fail(`${tag} 끝나지 않는 커리어: ${JSON.stringify(G.scene())}`);
     invariants(`${tag} ${guard}`);
     const s = G.state(), now = G.scene();
-    if (!car.counted20 && car.turn === 20 && !now) {
+    for (const r of s.rivals) { if (car.ids[r.id] && car.ids[r.id] !== r.nick) fail(`${tag} 라이벌 ${r.id} 의 이름이 바뀜`); car.ids[r.id] = r.nick; }
+    if (Object.keys(car.ids).some(id => !s.rivals.find(r => r.id === id))) fail(`${tag} 라이벌이 사라짐`);
+    if (onEnd && !car.counted20 && car.turn === 20 && !now) {
       car.counted20 = true; F.n++; F.distinct += car.f20.size; F.squad[s.squad]++; F.ovr += G.ovr();
     }
     if (now && now.type === 'month' && !car.seen.has(now.title)) {
       car.seen.add(now.title);
       for (const m of now.matches) {
+        for (const v of (m.rv || [])) {
+          // 보고서에 라이벌전으로 찍힌 경기: 내가 출전했고, 상대 구단이 그 라이벌의 소속이며, 같은 구단이 아니어야 한다.
+          const r = s.rivals.find(x => x.id === v.id);
+          if (!r || !m.plays || G.D.ORG[r.org].name !== m.opp || r.org === s.org) fail(`${tag} 맞대결이 아닌 경기가 라이벌전으로 기록됨`);
+          const e = car.exp[v.id] = car.exp[v.id] || { w: 0, l: 0 }; if (m.win) e.w++; else e.l++;
+          RV.h2hLines++; if (m.label === '결승') car.finals++;
+        }
         if (m.label) { MO.series++; const k = (m.moms || []).length; if (k) MO.seriesWithMom++; if (m.label === '결승' && m.plays) MO.perFinal[k]++; if (k > (m.label === '결승' ? 3 : 1)) fail(`${tag} 승부처 횟수 초과`); }
         else if (m.plays) { LG.n++; if (m.win) LG.w++; LG.rs += m.r; LG.b[m.r < 5 ? 0 : m.r < 6 ? 1 : m.r < 7 ? 2 : m.r < 8 ? 3 : 4]++; }
       }
@@ -120,7 +146,26 @@ function runCareer(i, tag, onEnd) {
     }
   }
   const r = G.scene(); if (r.type !== 'retire') fail(`${tag} 은퇴 장면이 아님`);
-  if (onEnd) onEnd(r, G.state().car);
+  const st = G.state();
+  if ((r.rivals || []).length !== st.rivals.length) fail(`${tag} 은퇴 화면의 라이벌 수가 다름`);
+  if (!onEnd && /^stage[123]-/.test(String(tag))) { FX.n++; if (st.rivals.length) FX.withRival++; if (st.rivals.some(v => v.origin === 'trainee' || v.hist.some(h => /연습생 동기/.test(h.t)))) fail(`${tag} 예전 저장에 연습생 시절 라이벌 기록이 지어내짐`); }
+  if (onEnd) {
+    // 실제 경기 결과로 따로 센 전적과 저장된 전적이 같아야 한다(빠른 진행은 보고서가 생략돼 제외).
+    if (!st.opt.fast) { for (const v of st.rivals) { const e = car.exp[v.id] || { w: 0, l: 0 }; if (e.w !== v.w || e.l !== v.l) fail(`${tag} 라이벌 전적 불일치 ${v.nick}: 경기 기록 ${e.w}승 ${e.l}패, 저장 ${v.w}승 ${v.l}패`); } RV.h2hChecked++; }
+    let met = 0;
+    for (const v of st.rivals) {
+      RV.n++; const hs = v.hist.map(h => h.t).join('|');
+      const sec = v.squad !== 'trainee' || /2군에 콜업/.test(hs), fst = !!v.debut;
+      if (sec) RV.second++; if (fst) RV.first++; else RV.noDebut++; if (v.moves) RV.moved++; if (v.retired) RV.retired++;
+      if (sec && fst && v.moves && v.retired) RV.full++;
+      if (v.origin !== 'trainee') RV.late++;
+      RV.games += v.w + v.l; if (v.w + v.l) met++; RV.rvSum += v.rv; RV.rsSum += v.rs; RV.titles += v.titles; RV.peak.push(v.peak); if (v.retired) RV.age.push(v.retired.age);
+      const lab = r.rivals.find(x => x.id === v.id).label; RV.labels[lab] = (RV.labels[lab] || 0) + 1;
+    }
+    RV.met += met; if (met) RV.metCareers++; RV.finals += car.finals; if (car.finals) RV.finalCareers++;
+    RV.ev += car.rvEv; if (car.rvEv) RV.evCareers++; RV.evMax = Math.max(RV.evMax, car.rvEv);
+    onEnd(r, st.car);
+  }
 }
 
 for (let i = 0; i < N; i++) {
@@ -156,7 +201,7 @@ for (const f of fs.readdirSync(fx).filter(n => n.endsWith('.json')).sort()) {
 // 새 필드가 없는 저장
 G.newGame({ nick: 'Old', region: 'kr', role: 'core', trait: 'brain' });
 for (let i = 0; i < 60; i++) G.autoStep();
-const old = JSON.parse(store[KEY]); for (const k of ['inj', 'moves', 'debut', 'tryouts']) delete old.car[k]; for (const k of ['opt', 'used', 'flags', 'sim', 'recentMom', 'stat', 'grow']) delete old[k];
+const old = JSON.parse(store[KEY]); for (const k of ['inj', 'moves', 'debut', 'tryouts']) delete old.car[k]; for (const k of ['opt', 'used', 'flags', 'sim', 'recentMom', 'stat', 'grow', 'rivals', 'rivalSeq', 'evn']) delete old[k];
 store[KEY] = JSON.stringify(old);
 if (G.load() !== 'ok') fail('새 필드가 없는 저장을 열지 못함');
 runCareer(-1, '예전 저장');
@@ -170,6 +215,44 @@ if (G.state().nick !== 'Bad') fail('다른 커리어가 복구됨');
 runCareer(-1, '복구 저장');
 store[KEY] = '{{{'; delete store[BAK];
 if (G.load() !== '' || G.hasSave()) fail('열 수 없는 저장을 정상으로 판단함');
+
+/* ---- 라이벌 데이터가 없거나 손상된 저장 ---- */
+function midCareer(n) { G.newGame({ nick: 'Rv', region: 'kr', role: 'core', trait: 'genius' }); for (let i = 0; i < n; i++) { if (G.state().over) return midCareer(n); G.autoStep(); } while (G.scene() && !G.state().over) G.autoStep(); }
+const damage = [
+  d => { delete d.rivals; delete d.rivalSeq; },
+  d => { d.rivals = 'broken'; },
+  d => { d.rivals = [null, 7, { id: 'r1' }, { id: 'r1', nick: 'Dup' }, { id: 'r9', nick: 'Odd', org: 'nowhere', ovr: NaN, squad: 'x', rv: 999, w: -3, hist: 'no', f: null, retired: 'yes' }]; },
+  d => { for (const r of d.rivals) { delete r.mids; delete r.hist; delete r.f; r.pot = 5; r.age = null; } },
+];
+let damaged = 0;
+for (const fn of damage) for (let k = 0; k < 5; k++) {
+  midCareer(120 + k * 60); if (G.state().over) continue;
+  const d = JSON.parse(store[KEY]); fn(d); store[KEY] = JSON.stringify(d); delete store[BAK];
+  if (G.load() !== 'ok') fail('라이벌 데이터가 손상된 저장을 열지 못함');
+  invariants('손상된 라이벌'); runCareer(-1, '손상된 라이벌'); damaged++;
+}
+/* ---- 맞대결 기록 규칙: 상대 구단에 있을 때만, 내가 출전한 경기만, 같은 구단이면 기록하지 않는다 ---- */
+let unit = 0;
+for (let k = 0; k < 40 && unit < 12; k++) {
+  midCareer(150 + k * 13); const s = G.state();
+  const mi = G.month();
+  if (s.over || G.scene() || !s.lg || mi.type !== 'league' || mi.playoff || s.injury || s.rivals.length < 2) continue;
+  const opps = []; for (let r = mi.rounds[0]; r < mi.rounds[1]; r++) for (const [a, b] of s.lg.rounds[r]) { if (a === s.org) opps.push(b); if (b === s.org) opps.push(a); }
+  const [ra, rb] = s.rivals; const target = opps[0];
+  Object.assign(ra, { org: target, squad: s.lg.tier, out: 0, retired: null }); Object.assign(rb, { org: s.org, squad: s.lg.tier, out: 0, retired: null });
+  const a0 = ra.w + ra.l, b0 = rb.w + rb.l; s.opt.fast = false; s.cond = 80;
+  G.save(); G.next(); while (G.scene() && G.scene().type !== 'month') { const t = G.scene().type; if (t === 'event') G.resolve(G.scene().choices.findIndex(c => !c.disabled)); else G.autoStep(); }
+  const rep = G.scene(); if (!rep) continue;
+  const name = G.D.ORG[target].name, vs = rep.matches.filter(m => m.opp === name && !m.label), played = vs.filter(m => m.plays).length;
+  const s2 = G.state(), A2 = s2.rivals.find(r => r.id === ra.id), B2 = s2.rivals.find(r => r.id === rb.id);
+  if (A2.w + A2.l - a0 !== played) fail(`맞대결 기록 수 불일치: 그 구단과 내가 뛴 경기 ${played}, 전적 증가 ${A2.w + A2.l - a0}`);
+  if (vs.some(m => m.plays !== !!(m.rv && m.rv.some(v => v.id === ra.id)))) fail('출전하지 않은 경기가 기록되거나 출전한 경기가 빠짐');
+  if (rep.matches.some(m => m.opp !== name && (m.rv || []).some(v => v.id === ra.id))) fail('다른 구단과의 경기가 라이벌전으로 기록됨');
+  if (B2.w + B2.l !== b0) fail('같은 구단 라이벌에게 맞대결 전적이 기록됨');
+  for (let j = 0; j < 3; j++) { if (G.load() !== 'ok') fail('불러오기 실패'); const A3 = G.state().rivals.find(r => r.id === ra.id); if (A3.w !== A2.w || A3.l !== A2.l) fail('결과 화면을 다시 불러오자 전적이 달라짐'); }
+  unit++;
+}
+if (unit < 6) fail(`맞대결 기록 규칙 검사를 충분히 하지 못함(${unit}회)`);
 
 /* ---- 버전 표기 일치 ---- */
 const root = path.join(__dirname, '..'), html = fs.readFileSync(path.join(root, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
@@ -202,8 +285,17 @@ console.log(`최고 OVR 평균 ${f(avg(A.peak))} · 표준편차 ${f(sd(A.peak))
 console.log('등급 ' + ['S+', 'S', 'A', 'B', 'C', 'D', 'F'].map(g => `${g}:${pc(A.grades[g] || 0)}`).join(' '));
 console.log('은퇴 사유 ' + Object.keys(endWhy).map(k => `"${k}" ${pc(endWhy[k])}`).join(' | '));
 console.log('나이별 평균 OVR ' + Object.keys(ageOvr).map(a => a + ':' + f(avg(ageOvr[a]), 0)).join(' '));
+console.log('— 라이벌 —');
+const rp = v => (v / RV.n * 100).toFixed(1) + '%';
+console.log(`라이벌 ${RV.n}명(커리어당 ${f(RV.n / N, 2)}) | 2군 도달 ${rp(RV.second)} · 1군 데뷔 ${rp(RV.first)} · 이적 경험 ${rp(RV.moved)} · 내 은퇴 전에 은퇴 ${rp(RV.retired)} · 연습생→2군→1군→이적→은퇴를 모두 거침 ${rp(RV.full)} | 나중에 생긴 맞수 ${RV.late}명`);
+console.log(`라이벌 최고 OVR 평균 ${f(avg(RV.peak))} · 은퇴 나이 평균 ${f(avg(RV.age))}세 · 우승(1인당) ${f(RV.titles / RV.n, 2)}`);
+console.log(`공식전에서 라이벌을 만난 커리어 ${pc(RV.metCareers)} | 맞대결(커리어당) ${f(RV.games / N, 1)}경기 | 결승에서 만난 커리어 ${pc(RV.finalCareers)} (결승 맞대결 ${RV.finals}회)`);
+console.log(`라이벌이 없던 예전 저장 ${FX.n}회 가운데 ${FX.withRival}회에서 리그의 맞수가 새로 생김(연습생 시절 기록은 만들지 않음)`);
+console.log(`전적 대조: 보고서의 라이벌전 ${RV.h2hLines}경기를 따로 세어 저장된 전적과 비교, ${RV.h2hChecked}개 커리어 모두 일치 | 규칙 단위 검사 ${unit}회 | 손상된 라이벌 데이터 ${damaged}회 복구 후 완주`);
+console.log(`라이벌 이벤트 커리어당 ${f(RV.ev / N, 2)}회(최대 ${RV.evMax}) · 전체 이벤트의 ${f(RV.ev / EV.n * 100)}% · 한 번이라도 본 커리어 ${pc(RV.evCareers)} | 관계 평균 경쟁심 ${f(RV.rvSum / RV.n)} · 존중 ${f(RV.rsSum / RV.n)} | 은퇴 시 관계 ${Object.keys(RV.labels).map(k => `${k} ${rp(RV.labels[k])}`).join(' · ')}`);
 console.log('— 첫 20번 진행 —');
 console.log(`이벤트 ${f(F.events / F.n, 2)}회 · 서로 다른 이벤트 ${f(F.distinct / F.n, 2)}종 | 장면(눌러야 하는 화면) ${f(F.scenes / F.n)}개 | 20번째 진행 뒤 소속: 연습생 ${f(F.squad.trainee / F.n * 100, 0)}% · 2군 ${f(F.squad.second / F.n * 100, 0)}% · 1군 ${f(F.squad.first / F.n * 100, 0)}% | 평균 OVR ${f(F.ovr / F.n)}`);
+console.log(`첫 20번 가운데 라이벌 이벤트 ${f((F.rv || 0) / F.n, 2)}회`);
 console.log(`자동 정책이 고른 선택: 확률 판정 ${f(F.chk / (F.chk + F.sure) * 100, 0)}% (평균 표시 확률 ${f(F.pSum / (F.chk || 1))}%) · 확정 ${f(F.sure / (F.chk + F.sure) * 100, 0)}% | 선택지 순서별 ${F.idx.map(v => f(v / F.events * 100, 0) + '%').join(' / ')}`);
 console.log('— 전체 이벤트 —');
 const evIds = Object.keys(EV.ids).sort((a, b) => EV.ids[b] - EV.ids[a]);
