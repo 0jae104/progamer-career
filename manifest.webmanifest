@@ -1,0 +1,12 @@
+{
+  "name": "프로게이머 키우기",
+  "short_name": "프로게이머",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1126",
+  "theme_color": "#0e1126",
+  "lang": "ko",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
