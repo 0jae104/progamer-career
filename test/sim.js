@@ -702,6 +702,11 @@ if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim
   let fa = (seedArg != null ? +seedArg : Date.now()) + 424242 | 0;
   const fr = () => { fa = fa + 0x6D2B79F5 | 0; let x = Math.imul(fa ^ fa >>> 15, 1 | fa); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; };
   const bases = fxNames.map(f => { clear(); store[KEY] = fs.readFileSync(path.join(fx, f + '.json'), 'utf8'); G.load(); for (let k = 0, n = Math.floor(fr() * 40); k < n && !G.state().over; k++) G.autoStep(); return JSON.stringify(G.exportData()); });
+  // 끝나지 않는 시리즈를 만드는 값(몇 전제인지가 터무니없이 큼)은 바로 거부되어야 한다. 검사가 멈추면 안 된다.
+  { clear(); store[KEY] = fs.readFileSync(path.join(fx, 'stage3-moment.json'), 'utf8'); G.load(); const withTour = JSON.parse(JSON.stringify(G.exportData())); if (!(withTour.payload.career.sim && withTour.payload.career.sim.tour)) fail('기록 보관: 대회 도중의 예전 저장이 없음');
+    if (!G.importCheck(JSON.stringify(withTour)).ok) fail('기록 보관: 대회 도중의 정상 백업이 거부됨');
+    withTour.payload.career.sim.tour.ms.forEach(m => { m.bo = 1e15; }); const t1 = Date.now(), c = G.importCheck(JSON.stringify(withTour));
+    if (c.ok || Date.now() - t1 > 2000) fail('기록 보관: 끝나지 않는 시리즈가 든 백업이 거부되지 않거나 검사가 오래 걸림 (' + (Date.now() - t1) + 'ms)'); sceneRej++; }
   const VALS = [undefined, null, 'x', '', -1, 0, 1e9, 1e15, 0.5, [], {}, true, 'zz'.repeat(400), [null], { a: 1 }];
   const FZ = { n: 0, rej: 0, ok: 0, steps: 0 }, FUZZ = +(process.env.PG_FUZZ || Math.max(200, Math.min(1000, Math.round(N / 3))));
   for (let it = 0; it < FUZZ; it++) {

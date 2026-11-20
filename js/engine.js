@@ -276,7 +276,7 @@
   // 반환: true 대회가 끝남, false 승부처 장면을 띄우고 멈춤
   function runTour(t) {
     while (t.i < t.ms.length) {
-      const m = t.ms[t.i], a = tRef(t, m.a), b = tRef(t, m.b), need = (m.bo + 1) / 2;
+      const m = t.ms[t.i], a = tRef(t, m.a), b = tRef(t, m.b), need = Math.min(4, (m.bo + 1) / 2);   // 3·5전제에서는 2·3 그대로. 상한은 손상된 저장이 끝나지 않는 시리즈를 만들지 못하게 하는 안전장치
       if (!t.me || (a !== t.me && b !== t.me)) {
         const p = winP(tStr(t, a), tStr(t, b)); let x = 0, y = 0;
         while (x < need && y < need) rnd() < p ? x++ : y++;
@@ -939,7 +939,8 @@
       else {
         const views = () => { if (S.org && !S.over) { table(); goal(); S.rivals.map(rivalView); rivalFixtures(); org(); region(); role(); isStarter(); } };   // 화면이 부르는 조회
         views(); flush(); save(); views();
-        for (let i = 0; ok && i < DRY_STEPS && !S.over; i++) { autoStep(); ok = sane(); if (ok && i < 40) views(); }
+        const t0 = Date.now();
+        for (let i = 0; ok && i < DRY_STEPS && !S.over; i++) { autoStep(); ok = sane() && Date.now() - t0 < 5000; if (ok && i < 40) views(); }   // 정상 저장은 수십 밀리초. 5초를 넘기면 비정상으로 본다
         if (ok && S.over) ok = !!fin(S) && !!recFromScene(fin(S), S);
       }
     } catch (e) { ok = false; }
@@ -964,8 +965,20 @@
     for (const k of ['g', 'w', 'rs', 'mvp']) if (s.yr && !(Number.isFinite(s.yr[k]) && s.yr[k] >= 0)) return null;
     if (s.org && (!isObj(s.yr) || !Array.isArray(s.yr.titles) || !Array.isArray(s.yr.awards) || !isObj(s.dom))) return null;
     for (const sp in s.dom || {}) { if (!isObj(s.dom[sp])) return null; for (const rg in s.dom[sp]) { const d = s.dom[sp][rg]; if (!isObj(d) || !D.ORG[d.champ] || !D.ORG[d.runner]) return null; } }
-    if (s.lg != null && !isObj(s.lg)) return null;
-    if (s.sim != null && !isObj(s.sim)) return null;
+    if (s.lg != null) {   // 리그 진행 상태: 팀 목록은 있는 구단이어야 하고 승·패는 수여야 한다
+      const L = s.lg;
+      if (!isObj(L) || !Array.isArray(L.ids) || L.ids.length < 2 || L.ids.length > 16 || L.ids.some(id => !D.ORG[id]) || !isObj(L.w) || !isObj(L.l) || L.ids.some(id => !Number.isFinite(L.w[id]) || !Number.isFinite(L.l[id]))) return null;
+      if (!Array.isArray(L.rounds) || L.rounds.length > 40 || !['first', 'second'].includes(L.tier) || !['spring', 'summer'].includes(L.split)) return null;
+    }
+    if (s.sim != null) {   // 진행 중이던 달·대회의 상태
+      if (!isObj(s.sim)) return null;
+      const t = s.sim.tour, small = (v, hi) => Number.isInteger(v) && v >= 0 && v <= hi;
+      if (t != null) {
+        if (!isObj(t) || !Array.isArray(t.ms) || t.ms.length < 1 || t.ms.length > 16 || t.ms.some(m => !isObj(m) || ![1, 3, 5, 7].includes(m.bo))) return null;
+        if (!small(t.i, t.ms.length) || !Array.isArray(t.w) || t.w.length > 16 || !Array.isArray(t.lines) || t.lines.length > 16) return null;
+        if (t.cur != null && (!isObj(t.cur) || !small(t.cur.x, 4) || !small(t.cur.y, 4) || !small(t.cur.mom, 3) || !Array.isArray(t.cur.used) || !Array.isArray(t.cur.moms) || t.cur.moms.length > 8)) return null;
+      }
+    }
     if (s.buff != null && !isObj(s.buff)) return null;
     for (const k of ['gear', 'coach', 'care']) if (!Number.isInteger(s.shop[k]) || s.shop[k] < 0 || s.shop[k] > 9) return null;
     for (const id in s.orgStr) if (!D.ORG[id] || !Number.isFinite(s.orgStr[id])) return null;
