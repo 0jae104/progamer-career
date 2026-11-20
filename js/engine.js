@@ -1,8 +1,9 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.5.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.6.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
+  const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
   const mem = {};
   const store = {
@@ -122,6 +123,7 @@
       car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0, tryouts: 0, retry: 0 },
       stat: { turns: 0, t0: Date.now(), t20: 0, ev20: 0 },
       rivals: [], rivalSeq: 0, evn: {}, fan: { g: 0, st: 0, seen: [] },
+      tut: { p: 0, g: 0, r: 0, done: store.get(TUT) === '1' },   // 처음 안내: 계획·목표·보고서 안내를 봤는지
       pendingSim: false, pendingNewYear: false, over: false, sim: null, recentMom: [],
     };
     const t = gauss(), talent = t * B.talentSd;
@@ -301,6 +303,7 @@
     const prize = { world: 20000, mid: 8000, nations: 3000, dom: 3000, second: 200 }[tier];
     addFame(fame); earn(prize); log(`${name}! 상금 ${fmtMoney(prize)}`, 'gold');
     const sc = info('우승', name, 'gold', [`상금 ${fmtMoney(prize)}`, `인기 상승`]);
+    sc.cele = 1;   // 우승 연출: 1 아직 재생 전, 2 재생함(다시 열어도 연출 없이 같은 내용만 보여 준다)
     sc.news = `${teamName()}, ${name}` + (fin && fin.plays ? ` — 결승 ${fin.score}, ${S.nick} 평점 ${fin.r.toFixed(1)}` : '');
     return sc;
   }
@@ -929,6 +932,27 @@
     return { lines, fan };
   }
 
+  /* ---------- 처음 안내와 우승 연출의 표시 상태 ----------
+     화면 쪽 기능이라 게임 규칙과 난수에는 손대지 않는다. 여기서는 "봤는지"만 저장한다. */
+  function tutFinish() { S.tut.done = true; store.set(TUT, '1'); }
+  // 지금 보여 줄 안내. where: plan 계획 고르기 / goal 다음 목표 카드 / report 월간 보고. 없으면 null
+  function tutTip(where) {
+    if (!S || !S.org || S.tut.done) return null;
+    const order = ['goal', 'plan', 'report'], key = { plan: 'p', goal: 'g', report: 'r' }[where];
+    if (S.tut[key]) return null;
+    if (where === 'plan' && !S.tut.g) return null;        // 홈에서는 화면 위쪽의 목표 안내부터, 한 번에 하나씩 보여 준다
+    return { where, step: order.indexOf(where) + 1, of: 3 };
+  }
+  function tutNext(where) {
+    if (!S || S.tut.done) return;
+    S.tut[{ plan: 'p', goal: 'g', report: 'r' }[where]] = 1;
+    if (S.tut.p && S.tut.g && S.tut.r) tutFinish();
+    save();
+  }
+  function tutSkip() { if (S && !S.tut.done) { tutFinish(); save(); } }
+  function tutReplay() { if (S) { S.tut = { p: 0, g: 0, r: 0, done: false, replay: true }; save(); } }
+  function celePlayed() { const sc = S && S.q[0]; if (sc && sc.cele === 1) { sc.cele = 2; save(); } }
+
   /* ---------- 진행 ---------- */
   // 이벤트 조건에 넘기는 도우미
   function rivalHelp() {
@@ -970,6 +994,7 @@
     if (!S || S.over || S.q.length) return;
     S.used = {};
     S.stat.turns++;
+    if (!S.tut.done && !S.tut.replay && S.stat.turns > 3) tutFinish();   // 안내는 첫 3개월까지만
     if (S.stat.turns === 20) S.stat.t20 = Date.now() - S.stat.t0;   // 첫 20번 진행에 걸린 시간(기기 안에만 기록)
     const sc = MONTHS[S.m].type !== 'off' && S.injury === 0 && rnd() < (S.squad === 'trainee' ? B.eventChanceTrainee : B.eventChance) ? eventScene() : null;
     if (sc && S.stat.turns <= 20) S.stat.ev20++;
@@ -1094,6 +1119,8 @@
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
     def(s, 'grow', 1); def(s, 'evn', {});
+    // 처음 안내: 이 값이 없는 저장은 안내가 생기기 전에 시작한 커리어다. 진행 중에 안내가 끼어들지 않게 끝난 것으로 둔다.
+    if (!s.tut || typeof s.tut !== 'object') s.tut = { p: 1, g: 1, r: 1, done: true };
     // 팬 반응 상태: 없거나 깨져 있으면 처음부터(지난 경기를 지어내지 않는다)
     if (!s.fan || typeof s.fan !== 'object' || !Array.isArray(s.fan.seen) || !Number.isFinite(s.fan.g) || !Number.isFinite(s.fan.st)) s.fan = { g: 0, st: 0, seen: [] };
     s.fan.seen = s.fan.seen.filter(e => Array.isArray(e) && typeof e[0] === 'string' && Number.isFinite(e[1])).slice(-30);
@@ -1210,7 +1237,7 @@
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,
-    fanReact, FAN_GAP,
+    fanReact, FAN_GAP, tutTip, tutNext, tutSkip, tutReplay, celePlayed,
     rivals: () => S ? S.rivals.map(rivalView) : [],
     rivalFixtures: () => (S && S.org ? rivalFixtures().map(r => ({ nick: r.nick, org: D.ORG[r.org].name, w: r.w, l: r.l })) : []),
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },
