@@ -14,7 +14,7 @@
     app.querySelectorAll('canvas.av').forEach(cv => {
       const h = hash(cv.dataset.seed || 'x'), x = cv.getContext('2d');
       const pal = { h: HAIR[h % HAIR.length], s: SKIN[(h >> 3) % SKIN.length], e: '#0e1126', k: '#62e4ff', m: '#62e4ff', j: cv.dataset.color || '#ff4d6d', d: 'rgba(14,17,38,.45)' };
-      cv.width = cv.height = 14; x.clearRect(0, 0, 14, 14);
+      cv.width = cv.height = 14; x.clearRect(0, 0, 14, 14); cv.setAttribute('aria-hidden', 'true');
       SPRITE.forEach((row, y) => [...row].forEach((ch, i) => {
         if (ch === '.') return;
         if (ch === 'd') { x.fillStyle = pal.j; x.fillRect(i, y, 1, 1); }
@@ -68,22 +68,32 @@
     const o = G.org(), st = S.squad === 'trainee' ? '연습생' : `${G.SQUAD[S.squad]} ${S.injury ? '부상' : G.isStarter() ? '주전' : '벤치'}`;
     return `<header class="lower" style="--team:${o.color}">
       <canvas class="av" data-seed="${esc(S.nick)}" data-color="${o.color}"></canvas>
-      <div class="who"><b>${esc(S.nick)}</b><span>${G.role().name} · ${o.name} ${st} · ${S.age}세</span></div>
+      <div class="who"><b class="${[...S.nick].length > 6 ? 'long' : ''}">${esc(S.nick)}</b><span>${G.role().name} · ${o.name} ${st} · ${S.age}세</span></div>
       <div class="ovr"><b>${Math.floor(G.ovr())}</b><span>OVR</span></div></header>
       <div class="meters">${meter('컨디션', S.cond)}${meter('손목', S.wrist)}${meter(S.squad === 'trainee' ? '코치 평가' : '감독 신뢰', S.trust)}${meter('인기', S.fame, 'gold')}</div>`;
   }
   function tHome(S) {
     const mi = G.month(), c = S.contract;
-    return `<div class="now"><div><p class="eyebrow">${S.year}년차 · ${mi.m}월</p><h2>${mi.label}</h2></div><p>${hint(S, mi)}</p></div>
+    return `<div class="now" aria-live="polite"><div><p class="eyebrow">${S.year}년차 · ${mi.m}월</p><h2>${mi.label}</h2></div><p>${hint(S, mi)}</p></div>
       <div class="kv"><div><span>자금</span><b>${money(S.money)}</b></div><div><span>연봉</span><b>${money(c.salary)}</b></div><div><span>계약</span><b>${c.years}년 남음</b></div></div>
       ${(() => { const fx = G.rivalFixtures(); return fx.length ? `<p class="rvnote">이번 달 라이벌전 · ${fx.map(f => `${esc(f.nick)}의 ${f.org} (통산 ${f.w}승 ${f.l}패)`).join(', ')}</p>` : ''; })()}
       ${goalCard()}
-      <div><p class="sec">이번 달 계획</p>${D.PLANS.map(p => `<button class="plan" data-act="plan" data-id="${p.id}" aria-pressed="${S.plan === p.id}"><i></i><div><b>${p.name}</b><span>${p.desc}</span></div></button>`).join('')}</div>
+      <div><p class="sec">이번 달 계획</p>${tip('plan')}${D.PLANS.map(p => `<button class="plan" data-act="plan" data-id="${p.id}" aria-pressed="${S.plan === p.id}"><i></i><div><b>${p.name}</b><span>${p.desc}</span></div></button>`).join('')}</div>
       <div><p class="sec">소식</p><ul class="log">${S.log.slice(0, 12).map(l => `<li class="${l.tone}"><time>${l.y}년차 ${l.m}월</time><span>${esc(l.msg)}</span></li>`).join('') || '<li class="dim">아직 소식이 없다.</li>'}</ul></div>`;
+  }
+  // 처음 안내(첫 3개월): 해당 화면 요소 바로 옆에 한 줄씩. 다음·건너뛰기를 누르면 다시 나오지 않는다.
+  function tip(where, sc) {
+    const t = G.tutTip(where); if (!t) return '';
+    const S = G.state(), mi = G.month();
+    const text = where === 'goal' ? (S.squad === 'trainee' ? '지금의 목표다. 아래 세 줄이 모두 초록이 되면 다음 심사에서 2군에 올라간다.' : '지금의 목표다. 아래 줄이 모두 초록이 되면 다음 심사에서 기회가 온다.')
+      : where === 'plan' ? `이번 달에 할 일을 하나 고른다. 능력치가 오르는 대신 컨디션이 닳으니, 컨디션이 낮으면 휴식을 고르자. 골랐으면 맨 아래 "${mi.m}월 진행"을 누른다.`
+        : (sc && sc.eval ? '한 달이 지났다. 평가전 평점이 6.0을 넘으면 코치 평가가 오르고, 코치 평가 40은 2군에 올라가는 조건이다. 아래 초록 숫자는 이번 달에 오른 능력치다.' : '한 달의 결과다. 경기 평점이 높을수록 감독 신뢰가 오른다. 아래 초록 숫자는 이번 달에 오른 능력치다.');
+    return `<div class="tip" role="note" id="tip-${where}"><p><b>안내 ${t.step}/${t.of}</b>${text}</p>
+      <div class="tipbtns"><button class="tipgo" data-act="tutnext" data-id="${where}">${t.step < t.of ? '다음' : '알겠어요'}</button>${t.step < t.of ? '<button class="tipskip" data-act="tutskip">건너뛰기</button>' : ''}</div></div>`;
   }
   function goalCard() {
     const g = G.goal();
-    return `<div class="goal"><p class="sec">다음 목표 · ${g.title}</p>
+    return `<div class="goal"><p class="sec">다음 목표 · ${g.title}</p>${tip('goal')}
       ${g.items.map(i => `<div class="gi ${i.ok ? 'ok' : ''}"><span>${i.label}</span><div class="bar"><i style="width:${i.low ? (i.ok ? 100 : 40) : Math.max(4, Math.min(100, Math.round(i.cur / i.need * 100)))}%"></i></div><b>${i.cur}${i.low ? '위' : ''} <em>/ ${i.need}${i.low ? '위 안' : ''}</em></b></div>`).join('')}
       <p class="fine">${g.note}</p></div>`;
   }
@@ -140,6 +150,7 @@
       <div><p class="sec">시즌 기록</p>${S.hist.length ? `<div class="scroll-x"><table><tr><th>연차</th><th class="l">팀</th><th>경기</th><th>승</th><th>평점</th><th>OVR</th></tr>${S.hist.map(h => `<tr><td>${h.year} <span class="dim">${h.age}세</span></td><td class="l">${h.tag} ${G.SQUAD[h.squad]}</td><td>${h.g}</td><td>${h.w}</td><td>${h.g ? f1(h.avg) : '-'}</td><td>${h.ovr}</td></tr>`).join('')}</table></div>` : '<p class="dim">첫 시즌을 마치면 기록이 쌓인다.</p>'}</div>
       <div class="stack"><p class="sec">설정</p>
         <button class="btn line" data-act="fast">빠른 진행 ${S.opt.fast ? '켜짐' : '꺼짐'} — 평범한 달의 결과 화면을 건너뛰고 승부처는 자동으로 고른다</button>
+        <button class="btn line" data-act="tutreplay">처음 안내 다시 보기</button>
         <button class="btn line" data-act="title">타이틀로 (자동 저장됨)</button>
         <button class="btn line" data-act="wipe">${U.confirm === 'wipe' ? '한 번 더 누르면 이 커리어가 삭제된다' : '커리어 삭제'}</button></div>`;
   }
@@ -179,14 +190,16 @@
         h = `${sc.checked ? `<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${sc.p}%</span>` : ''}<h2>${sc.title}</h2><p>${sc.text}</p>
           <div class="chips">${sc.lines.map(l => `<span class="chip ${/[-]\d|하락/.test(l) ? 'down' : 'up'}">${l}</span>`).join('')}</div>${okBtn()}`; break;
       case 'month':
-        h = `<p class="eyebrow">${sc.title} · ${sc.plan}</p><h2>${sc.sub}</h2>${matchList(sc.matches)}
+        h = `<p class="eyebrow">${sc.title} · ${sc.plan}</p><h2>${sc.sub}</h2>${tip('report', sc)}${matchList(sc.matches)}
           ${sc.eval ? `<div class="kv"><div><span>월말 평가전 평점</span><b>${f1(sc.eval.r)}</b></div><div><span>연습생 순위</span><b>12명 중 ${sc.eval.rank}위</b></div><div><span>코치 평가</span><b>${sc.eval.d == null ? '-' : (sc.eval.d > 0 ? '+' : '') + sc.eval.d}</b></div></div>` : ''}
           ${sc.fans && sc.fans.length ? `<div class="fans"><p class="sec">팬 반응</p>${sc.fans.map(x => `<p><span class="chip v${x.v}">${D.FAN_VOICE[x.v]}</span>${esc(x.t)}</p>`).join('')}</div>` : ''}
           ${sc.eval && sc.eval.rivals ? `<p class="fine">동기 순위 · ${sc.eval.rivals.map(v => `${esc(v.nick)} ${v.rank}위 (평점 ${f1(v.r)})`).join(' · ')}</p>` : ''}
           ${sc.notes.map(n => `<p>${n}</p>`).join('')}
           <div class="chips">${sc.growth.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]}</span>`).join('')}<span class="chip">OVR ${sc.ovr}</span><span class="chip">월급 +${money(sc.salary)}</span></div>${okBtn()}`; break;
       case 'info':
-        h = `${sc.news ? `<p class="news"><b>뉴스</b>${esc(sc.news)}</p>` : ''}<h2>${sc.title}</h2><p>${sc.text}</p>${sc.lines.length ? `<div class="chips">${sc.lines.map(l => `<span class="chip ${sc.tone === 'gold' ? 'gold' : ''}">${l}</span>`).join('')}</div>` : ''}${okBtn()}`; break;
+        if (sc.cele) cls += ' cele' + (sc.cele === 1 ? ' play' : '');
+        h = `${sc.cele ? `<div class="trophy" aria-hidden="true">${sc.cele === 1 ? '<div class="confetti">' + '<i></i>'.repeat(14) + '</div>' : ''}<svg viewBox="0 0 64 64" width="72" height="72"><path d="M18 8h28v14a14 14 0 0 1-28 0z" fill="#ffc857"/><path d="M18 12H8v6a10 10 0 0 0 10 10M46 12h10v6a10 10 0 0 1-10 10" fill="none" stroke="#ffc857" stroke-width="4"/><path d="M28 35h8v9h-8z" fill="#d9a63a"/><path d="M20 44h24v6H20z" fill="#ffc857"/><path d="M16 50h32v6H16z" fill="#d9a63a"/><path d="M24 12h5v12a9 9 0 0 1-5-8z" fill="#ffe7a8"/></svg></div>` : ''}
+          ${sc.cele ? `<p class="eyebrow champ">CHAMPIONS</p><h2>${sc.text}</h2>${sc.news ? `<p class="news"><b>뉴스</b>${esc(sc.news)}</p>` : ''}` : `${sc.news ? `<p class="news"><b>뉴스</b>${esc(sc.news)}</p>` : ''}<h2>${sc.title}</h2><p>${sc.text}</p>`}${sc.lines.length ? `<div class="chips">${sc.lines.map(l => `<span class="chip ${sc.tone === 'gold' ? 'gold' : ''}">${l}</span>`).join('')}</div>` : ''}${okBtn()}`; break;
       case 'season':
         h = `<p class="eyebrow">SEASON ${sc.year}</p><h2>${sc.year}년차 결산</h2><p>${sc.org} ${G.SQUAD[sc.squad]} · ${sc.age}세 · OVR ${sc.ovr}</p>
           <div class="kv"><div><span>경기</span><b>${sc.g}</b></div><div><span>승</span><b>${sc.w}</b></div><div><span>평균 평점</span><b>${sc.g ? f1(sc.avg) : '-'}</b></div></div>
@@ -209,7 +222,7 @@
         cls = 'bad';
         h = `<h2>${sc.vet ? '갈림길' : '무소속'}</h2><p>${sc.text}</p><button class="choice" data-act="try"><div class="grow"><b>공개 테스트에 지원한다</b><small>${sc.vet ? '합격하면 하위 구단 1군과 1년 계약. 떨어지면 은퇴한다' : sc.retry ? '합격하면 2군 1년 계약. 떨어져도 최하위 구단에서 한 번은 더 기회를 준다' : '합격하면 2군 1년 계약. 떨어지면 그대로 은퇴한다'}</small></div>${pill(sc.p)}</button>${retireBtn()}`; break;
     }
-    return `<div class="veil"><section class="sheet ${cls}" role="dialog" aria-modal="true">${h}</section></div>`;
+    return `<div class="veil"><section class="sheet ${cls}" role="dialog" aria-modal="true" aria-label="${esc(sc.title || sc.sub || '선택')}" tabindex="-1">${h}</section></div>`;
   }
 
   function vRetire(r) {
@@ -238,17 +251,37 @@
     const mi = G.month(), tabs = [['home', '홈'], ['stats', '능력'], ['league', '리그'], ['shop', '투자'], ['record', '기록']];
     const body = S.org ? { home: tHome, stats: tStats, league: tLeague, shop: tShop, record: tRecord }[U.tab](S) : '';
     const warn = G.saveFailed() ? '<p class="warn">저장에 실패했다. 이 브라우저에서는 진행 상황이 남지 않는다.</p>' : U.notice ? `<p class="warn">${U.notice}</p>` : '';
-    return `${S.org ? header(S) : ''}<main class="content">${warn}${body}</main>
+    return `<div class="stagebg" ${sc ? 'inert aria-hidden="true"' : ''}>${S.org ? header(S) : ''}<main class="content">${warn}${body}</main>
       ${S.org ? `<footer class="foot"><nav class="tabs" role="tablist">${tabs.map(t => `<button role="tab" data-act="tab" data-id="${t[0]}" aria-selected="${U.tab === t[0]}">${t[1]}</button>`).join('')}</nav>
-      <button class="btn cta" data-act="next" ${sc ? 'disabled' : ''}>${mi.m}월 진행<small>${mi.label} · ${D.PLANS.find(p => p.id === S.plan).name}</small></button></footer>` : ''}
+      <button class="btn cta" data-act="next" ${sc ? 'disabled' : ''}>${mi.m}월 진행<small>${mi.label} · ${D.PLANS.find(p => p.id === S.plan).name}</small></button></footer>` : ''}</div>
       ${sc ? vScene(sc, S) : ''}`;
   }
 
   function render() {
     const y = window.scrollY, S = G.state();
     if (U.view === 'game' && !S) U.view = 'title';
+    // 키보드 사용자를 위해, 다시 그린 뒤에도 방금 누른 버튼에 포커스를 돌려준다.
+    const a = document.activeElement, fk = a && app.contains(a) && a.dataset && a.dataset.act ? [a.dataset.act, a.dataset.id || '', a.dataset.i || '', a.dataset.grp || ''] : (a && a.id === 'nick' ? 'nick' : null);
+    const prevScene = U.sceneKey;
     app.innerHTML = U.view === 'title' ? vTitle() : U.view === 'create' ? vCreate() : U.view === 'hall' ? vHall() : vGame(S);
-    drawAvatars(); window.scrollTo(0, y);
+    drawAvatars();
+    const sheet = app.querySelector('.sheet'), sc = U.view === 'game' && S ? G.scene() : null;
+    U.sceneKey = sheet ? [sc.type, sc.title || '', sc.sub || '', sc.ev || '', sc.mid || '', sc.set || ''].join('|') : '';
+    document.body.classList.toggle('modal', !!sheet);      // 장면이 열려 있는 동안 뒤 화면이 따라 움직이지 않게
+    window.scrollTo(0, y);
+    let target = null;
+    if (fk === 'nick') target = document.getElementById('nick');
+    else if (fk && U.sceneKey === prevScene) target = [...app.querySelectorAll(`[data-act="${fk[0]}"]`)].find(e => (e.dataset.id || '') === fk[1] && (e.dataset.i || '') === fk[2] && (e.dataset.grp || '') === fk[3] && !e.disabled && !e.closest('[inert]'));
+    if (!target && sheet && U.sceneKey !== prevScene) target = sheet;       // 새 장면이 열리면 대화상자로 포커스를 옮긴다
+    if (target) try { target.focus({ preventScroll: true }); } catch (e) {}
+    // 홈의 안내가 화면 밖(또는 하단 바 뒤)에 있으면 안내마다 한 번만 보이는 곳으로 옮긴다.
+    const tp = app.querySelector('.stagebg:not([inert]) .tip'), foot = app.querySelector('.foot');
+    if (tp && U.tipShown !== tp.id) {
+      U.tipShown = tp.id;
+      const r = tp.getBoundingClientRect(), lim = foot ? foot.getBoundingClientRect().top + 18 : window.innerHeight;
+      if (r.top < 0 || r.bottom > lim) tp.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    }
+    if (sc && sc.cele === 1) G.celePlayed();               // 우승 연출은 한 번만. 다시 열면 같은 내용이 연출 없이 나온다
   }
   function go(v) { U.view = v; U.confirm = ''; render(); window.scrollTo(0, 0); }
 
@@ -277,6 +310,11 @@
       case 'plan': G.setPlan(id); break;
       case 'buy': G.buy(id); break;
       case 'fast': G.setFast(!G.state().opt.fast); break;
+      case 'tutnext': {
+        G.tutNext(id); break;
+      }
+      case 'tutskip': G.tutSkip(); break;
+      case 'tutreplay': G.tutReplay(); U.tab = 'home'; render(); return window.scrollTo(0, 0);
       case 'next': G.next(); break;
       case 'ok': G.resolve(); break;
       case 'res': G.resolve(i); break;

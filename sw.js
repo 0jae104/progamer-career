@@ -1,7 +1,7 @@
 // 오프라인에서도 열리도록 마지막으로 받은 파일을 보관한다.
 // 온라인일 때는 항상 서버에 최신 여부를 확인하고(브라우저 캐시를 그대로 믿지 않는다), 받지 못했을 때만 보관본을 쓴다.
 // 버전을 올리면 예전 보관본은 지워진다. index.html 의 ?v= 와 js/engine.js 의 VERSION 도 같은 값으로 올린다.
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 const CACHE = 'pg-career-' + VERSION;
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(

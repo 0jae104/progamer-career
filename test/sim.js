@@ -11,6 +11,7 @@
 //   6) index.html, sw.js, 엔진의 버전 표기가 서로 같은지
 //   8) 팬 반응: 분기별 단위 검사, 사실과 어긋나는 문장 0건, 출전 10경기 안 같은 문장 0건, 경기 없는 달에는 반응 없음
 //      (같은 문장 판정: 아이디·구단 이름·숫자·문장부호·공백을 지운 뒤 글자가 같으면 같은 문장으로 본다)
+//   9) 처음 안내와 우승 연출: 표시 상태만 바뀌고 난수·결과는 그대로인지, 예전 저장에는 안내가 없는지, 우승 화면 수와 우승 기록 수가 같은지
 //   7) 라이벌: 고유 ID 유지, 능력치·구단·관계 범위, 실제 경기 결과와 맞대결 전적 일치, 불러오기 반복 시 전적 불변, 손상된 라이벌 데이터 복구
 // 집계(밸런스 지표. 목표 범위는 js/data.js 의 D.BAL.target, 없으면 표시만 한다)
 const fs = require('fs'), path = require('path');
@@ -104,6 +105,7 @@ const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, tit
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
 const FX = { n: 0, withRival: 0 };
+const CE = { n: 0, tut: 0 };   // 우승 화면 수, 처음 안내 검사 수
 /* ---- 팬 반응 검사 ---- */
 const FN = { months: 0, lines: 0, byCount: [0, 0, 0, 0], keys: {}, voices: {}, none: 0, benchMonths: 0, repeatChecked: 0, minGap: 1e9 };
 const NAMES = G.D.ORGS.map(o => o.name).concat(G.D.REGIONS.map(r => r.name + ' 대표팀')).sort((a, b) => b.length - a.length);
@@ -156,10 +158,20 @@ function checkFans(tag, rep, nick, rivalNicks, streak, first1) {
 const RV = { n: 0, second: 0, first: 0, moved: 0, retired: 0, full: 0, noDebut: 0, games: 0, met: 0, metCareers: 0, finals: 0, finalCareers: 0, h2hChecked: 0, h2hLines: 0, rvSum: 0, rsSum: 0, labels: {}, ev: 0, evCareers: 0, evMax: 0, late: 0, age: [], peak: [], titles: 0, sameOrgEnd: 0 };
 
 function runCareer(i, tag, onEnd) {
-  const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false, ids: {}, exp: {}, rvEv: 0, finals: 0, fresh: !!onEnd, streak: 0, fg: 0, fanAt: {} };
+  const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false, ids: {}, exp: {}, rvEv: 0, finals: 0, fresh: !!onEnd, streak: 0, fg: 0, fanAt: {}, cele: 0 };
   let guard = 0, lastYear = 0;
   while (!G.state().over) {
     const sc = G.scene();
+    if (sc && sc.type === 'info' && sc.cele) {
+      // 우승 화면: 연출 표시를 바꾸고 여러 번 다시 불러와도 우승 기록·자금이 그대로여야 한다.
+      const t0 = G.state().car.titles.length, m0 = G.state().money;
+      if (sc.cele !== 1) fail(`${tag} 처음 보는 우승 화면인데 이미 재생한 것으로 표시됨`);
+      G.celePlayed(); G.celePlayed();
+      for (let k = 0; k < 2; k++) if (G.load() !== 'ok') fail(`${tag} 우승 화면에서 불러오기 실패`);
+      const s2 = G.state(), sc2 = G.scene();
+      if (sc2.cele !== 2 || sc2.title !== sc.title || sc2.text !== sc.text || s2.car.titles.length !== t0 || s2.money !== m0) fail(`${tag} 우승 화면을 다시 불러오자 내용이나 기록이 달라짐`);
+      car.cele++; CE.n++;
+    }
     if (!sc) { car.turn++; G.autoStep(); }
     else if (sc.type === 'moment') playMoment(`${tag} ${guard}`);
     else if (sc.type === 'event') playEvent(car);
@@ -212,6 +224,7 @@ function runCareer(i, tag, onEnd) {
   const r = G.scene(); if (r.type !== 'retire') fail(`${tag} 은퇴 장면이 아님`);
   const st = G.state();
   if ((r.rivals || []).length !== st.rivals.length) fail(`${tag} 은퇴 화면의 라이벌 수가 다름`);
+  if (onEnd && car.cele !== st.car.titles.length) fail(`${tag} 우승 화면 ${car.cele}번, 우승 기록 ${st.car.titles.length}개로 서로 다름`);
   if (!onEnd && /^stage[123]-/.test(String(tag))) { FX.n++; if (st.rivals.length) FX.withRival++; if (st.rivals.some(v => v.origin === 'trainee' || v.hist.some(h => /연습생 동기/.test(h.t)))) fail(`${tag} 예전 저장에 연습생 시절 라이벌 기록이 지어내짐`); }
   if (onEnd) {
     // 실제 경기 결과로 따로 센 전적과 저장된 전적이 같아야 한다(빠른 진행은 보고서가 생략돼 제외).
@@ -259,13 +272,14 @@ for (const f of fs.readdirSync(fx).filter(n => n.endsWith('.json')).sort()) {
     const nick = JSON.parse(store[KEY]).nick, year = JSON.parse(store[KEY]).year;
     if (G.load() !== 'ok') fail(`저장 ${f} 을(를) 열지 못함`);
     if (G.state().nick !== nick || G.state().year !== year) fail(`저장 ${f} 의 커리어가 바뀜`);
+    if (!G.state().tut.done || G.tutTip('goal') || G.tutTip('plan') || G.tutTip('report')) fail(`예전 저장 ${f} 에 처음 안내가 나옴`);
     runCareer(-1, f); fixtures++;
   }
 }
 // 새 필드가 없는 저장
 G.newGame({ nick: 'Old', region: 'kr', role: 'core', trait: 'brain' });
 for (let i = 0; i < 60; i++) G.autoStep();
-const old = JSON.parse(store[KEY]); for (const k of ['inj', 'moves', 'debut', 'tryouts']) delete old.car[k]; for (const k of ['opt', 'used', 'flags', 'sim', 'recentMom', 'stat', 'grow', 'rivals', 'rivalSeq', 'evn', 'fan']) delete old[k];
+const old = JSON.parse(store[KEY]); for (const k of ['inj', 'moves', 'debut', 'tryouts']) delete old.car[k]; for (const k of ['opt', 'used', 'flags', 'sim', 'recentMom', 'stat', 'grow', 'rivals', 'rivalSeq', 'evn', 'fan', 'tut']) delete old[k];
 store[KEY] = JSON.stringify(old);
 if (G.load() !== 'ok') fail('새 필드가 없는 저장을 열지 못함');
 runCareer(-1, '예전 저장');
@@ -374,6 +388,31 @@ for (const fn of [d => { delete d.fan; }, d => { d.fan = 'x'; }, d => { d.fan = 
   runCareer(-1, '깨진 팬 반응 상태');
 }
 
+/* ---- 처음 안내의 표시 상태 ---- */
+{
+  const TUT = 'pg_tut_v1', t = (c, msg) => { CE.tut++; if (!c) fail('처음 안내: ' + msg); };
+  const fresh = () => { delete store[TUT]; G.newGame({ nick: 'Tut', region: 'kr', role: 'core', trait: 'brain' }); };
+  fresh(); t(G.state().tut.done === false && !G.tutTip('goal'), '구단을 고르기 전에는 안내가 없어야 함');
+  G.resolve(1);
+  t(G.tutTip('goal').step === 1 && G.tutTip('goal').of === 3 && !G.tutTip('plan') && G.tutTip('report').step === 3, '첫 화면: 목표 안내 1/3, 계획 안내는 그다음');
+  G.tutNext('goal'); t(!G.tutTip('goal') && G.tutTip('plan').step === 2, '다음을 누르면 계획 안내 2/3');
+  const snap = JSON.stringify(G.state().tut); t(G.load() === 'ok' && JSON.stringify(G.state().tut) === snap && G.tutTip('plan'), '저장·불러오기 뒤 안내 단계 유지');
+  G.tutNext('plan'); t(!G.tutTip('plan') && G.tutTip('report') && !G.state().tut.done, '홈 안내를 다 봐도 보고 안내는 남음');
+  G.tutNext('report'); t(G.state().tut.done && store[TUT] === '1' && !G.tutTip('report'), '세 가지를 다 보면 끝');
+  G.newGame({ nick: 'Tut2', region: 'kr', role: 'core', trait: 'brain' }); G.resolve(0); t(G.state().tut.done && !G.tutTip('goal'), '같은 기기의 다음 커리어에는 안내 없음');
+  G.tutReplay(); t(G.tutTip('goal') && !G.state().tut.done, '다시 보기');
+  G.tutSkip(); t(G.state().tut.done && !G.tutTip('goal') && G.load() === 'ok' && G.state().tut.done, '건너뛰기와 그 뒤 불러오기');
+  fresh(); G.resolve(2); while (G.state().stat.turns < 3 || G.scene()) G.autoStep();
+  t(!G.state().tut.done && G.tutTip('goal'), '3개월까지는 안내가 남아 있음');
+  G.autoStep(); t(G.state().stat.turns === 4 && G.state().tut.done && !G.tutTip('goal') && !G.tutTip('report'), '4번째 달부터는 안내 없음');
+  // 안내·연출 표시는 난수를 쓰지 않는다: 같은 시드에서 다음 난수가 같아야 한다.
+  fresh(); G.resolve(1); G.seed(4242); const a = G.rand(); G.seed(4242);
+  G.tutTip('goal'); G.tutNext('goal'); G.tutTip('plan'); G.tutSkip(); G.tutReplay(); G.celePlayed(); G.tutNext('plan'); G.tutNext('report');
+  t(G.rand() === a, '안내·연출 표시가 난수를 소비함');
+  if (seedArg != null) G.seed(+seedArg + 99991); else G.seed(null);
+  delete store[TUT];
+}
+
 /* ---- 버전 표기 일치 ---- */
 const root = path.join(__dirname, '..'), html = fs.readFileSync(path.join(root, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 if (G.VERSION) {
@@ -417,6 +456,8 @@ console.log('— 팬 반응 —');
 console.log(`경기가 있던 달 ${FN.months}개 | 줄 수 분포 0줄:${FN.byCount[0]} 1줄:${FN.byCount[1]} 2줄:${FN.byCount[2]} 3줄:${FN.byCount[3]} | 출전했는데 반응이 없던 달 ${FN.none} | 벤치만 지킨 달 ${FN.benchMonths}`);
 console.log(`문장 ${FN.lines}줄 모두 그 달 기록과 대조해 사실 불일치 0건 | 반복 간격 검사 ${FN.repeatChecked}줄, 같은 문장이 다시 나온 가장 짧은 간격 ${FN.minGap === 1e9 ? '-' : FN.minGap + '경기'}(기준 ${G.FAN_GAP}경기 이상) | 분기별 단위 검사 ${fanUnit}개`);
 console.log('말투: ' + Object.keys(FN.voices).map(k => `${G.D.FAN_VOICE[k]} ${f(FN.voices[k] / FN.lines * 100, 0)}%`).join(' · ') + ' | 분류: ' + Object.keys(FN.keys).sort((a, b) => FN.keys[b] - FN.keys[a]).map(k => `${k} ${f(FN.keys[k] / FN.lines * 100)}%`).join(' '));
+console.log('— 처음 안내·우승 연출 —');
+console.log(`처음 안내 상태 검사 ${CE.tut}개 통과(단계 이동, 저장·재개, 건너뛰기, 다음 커리어, 3개월 뒤 종료, 난수 미사용) | 예전 저장 ${fxNames.length}종 모두 안내 없음 | 우승 화면 ${CE.n}회: 반복 불러오기에서 내용·우승 기록·자금 불변, 새 커리어마다 우승 화면 수 = 우승 기록 수`);
 console.log('— 첫 20번 진행 —');
 console.log(`이벤트 ${f(F.events / F.n, 2)}회 · 서로 다른 이벤트 ${f(F.distinct / F.n, 2)}종 | 장면(눌러야 하는 화면) ${f(F.scenes / F.n)}개 | 20번째 진행 뒤 소속: 연습생 ${f(F.squad.trainee / F.n * 100, 0)}% · 2군 ${f(F.squad.second / F.n * 100, 0)}% · 1군 ${f(F.squad.first / F.n * 100, 0)}% | 평균 OVR ${f(F.ovr / F.n)}`);
 console.log(`첫 20번 가운데 라이벌 이벤트 ${f((F.rv || 0) / F.n, 2)}회`);
