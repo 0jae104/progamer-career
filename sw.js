@@ -3,7 +3,7 @@
 //   실행 중  : 온라인이면 항상 서버에 최신 여부를 확인하고(브라우저 캐시를 그대로 믿지 않는다), 받지 못했을 때만 설치 때 받아 둔 보관본을 쓴다.
 //   버전을 올리면 예전 보관본은 지워진다. 지우는 것은 파일 보관본(Cache Storage)뿐이고, 게임 저장(localStorage)은 건드리지 않는다.
 // 버전은 여섯 곳이 같아야 한다: 이 파일, index.html 의 ?v= 와 확인 스크립트, js/data.js, js/engine.js, js/card.js, js/ui.js (test/sim.js 가 검사)
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 const CACHE = 'pg-career-' + VERSION;
 const Q = '?v=' + VERSION;
 const CORE = ['./', 'index.html', 'css/style.css' + Q, 'js/data.js' + Q, 'js/engine.js' + Q, 'js/card.js' + Q, 'js/ui.js' + Q, 'manifest.webmanifest', 'icon.svg'];

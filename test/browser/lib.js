@@ -97,6 +97,11 @@ const AUDIT = () => {
       if ((cs.overflowX === 'hidden' || cs.textOverflow === 'ellipsis') && e.scrollWidth > e.clientWidth + 1) out.clip[name(e)] = e.textContent.trim().slice(0, 24);
     }
   }
+  // 겹친 글자: 장면 창과 선택지 안에서 위아래로 이어진 요소가 서로 겹치면 안 된다
+  for (const box of document.querySelectorAll('.sheet, .sheet .choice .grow, .sheet .offer, .opt.role')) {
+    const kids = [...box.children].filter(e => vis(e) && getComputedStyle(e).position !== 'absolute' && !e.classList.contains('confetti') && !e.classList.contains('trophy'));
+    for (let i = 1; i < kids.length; i++) { const a = kids[i - 1].getBoundingClientRect(), b = kids[i].getBoundingClientRect(); if (b.top < a.bottom - 2 && b.left < a.right - 2 && a.left < b.right - 2) out.clip['겹침 ' + name(kids[i])] = kids[i].textContent.trim().slice(0, 20); }
+  }
   out.docOver = Math.max(0, document.documentElement.scrollWidth - W);
   return out;
 };

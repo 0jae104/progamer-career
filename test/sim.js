@@ -13,6 +13,7 @@
 //      (같은 문장 판정: 아이디·구단 이름·숫자·문장부호·공백을 지운 뒤 글자가 같으면 같은 문장으로 본다)
 //   9) 처음 안내와 우승 연출: 표시 상태만 바뀌고 난수·결과는 그대로인지, 예전 저장에는 안내가 없는지, 우승 화면 수와 우승 기록 수가 같은지
 //  10) 기록 보관(파일 끝): 명예의 전당 이관·중복 방지·삭제·용량, 도전 과제 판정, 커리어 카드 내용, 백업 내보내기·가져오기·거부·되돌리기, 저장 실패
+//  11) 포지션(9단계): 전용 승부처 25종이 자기 포지션에서만 나오는지, 팬 반응·경기 해설의 숫자가 그 경기 기록과 같은지, 예전 포지션 이름이 저장은 그대로 두고 표시만 바뀌는지
 //   7) 라이벌: 고유 ID 유지, 능력치·구단·관계 범위, 실제 경기 결과와 맞대결 전적 일치, 불러오기 반복 시 전적 불변, 손상된 라이벌 데이터 복구
 // 집계(밸런스 지표. 목표 범위는 js/data.js 의 D.BAL.target, 없으면 표시만 한다)
 const fs = require('fs'), path = require('path');
@@ -64,14 +65,16 @@ function invariants(tag) {
 }
 
 /* ---- 승부처 ---- */
-const MO = { n: 0, byChoice: [0, 1, 2].map(() => ({ n: 0, p: 0, ok: 0 })), okSet: { n: 0, w: 0, exp: 0 }, noSet: { n: 0, w: 0, exp: 0 }, resume: 0, series: 0, seriesWithMom: 0, perFinal: [0, 0, 0, 0] };
+const MO = { byRole: {}, ids: {}, n: 0, byChoice: [0, 1, 2].map(() => ({ n: 0, p: 0, ok: 0 })), okSet: { n: 0, w: 0, exp: 0 }, noSet: { n: 0, w: 0, exp: 0 }, resume: 0, series: 0, seriesWithMom: 0, perFinal: [0, 0, 0, 0] };
 function playMoment(tag) {
   const sc = G.scene(), snap = store[KEY];
+  { const mo = G.D.MOMENTS.find(x => x.id === sc.mid); if (!mo) fail(`${tag} 없는 승부처 ${sc.mid}`); if (mo.role) { PS.own[mo.id] = (PS.own[mo.id] || 0) + 1; if (mo.role !== G.state().role) fail(`${tag} 다른 포지션의 전용 승부처가 나옴: ${mo.id}`); if (!sc.choices[0].bd.some(b => /^컨디션/.test(b[0]))) fail(`${tag} 전용 승부처의 과감한 선택에 컨디션이 반영되지 않음`); } if (sc.choices.length !== 3) fail(`${tag} 승부처 선택지가 3개가 아님`); }
   if (G.load() !== 'ok' || store[KEY] !== snap) fail(`${tag} 승부처 도중 저장 왕복 후 상태가 달라짐`);
   if (JSON.stringify(G.scene()) !== JSON.stringify(sc)) fail(`${tag} 불러온 뒤 다른 승부처가 나옴`);
   G.resolve(rand() < .5 ? Math.floor(rand() * sc.choices.length) : 'auto');
   const r = G.scene(); if (r.type !== 'mresult') fail(`${tag} 승부처 결과 장면이 아님`);
   const ch = sc.choices[r.i], b = MO.byChoice[r.i]; MO.n++; b.n++; b.p += ch.p; if (r.ok) b.ok++;
+  { const rk = G.state().role, br = MO.byRole[rk] = MO.byRole[rk] || { n: 0, p: 0, ok: 0, sw: 0, own: 0 }; br.n++; br.p += ch.p; if (r.ok) br.ok++; if (r.setWin) br.sw++; const mo = G.D.MOMENTS.find(x => x.id === sc.mid); if (mo && mo.role) br.own++; MO.ids[sc.mid] = (MO.ids[sc.mid] || 0) + 1; }
   const st = r.ok ? MO.okSet : MO.noSet; st.n++; st.exp += r.ok ? ch.up : ch.down; if (r.setWin) st.w++;
   if (r.x + r.y !== sc.x + sc.y + 1) fail(`${tag} 승부처 뒤 세트가 한 번만 진행되지 않음`);
   const g0 = G.state().yr.g, money = G.state().money, snap2 = store[KEY], h0 = JSON.stringify(G.state().rivals.map(v => [v.id, v.w, v.l]));
@@ -106,6 +109,7 @@ const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, tit
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
 const FX = { n: 0, withRival: 0 };
+const PS = { review: 0, reviewGood: 0, offers: 0, own: {}, wrongRole: 0 };   // 포지션 검사
 const SV = { n: 0 };    // 규격 검사를 한 장면 수
 const LGC = { n: 0 };   // 은퇴 기록 검사 수
 const CE = { n: 0, tut: 0 };   // 우승 화면 수, 처음 안내 검사 수
@@ -151,7 +155,29 @@ function checkFans(tag, rep, nick, rivalNicks, streak, first1) {
     if (/데뷔/.test(t) && x.k !== 'debut') fail(`${tag} 데뷔전이 아닌데 데뷔 언급: ${t}`);
     if (/결승/.test(t.replace(/준결승/g, '')) && !fin) fail(`${tag} 결승이 아닌데 결승 언급: ${t}`);
     if (x.k === 'mvp' && /전/.test(t) && !played.some(m => m.mvp && t.includes(m.opp)) && /\{opp\}/.test(G.D.FAN.mvp[+x.id.split('#')[1]].t)) fail(`${tag} MVP 경기의 상대가 다름: ${t}`);
+    // 포지션 전용 문장: 내 포지션일 때만, 문장 속 숫자는 그 경기의 실제 기록이어야 한다
+    { const tp = G.D.FAN[x.k][+x.id.split('#')[1]], st = G.state(), my = G.D.ROLES.find(r => r.id === st.role).name;
+      if (tp.role && tp.role !== st.role) fail(`${tag} 다른 포지션의 팬 반응이 나옴: ${t}`);
+      for (const r of G.D.ROLES) if (r.name !== my && new RegExp('(^|[ ,.])' + r.name + ' ' + nick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(t)) fail(`${tag} 팬 반응이 포지션을 잘못 부름(${my}): ${t}`);
+      if (tp.role) FN.roleLines = (FN.roleLines || 0) + 1;
+      if (/\{(kl|de|as|ka)\}/.test(tp.t)) {
+        const pool = x.k === 'mvp' ? played.filter(m => m.mvp) : played.filter(m => !m.win && m.r >= 7.5);
+        const hit = pool.some(m => (!/\{opp\}/.test(tp.t) || t.includes(m.opp)) && (!/\{kl\}/.test(tp.t) || t.includes(m.k + '킬')) && (!/\{de\}/.test(tp.t) || t.includes(m.d + '데스')) && (!/\{as\}/.test(tp.t) || t.includes(m.a + '어시스트') || t.includes('어시스트 ' + m.a + '개')) && (!/\{ka\}/.test(tp.t) || t.includes((m.k + m.a) + '번')) && (!/\{r\}/.test(tp.t) || t.includes(m.r.toFixed(1))));
+        if (!hit) fail(`${tag} 팬 반응의 킬·데스·어시스트가 경기 기록과 다름: ${t}`); FN.kdaLines = (FN.kdaLines || 0) + 1;
+      }
+      if (/\{mt\}/.test(tp.t) && !t.includes('"' + cm.moms[cm.moms.length - 1].title + '"')) fail(`${tag} 팬 반응의 승부처 이름이 다름: ${t}`);
+    }
     FN.lines++; FN.keys[x.k] = (FN.keys[x.k] || 0) + 1; FN.voices[x.v] = (FN.voices[x.v] || 0) + 1;
+  }
+  // 포지션 해설: 그 달에 실제로 뛴 경기 하나의 기록과 숫자가 같아야 한다
+  { const v = G.roleReview(ms), st = G.state();
+    if (v) { PS.review++; if (v.good) PS.reviewGood++;
+      const m = played.find(q => q.opp === v.opp && q.r === v.r && q.k === v.k && q.d === v.d && q.a === v.a);
+      if (!m || v.pos !== G.D.ROLES.find(r => r.id === st.role).name || /undefined|NaN/.test(v.head + v.text)) fail(`${tag} 포지션 해설이 경기 기록과 다름: ${JSON.stringify(v)}`);
+      if (v.good ? m.r < 7.5 || played.some(q => q.r > m.r) : m.r > 4.8 || played.some(q => q.r >= 7.5)) fail(`${tag} 포지션 해설이 고른 경기가 기준과 다름`);
+      const nums = (v.head + ' ' + v.text).match(/\d+(\.\d)?/g) || [], okNums = new Set([m.k, m.d, m.a, m.k + m.a].map(String).concat([m.r.toFixed(1)]));
+      for (const n of nums) if (!okNums.has(n)) fail(`${tag} 포지션 해설에 기록에 없는 숫자 ${n}: ${v.head} / ${v.text}`);
+    } else if (played.some(q => q.r >= 7.5 || q.r <= 4.8) && played.length) { if (played.some(q => q.r >= 7.5)) fail(`${tag} 잘한 경기가 있는데 포지션 해설이 없음`); }
   }
   FN.months++; FN.byCount[fans.length]++;
   if (!played.length) FN.benchMonths++; else if (!fans.length) FN.none++;
@@ -165,6 +191,8 @@ function runCareer(i, tag, onEnd) {
   let guard = 0, lastYear = 0;
   while (!G.state().over) {
     const sc = G.scene();
+    if (sc && sc !== car.lastSc && sc.type === 'offers') for (const o of sc.offers) { const v = G.offerInfo(o), teams = G.D.ORGS.filter(g => g.region === G.D.ORG[o.org].region).length; PS.offers++;
+      if (!v || v.rank < 1 || v.rank > teams || v.teams !== teams || v.str !== Math.round(G.state().orgStr[o.org]) || v.diff !== Math.floor(G.ovr()) - v.str || v.pay !== o.salary - G.state().contract.salary || v.here !== (o.org === G.state().org) || v.rivals.some(r => !G.state().rivals.find(q => q.nick === r.nick && q.org === o.org && !q.retired))) fail(`${tag} 계약 제안 설명이 실제 값과 다름: ${JSON.stringify(v)}`); }
     if (sc && sc !== car.lastSc) { car.lastSc = sc; SV.n++; if (!G.validScene(sc)) fail(`${tag} 장면이 규격에 맞지 않음: ${JSON.stringify(sc).slice(0, 300)}`); for (const q of G.state().q) if (!G.validScene(q)) fail(`${tag} 대기 중인 장면이 규격에 맞지 않음: ${JSON.stringify(q).slice(0, 300)}`); }
     if (sc && sc.type === 'info' && sc.cele) {
       // 우승 화면: 연출 표시를 바꾸고 여러 번 다시 불러와도 우승 기록·자금이 그대로여야 한다.
@@ -270,7 +298,7 @@ for (let i = 0; i < N; i++) {
     if (r.titles.some(t => t.tier === 'world')) A.worlds++; if (r.awards.some(a => a.name === '올해의 선수')) A.poy++;
     A.inj += c.inj; A.moves += c.moves; A.peak.push(r.peak); A.g += r.g; A.tryouts += c.tryouts || 0;
     endWhy[r.reason] = (endWhy[r.reason] || 0) + 1;
-    for (const [m, k] of [[byTrait, trait], [byRole, role]]) { m[k] = m[k] || { n: 0, score: 0, peak: 0, big: 0, age: 0, debut: 0 }; m[k].n++; m[k].score += r.score; m[k].peak += r.peak; m[k].big += big; m[k].age += r.age; if (c.debut) m[k].debut++; }
+    for (const [m, k] of [[byTrait, trait], [byRole, role]]) { m[k] = m[k] || { n: 0, score: 0, peak: 0, big: 0, age: 0, debut: 0, g: 0, rs: 0, mvp: 0, w: 0, aw: 0, poy: 0, sc2: 0 }; m[k].g += c.g; m[k].rs += c.rs; m[k].mvp += c.mvp; m[k].w += c.w; m[k].aw += c.awards.length; m[k].sc2 += r.score * r.score; if (c.awards.some(a => a.name === '올해의 선수')) m[k].poy++; m[k].n++; m[k].score += r.score; m[k].peak += r.peak; m[k].big += big; m[k].age += r.age; if (c.debut) m[k].debut++; }
   });
 }
 
@@ -454,6 +482,7 @@ console.log(`1군 데뷔율 ${f(debut)}%${mark(debut, T && T.debut)} | 데뷔 �
 console.log(`데뷔 경로: 소속 구단 콜업 ${pc(A.via.callup || 0)} · 다른 구단의 1군 제안 ${pc(A.via.offer || 0)} · 데뷔 못 함 ${pc(A.noDebut)} | 데뷔 나이 분포 ${Object.keys(A.debutDist).map(k => k + ':' + A.debutDist[k]).join(' ')}`);
 console.log(`은퇴 나이 평균 ${f(avg(A.retireAge), 2)}세${mark(avg(A.retireAge), T && T.retireAge)} · 표준편차 ${f(sd(A.retireAge), 2)} | 분포 ${dist(A.retireAge)}`);
 console.log(`포지션별 평균 점수: ${ROLES.map((k, i) => `${k} ${f(roleMeans[i])} (n=${byRole[k].n}, 데뷔 ${f(byRole[k].debut / byRole[k].n * 100, 0)}%, 은퇴 ${f(byRole[k].age / byRole[k].n)}세, 우승 ${f(byRole[k].big / byRole[k].n, 2)})`).join(' | ')}`);
+console.log(`포지션별 경기 지표: ${ROLES.map(k => { const b = byRole[k]; return `${k} 평균 평점 ${f(b.rs / b.g, 3)} · 승률 ${f(b.w / b.g * 100, 1)}% · 경기 MVP ${f(b.mvp / b.g * 100, 2)}% · 개인상 ${f(b.aw / b.n, 2)} · 올해의 선수 ${f(b.poy / b.n * 100, 1)}% · 점수 표준오차 ${f(Math.sqrt((b.sc2 / b.n - (b.score / b.n) ** 2) / b.n), 2)}`; }).join(' | ')}`);
 console.log(`포지션 점수 차(최댓값−최솟값) ${f(spread, 2)}${mark(spread, T && T.roleSpread)}`);
 console.log(`성향별 평균 점수: ${TRAITS.map(k => `${k} ${f(byTrait[k].score / byTrait[k].n)} (n=${byTrait[k].n}, 우승 ${f(byTrait[k].big / byTrait[k].n, 2)})`).join(' | ')}`);
 console.log(`1군 대회 우승 커리어당 ${f(avg(A.big), 2)}${mark(avg(A.big), T && T.titles)} · 표준편차 ${f(sd(A.big), 2)} · 무관 ${pc(A.big.filter(v => !v).length)} | 2군 포함 ${f(A.titles / N, 2)} | 월드 우승 경험 ${pc(A.worlds)}`);
@@ -487,6 +516,7 @@ console.log('— 승부처·리그 회귀 —');
 const rate = o => o.n ? (o.ok / o.n * 100).toFixed(1) : '-', mean = o => o.n ? (o.p / o.n).toFixed(1) : '-';
 console.log(`승부처 ${MO.n}회 | 표시 확률 평균 → 실제 성공률: ` + ['개인 기량', '판단', '조직력'].map((n, i) => `${n} ${mean(MO.byChoice[i])}% → ${rate(MO.byChoice[i])}% (${MO.byChoice[i].n}회)`).join(' | '));
 if (MO.okSet.n && MO.noSet.n) console.log(`승부처 세트 승률: 성공 뒤 표시 ${f(MO.okSet.exp / MO.okSet.n)}% → 실제 ${f(MO.okSet.w / MO.okSet.n * 100)}% | 실패 뒤 표시 ${f(MO.noSet.exp / MO.noSet.n)}% → 실제 ${f(MO.noSet.w / MO.noSet.n * 100)}%`);
+console.log(`포지션별 승부처: ${ROLES.map(k => { const b = MO.byRole[k]; return b ? `${k} ${b.n}회 · 표시 ${f(b.p / b.n, 1)}% → 성공 ${f(b.ok / b.n * 100, 1)}% · 세트 승률 ${f(b.sw / b.n * 100, 1)}% · 전용 ${f(b.own / b.n * 100, 0)}%` : k + ' 0회'; }).join(' | ')}`);
 console.log(`내가 뛴 시리즈 ${MO.series}회 중 승부처가 나온 시리즈 ${f(MO.seriesWithMom / (MO.series || 1) * 100)}% | 결승 승부처 횟수 분포 0:${MO.perFinal[0]} 1:${MO.perFinal[1]} 2:${MO.perFinal[2]} 3:${MO.perFinal[3]}`);
 console.log(`일반 리그 경기 ${LG.n}회 | 승률 ${f(LG.w / LG.n * 100, 2)}% | 평균 평점 ${f(LG.rs / LG.n, 3)} | 평점 구간(~5, 5~6, 6~7, 7~8, 8~) ${LG.b.map(v => f(v / LG.n * 100, 2) + '%').join(' ')}`);
 console.log('PCT ' + JSON.stringify([1, 3, 8, 16, 28, 42, 58, 74, 90].map(p => [A.scores[Math.floor(N * p / 100)], p])));
@@ -729,6 +759,38 @@ if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim
     } catch (e) { fail('기록 보관: 검사를 통과한 변형 백업이 진행 중 문제를 일으킴 — ' + what + ' — ' + e.message); }
   }
 
+  // 14) 포지션(9단계): ID는 그대로, 표시 이름만 바뀐다. 예전 이름으로 저장된 기록은 저장을 고치지 않고 보여 줄 때만 바꾼다.
+  t(JSON.stringify(G.D.ROLES.map(r => r.id)) === JSON.stringify(['van', 'rov', 'core', 'gun', 'sup']) && JSON.stringify(G.D.ROLES.map(r => r.name)) === JSON.stringify(['탑', '정글', '미드', '원딜', '서폿']), '포지션 ID 또는 이름');
+  t(G.roleLabel('선봉') === '탑' && G.roleLabel('유격') === '정글' && G.roleLabel('코어') === '미드' && G.roleLabel('사수') === '원딜' && G.roleLabel('지원') === '서폿', '예전 이름 변환');
+  t(G.roleLabel('미드') === '미드' && G.roleLabel('코어', 'gun') === '원딜' && G.roleLabel('모르는값') === '모르는값' && G.roleLabel('') === '미상' && G.roleLabel(null) === '미상' && G.roleLabel(5, 'zz') === '미상', '이름 변환의 경계값');
+  clear(); const oldRoles = ['선봉', '유격', '코어', '사수', '지원', '모름', ''].map((role, i) => ({ nick: 'R' + i, role, score: 60 - i, grade: 'B', ep: '믿음직한 주전', peak: 80, titles: 1, years: 9 }));
+  store[HALL] = JSON.stringify(oldRoles);
+  h = G.hall(); t(h.length === 7 && h.every((r, i) => r.role === oldRoles[i].role) && store[HALL] === JSON.stringify(oldRoles) && JSON.parse(store[LEG]).recs.every((r, i) => r.role === oldRoles[i].role), '예전 포지션 글자가 저장에서 바뀜');
+  t(JSON.stringify(h.map(r => G.roleLabel(r.role, r.roleId))) === JSON.stringify(['탑', '정글', '미드', '원딜', '서폿', '모름', '미상']), '예전 기록의 표시 이름');
+  { const ids0 = h.map(r => r.id).join(), out = JSON.stringify(G.exportData()); clear(); const c = G.importCheck(out); t(c.ok && G.importApply(c.data) && G.hall().map(r => r.id).join() === ids0 && G.hall().every((r, i) => r.role === oldRoles[i].role) && store[HALL] === JSON.stringify(oldRoles), '예전 포지션 기록의 백업·복원(ID·글자 유지)');
+    const cardOld = CARD.plan(Object.assign({}, G.hall()[2], { role: G.roleLabel(G.hall()[2].role) }), measure).filter(o => o.k === 'sub')[0]; t(cardOld && cardOld.s.startsWith('미드'), '예전 기록의 카드 포지션 표시'); }
+  // 0.8.0에서 은퇴한 저장(포지션이 예전 글자, 보관소에 이미 있음): 다시 열어도 한 건이고 글자는 그대로
+  { clear(); start('OldPos', 2); finish(); const s0 = JSON.parse(store[KEY]), id = s0.cid, oldName = { van: '선봉', rov: '유격', core: '코어', gun: '사수', sup: '지원' }[s0.role];
+    s0.q[0].role = oldName; delete s0.q[0].roleId; store[KEY] = JSON.stringify(s0); const L = JSON.parse(store[LEG]); L.recs[0].role = oldName; store[LEG] = JSON.stringify(L);
+    const hv = JSON.parse(store[HALL]); hv[0].role = oldName; store[HALL] = JSON.stringify(hv); const a0 = store[ACHK];
+    t(G.load() === 'ok' && G.hall().length === 1 && G.hallGet(id).role === oldName && G.roleLabel(G.hallGet(id).role, G.hallGet(id).roleId) === G.D.ROLES.find(r => r.id === s0.role).name && JSON.parse(store[HALL])[0].role === oldName && store[ACHK] === a0, '0.8.0 은퇴 저장을 다시 열자 기록이 바뀌거나 늘어남');
+    // 0.6.0 이전에 은퇴한 저장(보관소에 없고 예전 명예의 전당에 요약만): 예전 글자끼리 맞춰 한 건으로 합쳐진다
+    const s1 = JSON.parse(store[KEY]); delete s1.cid; delete s1.q[0].rid; delete s1.q[0].at; clear(); store[KEY] = JSON.stringify(s1); store[HALL] = JSON.stringify(hv);
+    t(G.load() === 'ok' && G.hall().length === 1 && G.hall()[0].src === 'play' && G.hall()[0].role === oldName, '예전 글자로 저장된 은퇴 기록 합치기'); }
+  // 포지션 해설·계약 설명·이름 변환은 난수를 쓰지 않는다
+  { clear(); start('Rng', 3); for (let k = 0; k < 80; k++) G.autoStep(); G.seed(31337); const r1 = G.rand(); G.seed(31337);
+    G.roleLabel('코어'); G.roleReview([{ plays: true, r: 8.8, k: 5, d: 1, a: 9, opp: 'X', win: true }]); G.offerInfo({ org: G.state().org, squad: 'first', salary: 5000 }); G.rivals();
+    t(G.rand() === r1, '포지션 조회가 난수를 소비함');
+    const rv5 = ROLES.map(id => G.roleReview([{ plays: true, r: 8.8, k: 5, d: 1, a: 9, opp: 'X팀', win: true }, { plays: true, r: 6, k: 1, d: 4, a: 2, opp: 'Y팀', win: false }, { plays: false, r: 0, k: 0, d: 0, a: 0, opp: 'Z팀', win: true }], id));
+    t(rv5.every(v => v && v.good && v.opp === 'X팀') && rv5[4].head === '어시스트 9' && rv5[3].head === '5킬 1데스' && rv5[1].head === '킬 관여 14' && new Set(rv5.map(v => v.text)).size === 5, '포지션마다 다른 해설');
+    t(G.roleReview([{ plays: true, r: 6.5, k: 1, d: 3, a: 2, opp: 'A', win: true }]) === null && G.roleReview([]) === null && G.roleReview([{ plays: false }]) === null && G.roleReview([{ plays: true, r: 4.1, k: 0, d: 7, a: 1, opp: 'B', win: false }], 'sup').good === false, '해설이 없는 달과 부진한 달');
+    if (seedArg != null) G.seed(+seedArg + 5); else G.seed(null); }
+  const ownAll = G.D.MOMENTS.filter(x => x.role);
+  t(ownAll.length >= 20 && ROLES.every(id => ownAll.filter(x => x.role === id).length >= 4) && ownAll.every(x => x.c.length === 3 && x.c.every(c => c.chk && Array.isArray(c.s) && c.s[0] > 0 && c.s[1] < 0 && c.s[0] <= 10 && c.s[1] >= -8 && c.ok && c.no && c.label)) && new Set(G.D.MOMENTS.map(x => x.id)).size === G.D.MOMENTS.length, '포지션 전용 승부처의 수·구성·상한');
+  if (N >= 1000) for (const x of ownAll) if (!PS.own[x.id]) fail('기록 보관: 포지션 전용 승부처 ' + x.id + ' 가 한 번도 나오지 않음');
+
+  console.log('— 포지션(9단계) —');
+  console.log(`전용 승부처 ${ownAll.length}종(포지션마다 ${ROLES.map(id => ownAll.filter(x => x.role === id).length).join('·')}) 가운데 ${Object.keys(PS.own).length}종 출현, 합계 ${Object.values(PS.own).reduce((a, b) => a + b, 0)}회, 가장 적게 나온 것 ${Math.min(...ownAll.map(x => PS.own[x.id] || 0))}회 · 다른 포지션에서 나온 경우 0 | 포지션 해설 ${PS.review}개(잘한 경기 ${PS.reviewGood}개)의 숫자를 경기 기록과 대조 | 포지션 전용 팬 반응 ${FN.roleLines || 0}줄, 킬·데스·어시스트가 든 ${FN.kdaLines || 0}줄 대조 | 계약 제안 설명 ${PS.offers}개 대조`);
   console.log('— 기록 보관(7단계) —');
   console.log(`은퇴 기록 검사 ${LGC.n}회(은퇴마다 보관소에 한 건, 은퇴 화면과 같은 값, 다시 불러와도 늘지 않음) | 단위 검사 ${R.n}개 통과: 예전 명예의 전당 30명 이관·원본 보존, 커리어 40개의 도전 과제 ${gotIds.length}종이 실제 기록과 일치, 카드 글자 ${cardOps}개 대조`);
   console.log(`장면 규격(8단계): 진행 중 나온 장면 ${SV.n}개 모두 규격 통과 | 장면이 손상된 백업 ${sceneRej}종 거부 | 변형 백업 ${FZ.n}개 중 ${FZ.rej}개 거부, 통과한 ${FZ.ok}개는 복원 뒤 ${FZ.steps}번 진행하는 동안 오류 0`);

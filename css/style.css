@@ -303,3 +303,16 @@ input.srhide:focus + label.btn { outline: 2px solid var(--cy); outline-offset: 2
 .vault .grade b { font: 400 84px/1 var(--display); color: var(--gold); }
 .vault .grade h2 { font-size: 26px; } .vault .grade p { color: var(--dim); font-size: 13px; }
 .page h2:focus { outline: none; }
+
+/* ---- 포지션 안내, 경기 해설, 계약 제안 설명 (9단계) ---- */
+.opt.role b small { font: 700 12px var(--body); letter-spacing: .1em; color: var(--cy); margin-left: 6px; }
+.opt.role .rinfo { margin-top: 4px; font-size: 13px; color: #d5d8f5; overflow-wrap: anywhere; }
+.opt.role .rinfo em { font-style: normal; font-weight: 700; font-size: 12px; color: var(--gold); margin-right: 8px; }
+.oinfo { list-style: none; padding: 0; margin: 8px 0 2px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.5; color: #d5d8f5; overflow-wrap: anywhere; }
+.oinfo li { padding-left: 10px; border-left: 2px solid var(--line); }
+.act { font-size: 13px; line-height: 1.55; background: var(--ink); border: 1px solid var(--line); padding: 8px 10px; overflow-wrap: anywhere; }
+.act b { font: 400 13px var(--display); color: var(--cy); margin-right: 8px; } .act .chip { margin-right: 8px; }
+.rkind { font-size: 13px; color: var(--dim); margin: 4px 0; overflow-wrap: anywhere; } .rkind b { font-size: 12px; font-weight: 700; color: var(--text); border: 1px solid var(--line); padding: 1px 7px; margin-right: 8px; white-space: nowrap; }
+.rkind.same b { color: #0e1126; background: var(--gold); border-color: var(--gold); }
+/* 장면 창의 내용이 창보다 길면 줄어들어 겹치지 않고 창 안에서 스크롤된다 */
+.sheet > * { flex-shrink: 0; }
