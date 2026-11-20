@@ -104,6 +104,7 @@
   }
 
   const api = { W, H, plan, draw, fit, NONE, fonts: [FD(40), FB(40, 500), FB(40, 700)] };
+  (root.PG_VER = root.PG_VER || {}).card = '0.8.0';
   root.PG_CARD = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

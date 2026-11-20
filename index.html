@@ -12,15 +12,30 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=0.7.0">
+<link rel="stylesheet" href="css/style.css?v=0.8.0">
 </head>
 <body>
 <div id="app"></div>
 <noscript>이 게임은 자바스크립트가 필요합니다.</noscript>
-<script src="js/data.js?v=0.7.0"></script>
-<script src="js/engine.js?v=0.7.0"></script>
-<script src="js/card.js?v=0.7.0"></script>
-<script src="js/ui.js?v=0.7.0"></script>
-<script>if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function () {});</script>
+<script src="js/data.js?v=0.8.0"></script>
+<script src="js/engine.js?v=0.8.0"></script>
+<script src="js/card.js?v=0.8.0"></script>
+<script src="js/ui.js?v=0.8.0"></script>
+<script>
+// 파일 버전 확인: 업데이트 도중 연결이 끊기면 새 페이지에 예전 스크립트가 섞여 열릴 수 있다. 그때는 게임을 시작하지 않고 새로 고침을 안내한다.
+(function () {
+  var want = '0.8.0', v = window.PG_VER || {}, bad = ['data', 'engine', 'card', 'ui'].filter(function (k) { return v[k] !== want; });
+  if (bad.length) {
+    var app = document.getElementById('app'), box = document.createElement('div'), p = document.createElement('p'), b = document.createElement('button');
+    box.setAttribute('role', 'alert'); box.style.cssText = 'padding:24px 16px;display:flex;flex-direction:column;gap:14px';
+    p.textContent = '게임 파일을 다 받지 못했거나 업데이트 도중 예전 파일이 섞였습니다. 인터넷 연결을 확인하고 새로 고쳐 주세요. 저장된 진행 상황은 그대로 있습니다.';
+    b.textContent = '새로 고침'; b.className = 'btn'; b.onclick = function () { location.reload(); };
+    box.appendChild(p); box.appendChild(b); app.textContent = ''; app.appendChild(box); window.PG_MIXED = bad;
+  }
+  // 오프라인 실행용 보관: 배포 주소(HTTPS)와 로컬 시험 주소(localhost)에서만 켠다
+  var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) navigator.serviceWorker.register('sw.js').catch(function () {});
+})();
+</script>
 </body>
 </html>

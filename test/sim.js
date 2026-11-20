@@ -106,6 +106,7 @@ const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, tit
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
 const FX = { n: 0, withRival: 0 };
+const SV = { n: 0 };    // 규격 검사를 한 장면 수
 const LGC = { n: 0 };   // 은퇴 기록 검사 수
 const CE = { n: 0, tut: 0 };   // 우승 화면 수, 처음 안내 검사 수
 /* ---- 팬 반응 검사 ---- */
@@ -164,6 +165,7 @@ function runCareer(i, tag, onEnd) {
   let guard = 0, lastYear = 0;
   while (!G.state().over) {
     const sc = G.scene();
+    if (sc && sc !== car.lastSc) { car.lastSc = sc; SV.n++; if (!G.validScene(sc)) fail(`${tag} 장면이 규격에 맞지 않음: ${JSON.stringify(sc).slice(0, 300)}`); for (const q of G.state().q) if (!G.validScene(q)) fail(`${tag} 대기 중인 장면이 규격에 맞지 않음: ${JSON.stringify(q).slice(0, 300)}`); }
     if (sc && sc.type === 'info' && sc.cele) {
       // 우승 화면: 연출 표시를 바꾸고 여러 번 다시 불러와도 우승 기록·자금이 그대로여야 한다.
       const t0 = G.state().car.titles.length, m0 = G.state().money;
@@ -427,6 +429,12 @@ for (const fn of [d => { delete d.fan; }, d => { d.fan = 'x'; }, d => { d.fan = 
 const root = path.join(__dirname, '..'), html = fs.readFileSync(path.join(root, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 if (G.VERSION) {
   const vs = [...html.matchAll(/\?v=([\w.]+)/g)].map(m => m[1]), swv = (sw.match(/VERSION = '([\w.]+)'/) || [])[1];
+  // 스크립트마다 적어 둔 파일 버전과 index.html 의 확인 스크립트도 같은 값이어야 한다
+  const rd = f => fs.readFileSync(path.join(root, f), 'utf8'), pick1 = (txt, re) => (txt.match(re) || [])[1];
+  const marks = { 'js/data.js': pick1(rd('js/data.js'), /\.data = '([\w.]+)'/), 'js/card.js': pick1(rd('js/card.js'), /\.card = '([\w.]+)'/), 'js/ui.js': pick1(rd('js/ui.js'), /UI_VERSION = '([\w.]+)'/), 'index.html 확인 스크립트': pick1(html, /want = '([\w.]+)'/) };
+  for (const f in marks) if (marks[f] !== G.VERSION) fail(`버전 표기가 서로 다름: 엔진 ${G.VERSION}, ${f} ${marks[f]}`);
+  for (const f of ['css/style.css', 'js/data.js', 'js/engine.js', 'js/card.js', 'js/ui.js']) if (!html.includes(f + '?v=' + G.VERSION)) fail(`index.html 이 ${f} 를 이 버전으로 부르지 않음`);
+  for (const f of ['index.html', 'css/style.css', 'js/data.js', 'js/engine.js', 'js/card.js', 'js/ui.js', 'manifest.webmanifest', 'icon.svg']) if (!sw.includes("'" + f + "'") && !sw.includes("'" + f + "' + Q")) fail(`sw.js 의 사전 보관 목록에 ${f} 가 없음`);
   if (!vs.length || vs.some(v => v !== G.VERSION) || swv !== G.VERSION) fail(`버전 표기가 서로 다름: 엔진 ${G.VERSION}, index.html ${[...new Set(vs)]}, sw.js ${swv}`);
 }
 
@@ -648,7 +656,7 @@ if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim
   t(G.importApply(null) === false && G.importApply('x') === false && snap() === keep, '빈 복원 요청');
   // 꺾쇠는 무해한 글자로 바뀌고, 모르는 도전 과제와 여분의 값은 버려진다
   const evil = '<img src=x onerror=alert(1)>';
-  chk = G.importCheck(mod(x => { x.payload.career.log = [{ y: 1, m: 2, t: evil, tone: 'gold' }]; x.payload.legacy.recs[0].ep = evil; x.payload.legacy.recs[0].hack = evil; x.payload.achievements.got.debut = { at: 5, nick: evil }; x.payload.achievements.got.cheat = { at: 5 }; x.payload.hall[0].ep = evil; x.payload.evil = evil; x.payload.career.__proto__x = 1; }));
+  chk = G.importCheck(mod(x => { x.payload.career.log = [{ y: 1, m: 2, msg: evil, tone: 'gold' }]; x.payload.legacy.recs[0].ep = evil; x.payload.legacy.recs[0].hack = evil; x.payload.achievements.got.debut = { at: 5, nick: evil }; x.payload.achievements.got.cheat = { at: 5 }; x.payload.hall[0].ep = evil; x.payload.evil = evil; x.payload.career.__proto__x = 1; }));
   t(chk.ok && !/[<>]/.test(JSON.stringify(chk.data)) && !('cheat' in chk.data.ach.got) && !('hack' in chk.data.legacy.recs[0]), '꺾쇠·여분 값 정리');
   t(snap() === keep, '검사만으로 데이터가 바뀜');
   // 형식이 맞는 백업의 내용을 조금 바꿔도(다른 선수 이름) 그대로 복원된다 = 전체 복원
@@ -679,7 +687,50 @@ if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim
   t(G.rand() === r0, '기록 기능이 난수를 소비함');
   t(G.state().nick !== '<b>' && (() => { G.newGame({ nick: '<b>"x\'&', region: 'kr', role: 'core', trait: 'brain' }); return G.state().nick === 'bx'; })(), '새 선수 아이디의 특수문자 정리');
 
+  // 12) 장면 규격: 형식은 맞지만 장면의 필수 항목이 빠진 저장은 복원 전에 거부된다
+  const sceneBad = {
+    '내용 없는 알림': [{ type: 'info' }], '줄 목록 없는 알림': [{ type: 'info', title: 'a', text: 'b', tone: 'gold' }], '선택지 없는 이벤트': [{ type: 'event', ev: 'parents', title: 'a', text: 'b' }],
+    '없는 이벤트': [{ type: 'event', ev: 'nope', title: 'a', text: 'b', choices: [{ label: 'x', p: 50 }] }], '없는 카드': [{ type: 'cards', cards: ['zz', 'zz', 'zz'], reroll: 1 }],
+    '확률이 문자열': [{ type: 'tryout', p: '50', text: 'x', vet: false, retry: false }], '없는 구단 제안': [{ type: 'offers', msg: '', canStay: true, offers: [{ name: 'x', org: 'zz', region: 'x', renew: false, salary: 1, squad: 'first', years: 1, p: null, tries: 0 }] }],
+    '경기 목록이 문자열': [{ type: 'month', title: 'a', sub: 'b', plan: 'c', ovr: 50, salary: 1, notes: [], growth: [], matches: 'x' }], '은퇴 평가 축 누락': [Object.assign({}, G.scene() && G.scene().type === 'retire' ? G.scene() : { type: 'retire' }, { ax: {} })],
+  };
+  let sceneRej = 0;
+  for (const name in sceneBad) { const c = G.importCheck(mod(x => { x.payload.career.q = sceneBad[name]; })); if (c.ok) fail('기록 보관: 장면이 손상된 백업 "' + name + '" 이 거부되지 않음'); sceneRej++; }
+
+  // 13) 변형 시험: 정상 백업(예전 저장 22종에서 만든 것)의 값 하나를 지우거나 다른 자료형·극단값으로 바꾼다.
+  //     거부되면 그만이고, 통과했다면 복원해서 은퇴까지 진행하는 동안 오류·값 이상·규격 밖 장면이 없어야 한다. 기기의 데이터는 거부 시 그대로여야 한다.
+  let fa = (seedArg != null ? +seedArg : Date.now()) + 424242 | 0;
+  const fr = () => { fa = fa + 0x6D2B79F5 | 0; let x = Math.imul(fa ^ fa >>> 15, 1 | fa); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; };
+  const bases = fxNames.map(f => { clear(); store[KEY] = fs.readFileSync(path.join(fx, f + '.json'), 'utf8'); G.load(); for (let k = 0, n = Math.floor(fr() * 40); k < n && !G.state().over; k++) G.autoStep(); return JSON.stringify(G.exportData()); });
+  // 끝나지 않는 시리즈를 만드는 값(몇 전제인지가 터무니없이 큼)은 바로 거부되어야 한다. 검사가 멈추면 안 된다.
+  { clear(); store[KEY] = fs.readFileSync(path.join(fx, 'stage3-moment.json'), 'utf8'); G.load(); const withTour = JSON.parse(JSON.stringify(G.exportData())); if (!(withTour.payload.career.sim && withTour.payload.career.sim.tour)) fail('기록 보관: 대회 도중의 예전 저장이 없음');
+    if (!G.importCheck(JSON.stringify(withTour)).ok) fail('기록 보관: 대회 도중의 정상 백업이 거부됨');
+    withTour.payload.career.sim.tour.ms.forEach(m => { m.bo = 1e15; }); const t1 = Date.now(), c = G.importCheck(JSON.stringify(withTour));
+    if (c.ok || Date.now() - t1 > 2000) fail('기록 보관: 끝나지 않는 시리즈가 든 백업이 거부되지 않거나 검사가 오래 걸림 (' + (Date.now() - t1) + 'ms)'); sceneRej++; }
+  const VALS = [undefined, null, 'x', '', -1, 0, 1e9, 1e15, 0.5, [], {}, true, 'zz'.repeat(400), [null], { a: 1 }];
+  const FZ = { n: 0, rej: 0, ok: 0, steps: 0 }, FUZZ = +(process.env.PG_FUZZ || Math.max(200, Math.min(1000, Math.round(N / 3))));
+  for (let it = 0; it < FUZZ; it++) {
+    const x = JSON.parse(bases[it % bases.length]), slots = [];
+    (function walk(o, p) { for (const k of Object.keys(o)) { slots.push([o, k, p + '.' + k]); if (o[k] && typeof o[k] === 'object') walk(o[k], p + '.' + k); } })(x.payload.career, 'career');
+    const [obj, key, where] = slots[Math.floor(fr() * slots.length)], v = VALS[Math.floor(fr() * VALS.length)], was = JSON.stringify(obj[key]);
+    if (v === undefined) { if (Array.isArray(obj)) obj.splice(+key, 1); else delete obj[key]; } else obj[key] = v;
+    const what = `${fxNames[it % bases.length]} ${where}: ${String(was).slice(0, 60)} → ${v === undefined ? '(삭제)' : JSON.stringify(v).slice(0, 30)}`;
+    clear(); store[HALL] = '[]'; const before = snap(); FZ.n++;
+    let c; try { c = G.importCheck(JSON.stringify(x)); } catch (e) { fail('기록 보관: 변형 백업 검사 중 오류 — ' + what + ' — ' + e.message); }
+    if (!c.ok) { FZ.rej++; if (snap() !== before) fail('기록 보관: 거부된 변형 백업이 데이터를 바꿈 — ' + what); continue; }
+    FZ.ok++;
+    try {
+      if (!G.importApply(c.data) || G.load() !== 'ok') throw new Error('복원 뒤 열리지 않음');
+      if (G.state().org && !G.state().over) { G.table(); G.goal(); G.rivals(); G.rivalFixtures(); }
+      for (let k = 0; k < 6000 && !G.state().over; k++) { G.autoStep(); FZ.steps++; const st = G.state(); for (const q of st.q) if (!G.validScene(q)) throw new Error('규격 밖 장면 ' + q.type);
+        for (const id in st.stats) if (!(st.stats[id] >= 1 && st.stats[id] <= 99)) throw new Error('능력치 ' + id); for (const id of ['cond', 'wrist', 'trust', 'fame']) if (!(st[id] >= 0 && st[id] <= 100)) throw new Error(id);
+        if (!Number.isFinite(st.money) || !Number.isFinite(G.ovr())) throw new Error('자금·OVR'); }
+      G.table(); G.goal(); G.rivals(); G.achList(); G.hall();
+    } catch (e) { fail('기록 보관: 검사를 통과한 변형 백업이 진행 중 문제를 일으킴 — ' + what + ' — ' + e.message); }
+  }
+
   console.log('— 기록 보관(7단계) —');
   console.log(`은퇴 기록 검사 ${LGC.n}회(은퇴마다 보관소에 한 건, 은퇴 화면과 같은 값, 다시 불러와도 늘지 않음) | 단위 검사 ${R.n}개 통과: 예전 명예의 전당 30명 이관·원본 보존, 커리어 40개의 도전 과제 ${gotIds.length}종이 실제 기록과 일치, 카드 글자 ${cardOps}개 대조`);
+  console.log(`장면 규격(8단계): 진행 중 나온 장면 ${SV.n}개 모두 규격 통과 | 장면이 손상된 백업 ${sceneRej}종 거부 | 변형 백업 ${FZ.n}개 중 ${FZ.rej}개 거부, 통과한 ${FZ.ok}개는 복원 뒤 ${FZ.steps}번 진행하는 동안 오류 0`);
   console.log(`백업: 내보내기→빈 기기 복원 일치(커리어 저장은 글자 단위로 동일) 후 은퇴까지 진행 | 예전 저장 ${fxBack}종 백업·복원 후 완주 | 잘못된 파일 ${rejected}종 모두 거부·데이터 불변 | 쓰기 실패 5개 위치에서 되돌리기 | 보관소·도전 과제 쓰기 실패 시 커리어 저장 정상 | 난수 미사용`);
 }
