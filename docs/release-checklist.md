@@ -91,6 +91,7 @@
 - [x] `node test/browser/run.js` 통과(v0.8.0에서 실행, PC 헤드리스 크롬)
 - [x] `node test/browser/update-chain.js` 통과(v0.6.0 → v0.7.0 → v0.8.0, 로컬 HTTPS)
 - [x] 버전 여섯 곳 일치(테스트가 검사)
+- [x] GitHub Actions(`.github/workflows/test.yml`)에서 같은 검사 통과(v0.8.0 PR에서 확인)
 - [ ] 배포 주소에서 버전 숫자가 바뀌었는지, 예전 저장이 열리는지 사람이 확인(배포 후)
 - [ ] `docs/mobile-qa.md`의 실제 폰 점검. **한 번도 하지 않았습니다.**
 
