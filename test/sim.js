@@ -9,6 +9,8 @@
 //   4) 같은 이벤트가 짧은 기간에 몰려 나오지 않는지
 //   5) test/fixtures 의 예전 저장(1단계, 2단계)을 열어 은퇴까지 진행되는지, 손상된 저장이 복구되는지
 //   6) index.html, sw.js, 엔진의 버전 표기가 서로 같은지
+//   8) 팬 반응: 분기별 단위 검사, 사실과 어긋나는 문장 0건, 출전 10경기 안 같은 문장 0건, 경기 없는 달에는 반응 없음
+//      (같은 문장 판정: 아이디·구단 이름·숫자·문장부호·공백을 지운 뒤 글자가 같으면 같은 문장으로 본다)
 //   7) 라이벌: 고유 ID 유지, 능력치·구단·관계 범위, 실제 경기 결과와 맞대결 전적 일치, 불러오기 반복 시 전적 불변, 손상된 라이벌 데이터 복구
 // 집계(밸런스 지표. 목표 범위는 js/data.js 의 D.BAL.target, 없으면 표시만 한다)
 const fs = require('fs'), path = require('path');
@@ -101,12 +103,60 @@ const F = { n: 0, events: 0, distinct: 0, sure: 0, chk: 0, pSum: 0, idx: [0, 0, 
 const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, titles: 0, big: [], worlds: 0, poy: 0, awards: 0, inj: 0, moves: 0, peak: [], g: 0, roundTrips: 0, tryouts: 0, via: {}, debutDist: {} };
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
-const FX = { n: 0, withRival: 0 };   // 라이벌이 없던 예전 저장에서 이어 간 커리어
+const FX = { n: 0, withRival: 0 };
+/* ---- 팬 반응 검사 ---- */
+const FN = { months: 0, lines: 0, byCount: [0, 0, 0, 0], keys: {}, voices: {}, none: 0, benchMonths: 0, repeatChecked: 0, minGap: 1e9 };
+const NAMES = G.D.ORGS.map(o => o.name).concat(G.D.REGIONS.map(r => r.name + ' 대표팀')).sort((a, b) => b.length - a.length);
+function fanNorm(t, nick, rivals) {
+  for (const n of [nick].concat(rivals, NAMES)) t = t.split(n).join('');
+  return t.replace(/[0-9.,!?:"'()\-\s]/g, '');
+}
+function lastOf(a, f) { return a.filter(f).pop(); }
+// 한 달치 보고서의 팬 반응이 그 달 경기 기록과 맞는지 검사한다. streak: 테스트가 따로 센 연승·연패(모르면 null)
+function checkFans(tag, rep, nick, rivalNicks, streak, first1) {
+  const ms = rep.matches, played = ms.filter(m => m.plays), fans = rep.fans || [];
+  if (!ms.length) { if (fans.length) fail(`${tag} 경기가 없는 달에 팬 반응이 나옴`); return; }
+  if (fans.length > 3) fail(`${tag} 팬 반응이 3줄을 넘음`);
+  if (new Set(fans.map(x => x.id)).size !== fans.length) fail(`${tag} 한 달 안에 같은 문장`);
+  const w = played.filter(m => m.win).length, l = played.length - w, avg = played.length ? played.reduce((a, m) => a + m.r, 0) / played.length : 0;
+  const fin = lastOf(played, m => m.label === '결승'), po = lastOf(played, m => m.label && m.label !== '결승'), rvm = lastOf(played, m => m.rv && m.rv.length), cm = lastOf(played, m => m.moms && m.moms.length);
+  const truth = {
+    bench: () => !played.length,
+    final_w: () => fin && fin.win, final_l: () => fin && !fin.win, po_w: () => po && po.win, po_l: () => po && !po.win,
+    rv_w: () => rvm && rvm.win, rv_l: () => rvm && !rvm.win,
+    mvp: () => played.some(m => m.mvp), clutch_ok: () => cm && cm.moms[cm.moms.length - 1].ok, clutch_no: () => cm && !cm.moms[cm.moms.length - 1].ok,
+    streak_w: () => streak == null || streak >= 3, streak_l: () => streak == null || streak <= -3,
+    carry_l: () => played.some(m => !m.win && m.r >= 7.5), pass_w: () => played.some(m => m.win && m.r <= 5.4),
+    form_hi: () => avg >= 7.5, form_lo: () => avg <= 5.3,
+    month_good: () => played.length && w > l, month_bad: () => played.length && w < l, month_even: () => played.length && w === l,
+    debut: () => first1,
+  };
+  for (const x of fans) {
+    const t = x.t;
+    if (!truth[x.k] || !truth[x.k]()) fail(`${tag} 사실과 어긋난 팬 반응 [${x.k}] ${t}`);
+    if (/[{}]|undefined|NaN|null/.test(t)) fail(`${tag} 덜 채워진 팬 반응 ${t}`);
+    if (/MVP/.test(t) && x.k !== 'mvp') fail(`${tag} MVP 가 아닌데 MVP 언급: ${t}`);
+    if (/라이벌/.test(t) && !x.k.startsWith('rv_')) fail(`${tag} 라이벌전이 아닌데 라이벌 언급: ${t}`);
+    for (const n of rivalNicks) if (n !== nick && t.includes(n) && !(x.k.startsWith('rv_') && rvm.rv[0].nick === n)) fail(`${tag} 맞붙지 않은 라이벌 이름: ${t}`);
+    if (x.k.startsWith('rv_') && !t.includes(rvm.rv[0].nick) && /\{rival\}/.test(G.D.FAN[x.k][+x.id.split('#')[1]].t)) fail(`${tag} 라이벌 이름이 다름: ${t}`);
+    if (/연승/.test(t) && x.k !== 'streak_w') fail(`${tag} 연승이 아닌데 연승 언급: ${t}`);
+    if (/연패/.test(t) && x.k !== 'streak_l') fail(`${tag} 연패가 아닌데 연패 언급: ${t}`);
+    if (streak != null && /연(승|패)/.test(t) && !t.includes(String(Math.abs(streak)))) fail(`${tag} 연승·연패 숫자가 다름(${streak}): ${t}`);
+    if (/승부처/.test(t) && !x.k.startsWith('clutch_')) fail(`${tag} 승부처가 없는데 승부처 언급: ${t}`);
+    if (/데뷔/.test(t) && x.k !== 'debut') fail(`${tag} 데뷔전이 아닌데 데뷔 언급: ${t}`);
+    if (/결승/.test(t.replace(/준결승/g, '')) && !fin) fail(`${tag} 결승이 아닌데 결승 언급: ${t}`);
+    if (x.k === 'mvp' && /전/.test(t) && !played.some(m => m.mvp && t.includes(m.opp)) && /\{opp\}/.test(G.D.FAN.mvp[+x.id.split('#')[1]].t)) fail(`${tag} MVP 경기의 상대가 다름: ${t}`);
+    FN.lines++; FN.keys[x.k] = (FN.keys[x.k] || 0) + 1; FN.voices[x.v] = (FN.voices[x.v] || 0) + 1;
+  }
+  FN.months++; FN.byCount[fans.length]++;
+  if (!played.length) FN.benchMonths++; else if (!fans.length) FN.none++;
+}
+   // 라이벌이 없던 예전 저장에서 이어 간 커리어
 // 라이벌 집계
 const RV = { n: 0, second: 0, first: 0, moved: 0, retired: 0, full: 0, noDebut: 0, games: 0, met: 0, metCareers: 0, finals: 0, finalCareers: 0, h2hChecked: 0, h2hLines: 0, rvSum: 0, rsSum: 0, labels: {}, ev: 0, evCareers: 0, evMax: 0, late: 0, age: [], peak: [], titles: 0, sameOrgEnd: 0 };
 
 function runCareer(i, tag, onEnd) {
-  const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false, ids: {}, exp: {}, rvEv: 0, finals: 0, fresh: !!onEnd };
+  const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false, ids: {}, exp: {}, rvEv: 0, finals: 0, fresh: !!onEnd, streak: 0, fg: 0, fanAt: {} };
   let guard = 0, lastYear = 0;
   while (!G.state().over) {
     const sc = G.scene();
@@ -125,6 +175,20 @@ function runCareer(i, tag, onEnd) {
     }
     if (now && now.type === 'month' && !car.seen.has(now.title)) {
       car.seen.add(now.title);
+      {
+        const pl = now.matches.filter(m => m.plays), nicks = s.rivals.map(r => r.nick), pre = car.streak;
+        for (const m of pl) car.streak = m.win ? (car.streak > 0 ? car.streak + 1 : 1) : (car.streak < 0 ? car.streak - 1 : -1);
+        const first1 = s.car.g > 0 && s.car.g <= pl.length;   // 1군 통산 출전이 이 달 출전 수를 넘지 않으면 이 달이 첫 출전이다
+        checkFans(tag, now, s.nick, nicks, car.fresh && !s.opt.fast ? car.streak : null, first1);
+        if (!s.opt.fast) {             // 반복 간격: 빠른 진행은 보고서가 생략돼 경기 수를 셀 수 없으므로 제외
+          car.fg += pl.length;
+          for (const x of (now.fans || [])) {
+            const key = fanNorm(x.t, s.nick, nicks), prev = car.fanAt[key];
+            if (prev != null) { const gap = car.fg - prev; FN.minGap = Math.min(FN.minGap, gap); if (gap < G.FAN_GAP) fail(`${tag} 같은 팬 반응이 ${gap}경기 만에 다시 나옴: ${x.t}`); }
+            car.fanAt[key] = car.fg; FN.repeatChecked++;
+          }
+        }
+      }
       for (const m of now.matches) {
         for (const v of (m.rv || [])) {
           // 보고서에 라이벌전으로 찍힌 경기: 내가 출전했고, 상대 구단이 그 라이벌의 소속이며, 같은 구단이 아니어야 한다.
@@ -201,7 +265,7 @@ for (const f of fs.readdirSync(fx).filter(n => n.endsWith('.json')).sort()) {
 // 새 필드가 없는 저장
 G.newGame({ nick: 'Old', region: 'kr', role: 'core', trait: 'brain' });
 for (let i = 0; i < 60; i++) G.autoStep();
-const old = JSON.parse(store[KEY]); for (const k of ['inj', 'moves', 'debut', 'tryouts']) delete old.car[k]; for (const k of ['opt', 'used', 'flags', 'sim', 'recentMom', 'stat', 'grow', 'rivals', 'rivalSeq', 'evn']) delete old[k];
+const old = JSON.parse(store[KEY]); for (const k of ['inj', 'moves', 'debut', 'tryouts']) delete old.car[k]; for (const k of ['opt', 'used', 'flags', 'sim', 'recentMom', 'stat', 'grow', 'rivals', 'rivalSeq', 'evn', 'fan']) delete old[k];
 store[KEY] = JSON.stringify(old);
 if (G.load() !== 'ok') fail('새 필드가 없는 저장을 열지 못함');
 runCareer(-1, '예전 저장');
@@ -254,6 +318,62 @@ for (let k = 0; k < 40 && unit < 12; k++) {
 }
 if (unit < 6) fail(`맞대결 기록 규칙 검사를 충분히 하지 못함(${unit}회)`);
 
+/* ---- 팬 반응 분기별 단위 검사(만든 경기 기록을 넣고 결과를 확인한다) ---- */
+let fanUnit = 0;
+{
+  const M = o => Object.assign({ opp: '미리내 게이밍', win: true, plays: true, r: 6.5, k: 3, d: 2, a: 5 }, o);
+  const C = o => Object.assign({ nick: 'Tester', tier: 1, key: 'unit', debut: false, fan: { g: 0, st: 0, seen: [] } }, o);
+  const run = (ms, o) => G.fanReact(ms, C(o)), keys = r => r.lines.map(x => x.k), all = r => r.lines.map(x => x.t).join(' ');
+  const ok = (c, msg) => { fanUnit++; if (!c) fail('팬 반응 단위 검사: ' + msg); };
+  let r = run([]); ok(r.lines.length === 0 && r.fan.g === 0, '경기 없는 달에 반응이 나옴');
+  r = run([M({ plays: false }), M({ plays: false, win: false })]); ok(r.lines.length >= 1 && r.lines.length <= 2 && keys(r).every(k => k === 'bench') && r.fan.g === 0 && r.fan.st === 0, '벤치 달');
+  r = run([M({}), M({}), M({}), M({ win: false })]); ok(r.lines.length >= 2 && keys(r).every(k => k === 'month_good' || k === 'streak_w') && !/MVP|라이벌|연패|승부처|결승|데뷔/.test(all(r)), '이긴 달');
+  r = run([M({ win: false }), M({ win: false }), M({ win: false }), M({ win: false }), M({})]); ok(r.lines.length >= 2 && keys(r).every(k => k === 'month_bad') && !/MVP|라이벌|연승|연패|승부처|결승/.test(all(r)), '진 달');
+  r = run([M({ win: false }), M({})]); ok(keys(r).every(k => k === 'month_even'), '반반인 달');
+  r = run([M({ mvp: true, r: 8.6, opp: '청룡 유니온' }), M({ win: false })]); ok(keys(r).includes('mvp') && /MVP/.test(all(r)), 'MVP');
+  r = run([M({ r: 8.6 }), M({ win: false })]); ok(!/MVP/.test(all(r)), 'MVP 가 아닌데 MVP');
+  r = run([M({ rv: [{ id: 'r1', nick: 'Zulo', r: 6.1, w: 3, l: 2 }] }), M({ win: false })]); ok(keys(r).includes('rv_w') && !keys(r).includes('rv_l') && /Zulo/.test(all(r)), '라이벌전 승리');
+  r = run([M({ win: false, r: 5.9, rv: [{ id: 'r1', nick: 'Zulo', r: 7.2, w: 1, l: 4 }] }), M({})]); ok(keys(r).includes('rv_l') && !keys(r).includes('rv_w') && /Zulo/.test(all(r)), '라이벌전 패배');
+  r = run([M({ rv: [{ id: 'r1', nick: 'Zulo', r: 6.1 }] })]); ok(!/undefined/.test(all(r)) && keys(r).includes('rv_w'), '통산 전적 값이 없을 때');
+  r = run([M({}), M({ win: false })]); ok(!/라이벌/.test(all(r)), '라이벌이 없는데 라이벌 언급');
+  r = run([M({ label: '준결승', score: '2-1', moms: [{ title: 't', label: 'l', ok: true }] })]); ok(keys(r).includes('clutch_ok') && !keys(r).includes('clutch_no') && keys(r).includes('po_w'), '승부처 성공');
+  r = run([M({ win: false, label: '준결승', score: '1-2', moms: [{ title: 't', label: 'l', ok: false }] })]); ok(keys(r).includes('clutch_no') && keys(r).includes('po_l') && !/통과/.test(all(r)), '승부처 실패');
+  r = run([M({})], { fan: { g: 7, st: 2, seen: [] } }); ok(keys(r).includes('streak_w') && /3연승/.test(all(r)) && r.fan.st === 3 && r.fan.g === 8, '3연승');
+  r = run([M({ win: false })], { fan: { g: 7, st: -2, seen: [] } }); ok(keys(r).includes('streak_l') && /3연패/.test(all(r)) && r.fan.st === -3, '3연패');
+  r = run([M({ win: false })], { fan: { g: 7, st: 5, seen: [] } }); ok(!/연승|연패/.test(all(r)) && r.fan.st === -1, '연승이 끊긴 달');
+  r = run([M({ win: false, r: 8.1 }), M({ win: false, r: 6 })]); ok(keys(r).includes('carry_l') && !keys(r).includes('pass_w'), '높은 평점의 패배');
+  r = run([M({ r: 4.9 }), M({ r: 6 })]); ok(keys(r).includes('pass_w') && !keys(r).includes('carry_l'), '낮은 평점의 승리');
+  r = run([M({ label: '결승', score: '3-1', r: 7.4 })]); ok(keys(r).includes('final_w') && !keys(r).includes('final_l'), '결승 승리');
+  r = run([M({ win: false, label: '결승', score: '2-3', r: 6.1 })]); ok(keys(r).includes('final_l') && !keys(r).includes('final_w'), '결승 패배');
+  r = run([M({ r: 6.4 })], { debut: true }); ok(keys(r).includes('debut') && /데뷔/.test(all(r)), '데뷔전');
+  r = run([M({})]); ok(!/데뷔/.test(all(r)), '데뷔전이 아닌데 데뷔');
+  const a1 = run([M({ mvp: true, r: 8 }), M({ win: false })], { key: 'same' }), a2 = run([M({ mvp: true, r: 8 }), M({ win: false })], { key: 'same' });
+  ok(JSON.stringify(a1) === JSON.stringify(a2), '같은 기록인데 다른 문장');
+  r = run([M({})], { nick: '하늘<b>' }); ok(all(r).includes('하늘<b>') || !/\{nick\}/.test(all(r)), '한글·기호 아이디');
+  // 2군 경기에는 1군 전용 문장이, 1군 경기에는 2군 전용 문장이 나오지 않는다. 같은 문장은 10경기 안에 다시 나오지 않는다.
+  for (const tier of [1, 2]) {
+    let fan = { g: 0, st: 0, seen: [] }; const at = {};
+    for (let i = 0; i < 400; i++) {
+      const ms = [M({ win: i % 3 !== 0, r: 5 + (i * 7 % 40) / 10, mvp: i % 5 === 0 && i % 3 !== 0 }), M({ win: i % 2 === 0, r: 4.5 + (i * 3 % 45) / 10 })].slice(0, 1 + (i % 2));
+      const res = G.fanReact(ms, C({ tier, key: 'k' + i, fan })); fan = res.fan;
+      for (const x of res.lines) {
+        const tp = G.D.FAN[x.k][+x.id.split('#')[1]];
+        ok(!tp.tier || tp.tier === tier, `${tier}군 경기에 다른 리그 전용 문장`);
+        ok(at[x.id] == null || fan.g - at[x.id] >= G.FAN_GAP, `같은 문장이 ${fan.g - at[x.id]}경기 만에 반복`); at[x.id] = fan.g;
+        if (/[{}]|undefined|NaN/.test(x.t)) fail('덜 채워진 문장 ' + x.t);
+      }
+      ok(res.lines.length <= 3 && fan.seen.length <= 40, '줄 수 또는 저장 크기');
+    }
+  }
+}
+/* ---- 팬 반응 상태가 없거나 깨진 저장 ---- */
+for (const fn of [d => { delete d.fan; }, d => { d.fan = 'x'; }, d => { d.fan = { g: 'a', st: null, seen: 5 }; }, d => { d.fan.seen = [1, ['ok', 2], [3, 4], null]; }]) {
+  midCareer(140); if (G.state().over) continue;
+  const d = JSON.parse(store[KEY]); fn(d); store[KEY] = JSON.stringify(d); delete store[BAK];
+  if (G.load() !== 'ok') fail('팬 반응 상태가 깨진 저장을 열지 못함');
+  runCareer(-1, '깨진 팬 반응 상태');
+}
+
 /* ---- 버전 표기 일치 ---- */
 const root = path.join(__dirname, '..'), html = fs.readFileSync(path.join(root, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 if (G.VERSION) {
@@ -293,6 +413,10 @@ console.log(`공식전에서 라이벌을 만난 커리어 ${pc(RV.metCareers)} 
 console.log(`라이벌이 없던 예전 저장 ${FX.n}회 가운데 ${FX.withRival}회에서 리그의 맞수가 새로 생김(연습생 시절 기록은 만들지 않음)`);
 console.log(`전적 대조: 보고서의 라이벌전 ${RV.h2hLines}경기를 따로 세어 저장된 전적과 비교, ${RV.h2hChecked}개 커리어 모두 일치 | 규칙 단위 검사 ${unit}회 | 손상된 라이벌 데이터 ${damaged}회 복구 후 완주`);
 console.log(`라이벌 이벤트 커리어당 ${f(RV.ev / N, 2)}회(최대 ${RV.evMax}) · 전체 이벤트의 ${f(RV.ev / EV.n * 100)}% · 한 번이라도 본 커리어 ${pc(RV.evCareers)} | 관계 평균 경쟁심 ${f(RV.rvSum / RV.n)} · 존중 ${f(RV.rsSum / RV.n)} | 은퇴 시 관계 ${Object.keys(RV.labels).map(k => `${k} ${rp(RV.labels[k])}`).join(' · ')}`);
+console.log('— 팬 반응 —');
+console.log(`경기가 있던 달 ${FN.months}개 | 줄 수 분포 0줄:${FN.byCount[0]} 1줄:${FN.byCount[1]} 2줄:${FN.byCount[2]} 3줄:${FN.byCount[3]} | 출전했는데 반응이 없던 달 ${FN.none} | 벤치만 지킨 달 ${FN.benchMonths}`);
+console.log(`문장 ${FN.lines}줄 모두 그 달 기록과 대조해 사실 불일치 0건 | 반복 간격 검사 ${FN.repeatChecked}줄, 같은 문장이 다시 나온 가장 짧은 간격 ${FN.minGap === 1e9 ? '-' : FN.minGap + '경기'}(기준 ${G.FAN_GAP}경기 이상) | 분기별 단위 검사 ${fanUnit}개`);
+console.log('말투: ' + Object.keys(FN.voices).map(k => `${G.D.FAN_VOICE[k]} ${f(FN.voices[k] / FN.lines * 100, 0)}%`).join(' · ') + ' | 분류: ' + Object.keys(FN.keys).sort((a, b) => FN.keys[b] - FN.keys[a]).map(k => `${k} ${f(FN.keys[k] / FN.lines * 100)}%`).join(' '));
 console.log('— 첫 20번 진행 —');
 console.log(`이벤트 ${f(F.events / F.n, 2)}회 · 서로 다른 이벤트 ${f(F.distinct / F.n, 2)}종 | 장면(눌러야 하는 화면) ${f(F.scenes / F.n)}개 | 20번째 진행 뒤 소속: 연습생 ${f(F.squad.trainee / F.n * 100, 0)}% · 2군 ${f(F.squad.second / F.n * 100, 0)}% · 1군 ${f(F.squad.first / F.n * 100, 0)}% | 평균 OVR ${f(F.ovr / F.n)}`);
 console.log(`첫 20번 가운데 라이벌 이벤트 ${f((F.rv || 0) / F.n, 2)}회`);

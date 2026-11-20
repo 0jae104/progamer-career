@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.4.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.5.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
   const mem = {};
@@ -121,7 +121,7 @@
       orgStr: {}, lg: null, dom: {}, yr: null, hist: [], log: [], q: [], flags: {}, opt: { fast: false },
       car: { g: 0, w: 0, rs: 0, mvp: 0, k: 0, d: 0, a: 0, g2: 0, titles: [], awards: [], peak: 0, earn: 0, orgs: [], inj: 0, moves: 0, debut: 0, tryouts: 0, retry: 0 },
       stat: { turns: 0, t0: Date.now(), t20: 0, ev20: 0 },
-      rivals: [], rivalSeq: 0, evn: {},
+      rivals: [], rivalSeq: 0, evn: {}, fan: { g: 0, st: 0, seen: [] },
       pendingSim: false, pendingNewYear: false, over: false, sim: null, recentMom: [],
     };
     const t = gauss(), talent = t * B.talentSd;
@@ -293,12 +293,16 @@
   }
   const newTour = (o) => Object.assign({ w: [], i: 0, cur: null, lines: [] }, o);
 
-  function title(name, tier) {
+  // 뉴스 헤드라인: 우승, 라이벌과의 결승, 1군 이적, 은퇴에 한 줄. 이미 있는 화면과 소식 목록에 붙이고 새 화면은 만들지 않는다.
+  const teamName = () => (S.sim && S.sim.tour && S.sim.tour.kind === 'nations' ? D.REGION[S.home].name + ' 대표팀' : org().name);
+  function title(name, tier, fin) {
     S.car.titles.push({ y: S.year, name, tier }); S.yr.titles.push(name);
     const fame = { world: 14, mid: 8, nations: 10, dom: 5, second: 1 }[tier];
     const prize = { world: 20000, mid: 8000, nations: 3000, dom: 3000, second: 200 }[tier];
     addFame(fame); earn(prize); log(`${name}! 상금 ${fmtMoney(prize)}`, 'gold');
-    return info('우승', name, 'gold', [`상금 ${fmtMoney(prize)}`, `인기 상승`]);
+    const sc = info('우승', name, 'gold', [`상금 ${fmtMoney(prize)}`, `인기 상승`]);
+    sc.news = `${teamName()}, ${name}` + (fin && fin.plays ? ` — 결승 ${fin.score}, ${S.nick} 평점 ${fin.r.toFixed(1)}` : '');
+    return sc;
   }
   function award(name, fame) { S.car.awards.push({ y: S.year, name }); S.yr.awards.push(name); addFame(fame); log(`${name} 수상`, 'gold'); }
 
@@ -417,6 +421,7 @@
     for (const ln of t.lines) for (const v of (ln.rv || [])) {
       const r = rivalOf(v.id); if (!r) continue;
       if (ln.label === '결승') after.push(info('결승의 라이벌', `${t.name} 결승 상대는 ${r.nick}의 ${ln.opp}였다. ${ln.score}로 ${ln.win ? '이겼다' : '졌다'}. ${ln.win ? '트로피 너머로 눈이 마주쳤다.' : '시상대 아래에서 저쪽의 환호를 지켜봤다.'}`, ln.win ? 'gold' : 'bad', [`${r.nick} 상대 통산 ${r.w}승 ${r.l}패`, `${r.nick} 평점 ${v.r.toFixed(1)}`]));
+      if (ln.label === '결승') after[after.length - 1].news = `${r.origin === 'trainee' ? '연습생 동기' : '오랜 맞수'}의 결승 맞대결, ${ln.score} — 웃은 쪽은 ${ln.win ? S.nick : r.nick}`;
       else rep.notes.push(`${ln.label}에서 ${r.nick}의 ${ln.opp}을(를) 만나 ${ln.score}로 ${ln.win ? '이겼다' : '졌다'}. 통산 ${r.w}승 ${r.l}패.`);
     }
     if (t.kind === 'playoff') {
@@ -424,7 +429,7 @@
       rep.matches.push(...t.lines);
       for (const r of D.REGIONS) S.dom[t.split][r.id] = npcFinalists(r.id);
       if (t.first) S.dom[t.split][org().region] = { champ: ch, runner: ru };
-      if (ch === S.org) after.push(title(`${t.lgTag} ${SPLIT[t.split]} 우승`, t.first ? 'dom' : 'second'));
+      if (ch === S.org) after.push(title(`${t.lgTag} ${SPLIT[t.split]} 우승`, t.first ? 'dom' : 'second', last));
       else rep.notes.push(`${SPLIT[t.split]} 우승: ${D.ORG[ch].name}${ru === S.org ? ' — 준우승으로 마쳤다.' : ''}`);
       const L = S.lg;
       if (t.first && L && L.sg >= 9) {
@@ -438,7 +443,7 @@
     } else if (t.kind === 'intl') {
       if (!t.me) { rep.notes.push(`${t.name}: ${D.ORG[ch].name} 우승. 나는 화면으로 지켜봤다.`); return; }
       rep.matches.push(...t.lines);
-      if (ch === S.org) after.push(title(`${t.name} 우승`, t.cup));
+      if (ch === S.org) after.push(title(`${t.name} 우승`, t.cup, last));
       else {
         rep.notes.push(`${t.name} ${last.label}에서 ${last.opp}에 막혔다. 우승은 ${D.ORG[ch].name}.`);
         log(`${t.name} ${last.label} 탈락.`);
@@ -446,7 +451,7 @@
       }
     } else {
       rep.matches.push(...t.lines);
-      if (ch === 'me') after.push(title('네이션스컵 금메달', 'nations'));
+      if (ch === 'me') after.push(title('네이션스컵 금메달', 'nations', last));
       else rep.notes.push(t.lines.length > 1 ? '네이션스컵 은메달. 시상대에서 고개를 들지 못했다.' : '네이션스컵 4강에서 탈락했다.');
     }
   }
@@ -484,7 +489,7 @@
     if (S.injury > 0) { plan = REST; rep.notes.push('손목 부상으로 재활 중. 경기에 나서지 못했다.'); }
     else if (S.cond < 15) { plan = REST; S.stats.mental = Math.max(1, S.stats.mental - 1); rep.notes.push('번아웃이 왔다. 이번 달은 아무것도 하지 못하고 쉬었다.'); }
     rep.plan = plan.name;
-    const sim = S.sim = { before: Object.assign({}, S.stats), after: [], rep, plan: plan.id, g0: S.yr.g, tour: null };
+    const sim = S.sim = { before: Object.assign({}, S.stats), after: [], rep, plan: plan.id, g0: S.yr.g, tour: null, sq: S.squad, c0: S.car.g };
     if (mi.type === 'league') leagueMonth(mi, sim);
     else if (mi.type === 'intl') intlMonth(mi, sim);
     else if (mi.type === 'nations') nationsMonth(sim);
@@ -521,6 +526,9 @@
     }
     for (const s of D.STATS) { const d = S.stats[s.id] - before[s.id]; if (Math.abs(d) >= .05) rep.growth.push([s.name, Math.round(d * 10) / 10]); }
     rivalsMonth(mi, rep);
+    // 팬 반응: 이 달 경기 기록에서만 만든다(난수 없음).
+    const fr = fanReact(rep.matches, { nick: S.nick, tier: (sim.sq || S.squad) === 'second' ? 2 : 1, key: `${S.nick}|${S.year}|${S.m}`, debut: sim.c0 === 0 && S.car.g > 0, fan: S.fan });
+    S.fan = fr.fan; if (fr.lines.length) rep.fans = fr.lines;
     S.car.peak = Math.max(S.car.peak, ovr()); S.monthsInOrg++;
     rep.ovr = Math.floor(ovr());
     const pm = rep.matches.filter(m => m.plays);
@@ -585,6 +593,7 @@
     if (moved) { S.trust = of.squad === 'first' ? 35 : 45; S.monthsInOrg = 0; S.car.moves++; if (!S.car.orgs.includes(of.org)) S.car.orgs.push(of.org); }
     if (of.squad === 'first' && !S.car.debut) { S.car.debut = S.age; S.car.via = 'offer'; }
     log(`${of.name}와(과) ${of.years}년 계약. ${SQUAD[of.squad]}, 연봉 ${fmtMoney(of.salary)}.`, 'good');
+    if (moved && of.squad === 'first') log(`[뉴스] ${S.nick}, ${of.name}행 — ${of.years}년 계약`, 'news');
   }
 
   function offseason() {
@@ -658,6 +667,7 @@
       type: 'retire', reason, nick: S.nick, role: role().name, age: S.age, years: S.hist.length,
       g: c.g, w: c.w, avg: c.g ? c.rs / c.g : 0, mvp: c.mvp, kda: c.d ? (c.k + c.a) / c.d : 0, peak: Math.floor(c.peak), earn: c.earn,
       titles: c.titles.slice(), awards: c.awards.slice(), orgs: c.orgs.map(id => D.ORG[id].name),
+      news: c.g ? `${S.nick}, ${S.age}세에 은퇴 — 1군 ${c.g}경기${c.titles.filter(t => t.tier !== 'second').length ? `, 우승 ${c.titles.filter(t => t.tier !== 'second').length}회` : ''}` : `${S.nick}, 1군 무대를 밟지 못하고 ${S.age}세에 은퇴`,
       rivals: S.rivals.map(r => Object.assign(rivalView(r), { epilogue: rivalEpilogue(r), hist: r.hist.slice(0, 1).concat(r.hist.slice(1).slice(-4)) })),
     }, ev);
     S.q = [sc];
@@ -822,7 +832,7 @@
       r.mids.push(mid); if (r.mids.length > 80) r.mids.shift();
       if (rec.win) r.w++; else r.l++;
       const rt = clamp(round1(6.3 + (r.ovr - (T + O) / 2) / 11 + (rec.win ? -.45 : .45) + gauss() * .7), 3, 10);
-      (rec.rv = rec.rv || []).push({ id: r.id, nick: r.nick, r: rt });
+      (rec.rv = rec.rv || []).push({ id: r.id, nick: r.nick, r: rt, w: r.w, l: r.l });
       rRel(r, rec.label === '결승' ? 6 : rec.label ? 3 : .6, rec.label === '결승' ? 3 : rec.label ? 1.5 : .2);   // 맞붙을수록 조금씩, 큰 경기일수록 크게
       S.flags.rvLast = { id: r.id, win: !!rec.win, turn: S.stat.turns, used: 0 };
       if (rec.label) rNote(r, `${tourName} ${rec.label}에서 맞붙어 ${rec.score}로 ${rec.win ? '내가 이겼다' : '내가 졌다'}.`, rec.win ? 'good' : 'bad');
@@ -854,6 +864,69 @@
     const t = { '호적수': '서로를 가장 높은 벽으로 여겼고, 그래서 여기까지 왔다.', '벗': '유니폼은 달라도 가장 먼저 연락하는 사이로 남았다.', '앙숙': '끝내 악수는 없었다. 그래도 서로의 이름은 잊지 못할 것이다.', '경쟁자': '끝까지 지고 싶지 않은 이름이었다.', '동기': '같은 날 연습실 문을 열었던 동기.', '맞수': '리그에서 오래 의식해 온 이름.' }[lab];
     const e = r.retired ? (r.debut ? `${r.retired.age}세에 먼저 은퇴했다.` : '1군에 오르지 못하고 먼저 떠났다.') : '아직 현역이다.';
     return `${h} ${t} ${e}`;
+  }
+
+  /* ---------- 팬 반응 ----------
+     그 달 경기 기록(월간 보고의 matches)에서 확인되는 사실만 골라 문장을 붙인다.
+     난수를 쓰지 않는다: 경기 결과와 밸런스에 영향이 없고, 같은 기록이면 항상 같은 문장이 나온다.
+     저장하는 것은 S.fan 하나뿐이다 — g: 출전 경기 수, st: 연승(+)·연패(−), seen: 최근에 쓴 문장 [문장 ID, 그때의 g]. 10경기가 지난 기록은 지운다. */
+  const FAN_GAP = 10;   // 같은 문장은 출전 경기 기준 10경기 안에 다시 쓰지 않는다
+  function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  // 이 달에 실제로 일어난 일의 목록(중요한 순서). fan.g 와 fan.st 를 이 달 경기만큼 진행시킨다.
+  function fanFacts(matches, ctx, fan) {
+    const played = matches.filter(m => m.plays), facts = [];
+    if (!matches.length) return facts;                                  // 경기가 없는 달: 반응도 없다
+    if (!played.length) { facts.push({ k: 'bench', p: 50 }); return facts; }
+    for (const m of played) fan.st = m.win ? (fan.st > 0 ? fan.st + 1 : 1) : (fan.st < 0 ? fan.st - 1 : -1);
+    fan.g += played.length;
+    const w = played.filter(m => m.win).length, l = played.length - w, avg = played.reduce((a, m) => a + m.r, 0) / played.length;
+    const add = (k, p, m, extra) => facts.push(Object.assign({ k, p, w, l, avg: avg.toFixed(1), L: l > 0 },
+      m ? { opp: m.opp, r: m.r.toFixed(1), rn: m.r, score: m.score, label: m.label } : {}, extra || {}));
+    const last = f => played.filter(f).pop();
+    const fin = last(m => m.label === '결승'); if (fin) add(fin.win ? 'final_w' : 'final_l', 100, fin);
+    if (ctx.debut) add('debut', 95, played[0]);
+    const rvm = last(m => m.rv && m.rv.length);
+    if (rvm) { const v = rvm.rv[0]; add(rvm.win ? 'rv_w' : 'rv_l', 90, rvm, { rival: v.nick, rr: v.r.toFixed(1), gt: rvm.r > v.r, lt: rvm.r < v.r, hw: v.w, hl: v.l, behind: v.l > v.w }); }
+    const po = last(m => m.label && m.label !== '결승'); if (po) add(po.win ? 'po_w' : 'po_l', 80, po);
+    const mv = played.filter(m => m.mvp).sort((a, b) => b.r - a.r)[0]; if (mv) add('mvp', 75, mv);
+    const cm = last(m => m.moms && m.moms.length); if (cm) add(cm.moms[cm.moms.length - 1].ok ? 'clutch_ok' : 'clutch_no', 70, cm);
+    if (fan.st >= 3) add('streak_w', 68, null, { n: fan.st }); else if (fan.st <= -3) add('streak_l', 68, null, { n: -fan.st });
+    const cl = played.filter(m => !m.win && m.r >= 7.5).sort((a, b) => b.r - a.r)[0]; if (cl) add('carry_l', 65, cl);
+    const pw = played.filter(m => m.win && m.r <= 5.4).sort((a, b) => a.r - b.r)[0]; if (pw) add('pass_w', 60, pw);
+    if (avg >= 7.5) add('form_hi', 50); else if (avg <= 5.3) add('form_lo', 50);
+    add(w > l ? 'month_good' : w < l ? 'month_bad' : 'month_even', 30);
+    return facts.sort((a, b) => b.p - a.p);
+  }
+  // 문장 틀에 값을 채운다. 필요한 값이 하나라도 없으면 null(그 문장은 쓰지 않는다).
+  function fanFill(t, f, nick) {
+    let ok = true;
+    const out = t.replace(/\{(\w+)\}/g, (_, k) => { const v = k === 'nick' ? nick : f[k]; if (v == null || v === '') ok = false; return v; });
+    return ok ? out : null;
+  }
+  const fanCond = (tp, f, tier) => (!tp.tier || tp.tier === tier) && (!tp.if || (tp.if === 'r6' ? f.rn >= 6 : tp.if === 'r6-' ? f.rn < 6 : !!f[tp.if]));
+  // matches: 그 달의 경기 기록. ctx: { nick, tier(1 또는 2), key(문장 선택용 문자열), debut(이 달에 1군 첫 출전), fan(S.fan) }
+  // 반환: { lines: [{ k, id, v, t }], fan: 갱신된 상태 }. 상태를 직접 바꾸지 않는 순수 함수다.
+  function fanReact(matches, ctx) {
+    const fan = { g: ctx.fan.g, st: ctx.fan.st, seen: ctx.fan.seen.slice() };
+    const facts = fanFacts(matches, ctx, fan), lines = [];
+    fan.seen = fan.seen.filter(e => fan.g - e[1] < FAN_GAP);
+    const take = (f, newVoice) => {
+      const cand = [];
+      D.FAN[f.k].forEach((tp, i) => {
+        const id = f.k + '#' + i;
+        if (!fanCond(tp, f, ctx.tier) || fan.seen.some(e => e[0] === id) || (newVoice && lines.some(x => x.v === tp.v))) return;
+        const t = fanFill(tp.t, f, ctx.nick); if (t) cand.push({ k: f.k, id, v: tp.v, t });
+      });
+      if (!cand.length) return false;
+      const c = cand[hashStr(ctx.key + '|' + f.k + '|' + lines.length) % cand.length];
+      lines.push(c); fan.seen.push([c.id, fan.g]); return true;
+    };
+    const max = facts.length && facts[0].k === 'bench' ? 2 : 3;
+    // 중요한 사실부터 한 줄씩, 말투가 겹치지 않게. 쓸 문장이 없으면(최근에 다 썼으면) 그 사실은 건너뛴다.
+    for (const f of facts) { if (lines.length >= max) break; if (!take(f, true)) take(f, false); }
+    // 두 줄이 안 되면 같은 사실에서 다른 문장을 하나 더 찾는다. 그래도 없으면 줄 수를 줄인다(반복보다 생략).
+    for (const f of facts) { if (lines.length >= 2) break; take(f, true) || take(f, false); }
+    return { lines, fan };
   }
 
   /* ---------- 진행 ---------- */
@@ -1021,6 +1094,9 @@
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
     def(s, 'grow', 1); def(s, 'evn', {});
+    // 팬 반응 상태: 없거나 깨져 있으면 처음부터(지난 경기를 지어내지 않는다)
+    if (!s.fan || typeof s.fan !== 'object' || !Array.isArray(s.fan.seen) || !Number.isFinite(s.fan.g) || !Number.isFinite(s.fan.st)) s.fan = { g: 0, st: 0, seen: [] };
+    s.fan.seen = s.fan.seen.filter(e => Array.isArray(e) && typeof e[0] === 'string' && Number.isFinite(e[1])).slice(-30);
     // 라이벌: 없으면 빈 목록(지나간 일을 지어내지 않는다). 손상된 항목은 버리거나 고쳐서 게임이 멈추지 않게 한다.
     if (!Array.isArray(s.rivals)) s.rivals = [];
     const ids = new Set(), num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
@@ -1134,6 +1210,7 @@
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,
+    fanReact, FAN_GAP,
     rivals: () => S ? S.rivals.map(rivalView) : [],
     rivalFixtures: () => (S && S.org ? rivalFixtures().map(r => ({ nick: r.nick, org: D.ORG[r.org].name, w: r.w, l: r.l })) : []),
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },

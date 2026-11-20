@@ -185,6 +185,18 @@ tr.me td { background: #2a1b3a; font-weight: 700; } tr.cut td { border-bottom: 2
 .rvnote { font-size: 13px; color: var(--gold); border-left: 3px solid var(--gold); padding: 6px 10px; background: #2b2636; }
 .matches .mom.rvl { color: var(--gold); }
 
+/* ---- 팬 반응 ---- */
+.fans { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 6px; }
+.fans .sec { margin-bottom: 2px; font-size: 13px; }
+.fans p { font-size: 13px; line-height: 1.5; color: #d5d8f5; }
+.fans .chip { margin-right: 8px; font-size: 11px; padding: 1px 7px; }
+.fans .vc { color: var(--ok); border-color: #2a6b55; } .fans .vx { color: var(--bad); border-color: #7a3b4a; }
+.fans .va { color: var(--cy); border-color: #2a5f7a; } .fans .vh { color: var(--gold); border-color: #7a6230; }
+
+.news { font-size: 13px; font-weight: 600; background: var(--ink); border: 1px solid var(--line); padding: 8px 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.news b { font: 400 12px var(--display); color: var(--hot); margin-right: 8px; letter-spacing: .06em; }
+.log li.news { color: var(--cy); }
+
 /* ---- 승부처 ---- */
 .sheet.clutch { border-top-color: var(--gold); }
 .board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; background: var(--ink); padding: 10px 12px; border: 1px solid var(--line); }

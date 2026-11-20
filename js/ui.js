@@ -181,11 +181,12 @@
       case 'month':
         h = `<p class="eyebrow">${sc.title} · ${sc.plan}</p><h2>${sc.sub}</h2>${matchList(sc.matches)}
           ${sc.eval ? `<div class="kv"><div><span>월말 평가전 평점</span><b>${f1(sc.eval.r)}</b></div><div><span>연습생 순위</span><b>12명 중 ${sc.eval.rank}위</b></div><div><span>코치 평가</span><b>${sc.eval.d == null ? '-' : (sc.eval.d > 0 ? '+' : '') + sc.eval.d}</b></div></div>` : ''}
+          ${sc.fans && sc.fans.length ? `<div class="fans"><p class="sec">팬 반응</p>${sc.fans.map(x => `<p><span class="chip v${x.v}">${D.FAN_VOICE[x.v]}</span>${esc(x.t)}</p>`).join('')}</div>` : ''}
           ${sc.eval && sc.eval.rivals ? `<p class="fine">동기 순위 · ${sc.eval.rivals.map(v => `${esc(v.nick)} ${v.rank}위 (평점 ${f1(v.r)})`).join(' · ')}</p>` : ''}
           ${sc.notes.map(n => `<p>${n}</p>`).join('')}
           <div class="chips">${sc.growth.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]}</span>`).join('')}<span class="chip">OVR ${sc.ovr}</span><span class="chip">월급 +${money(sc.salary)}</span></div>${okBtn()}`; break;
       case 'info':
-        h = `<h2>${sc.title}</h2><p>${sc.text}</p>${sc.lines.length ? `<div class="chips">${sc.lines.map(l => `<span class="chip ${sc.tone === 'gold' ? 'gold' : ''}">${l}</span>`).join('')}</div>` : ''}${okBtn()}`; break;
+        h = `${sc.news ? `<p class="news"><b>뉴스</b>${esc(sc.news)}</p>` : ''}<h2>${sc.title}</h2><p>${sc.text}</p>${sc.lines.length ? `<div class="chips">${sc.lines.map(l => `<span class="chip ${sc.tone === 'gold' ? 'gold' : ''}">${l}</span>`).join('')}</div>` : ''}${okBtn()}`; break;
       case 'season':
         h = `<p class="eyebrow">SEASON ${sc.year}</p><h2>${sc.year}년차 결산</h2><p>${sc.org} ${G.SQUAD[sc.squad]} · ${sc.age}세 · OVR ${sc.ovr}</p>
           <div class="kv"><div><span>경기</span><b>${sc.g}</b></div><div><span>승</span><b>${sc.w}</b></div><div><span>평균 평점</span><b>${sc.g ? f1(sc.avg) : '-'}</b></div></div>
@@ -216,6 +217,7 @@
     const poly = v => ax.map((k, i) => pt(i, v == null ? r.ax[k] : v).map(n => n.toFixed(1)).join(',')).join(' ');
     return `<section class="page retire">
       <div><p class="eyebrow">CAREER END · ${r.years}시즌</p><h2>${esc(r.nick)}, 은퇴</h2><p class="dim">${r.reason}</p></div>
+      ${r.news ? `<p class="news"><b>뉴스</b>${esc(r.news)}</p>` : ''}
       <div class="grade"><b>${r.grade}</b><div><h2>${r.ep}</h2><p>커리어 점수 ${r.score}점 · 자동 시뮬레이션 커리어 대비 상위 ${r.pct}%</p></div></div>
       <svg class="radar" viewBox="0 0 300 250" role="img" aria-label="커리어 평가 5개 축">
         ${[100, 66, 33].map(v => `<polygon points="${poly(v)}" fill="none" stroke="#2d3363"/>`).join('')}
