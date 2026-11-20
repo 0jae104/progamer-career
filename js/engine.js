@@ -1,15 +1,16 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.7.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.8.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
   const mem = {};
+  let box = null;   // 백업 파일을 시험 삼아 돌려 볼 때(dryRun)만 쓰는 임시 저장소. 이 값이 있는 동안에는 실제 저장소를 읽지도 쓰지도 않는다
   const store = {
-    get(k) { try { if (root.localStorage) return root.localStorage.getItem(k); } catch (e) {} return mem[k] || null; },
-    set(k, v) { mem[k] = v; try { if (root.localStorage) root.localStorage.setItem(k, v); } catch (e) {} },
-    del(k) { delete mem[k]; try { if (root.localStorage) root.localStorage.removeItem(k); } catch (e) {} },
+    get(k) { if (box) return k in box ? box[k] : null; try { if (root.localStorage) return root.localStorage.getItem(k); } catch (e) {} return mem[k] || null; },
+    set(k, v) { if (box) { box[k] = v; return; } mem[k] = v; try { if (root.localStorage) root.localStorage.setItem(k, v); } catch (e) {} },
+    del(k) { if (box) { delete box[k]; return; } delete mem[k]; try { if (root.localStorage) root.localStorage.removeItem(k); } catch (e) {} },
     // 브라우저 저장소에 실제로 쓸 수 있는지 (사생활 보호 모드, 용량 초과 등에서는 false)
     ok() { try { if (!root.localStorage) return false; root.localStorage.setItem('pg_probe', '1'); root.localStorage.removeItem('pg_probe'); return true; } catch (e) { return false; } },
   };
@@ -20,7 +21,7 @@
   //   ACH   pg_ach_v1    : 도전 과제 달성 상태.
   const LEG = 'pg_legacy_v1', ACH = 'pg_ach_v1', LEG_MAX = 200, BACKUP_MAX = 3 * 1024 * 1024, BACKUP_FORMAT = 'progamer-career-backup';
   // 실제로 저장소에 쓰였는지 확인하며 쓴다(용량 초과·저장 차단이면 false)
-  function put(k, v) { store.set(k, v); try { return root.localStorage ? root.localStorage.getItem(k) === v : true; } catch (e) { return false; } }
+  function put(k, v) { store.set(k, v); if (box) return true; try { return root.localStorage ? root.localStorage.getItem(k) === v : true; } catch (e) { return false; } }
   const txt = (v, n) => (typeof v === 'string' ? v.replace(/[<>]/g, '').slice(0, n) : '');
   const hash36 = str => { let h = 7; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h.toString(36); };
 
@@ -861,6 +862,92 @@
     if (typeof v === 'number' && !Number.isFinite(v)) return 0;
     return v;
   }
+  /* 장면 규격: 화면과 엔진이 읽는 항목이 빠지거나 자료형이 다르면 그 저장은 복원하지 않는다.
+     'n' 유한한 수, 's' 문자열, 'b' 참·거짓, 'org' 있는 구단 ID, 'card' 있는 카드 ID, 'ev' 있는 이벤트 ID, 'squad'·'tier' 정해진 값, 'color' #색상값,
+     'pair' [문자열, 수], 'bd' pair 의 배열. 끝의 '?' 는 없어도 된다는 뜻. [규칙, 최소, 최대] 는 배열, { … } 는 객체(적힌 항목만 검사). */
+  const HIST = [{ y: 'n', m: 'n', t: 's' }, 0, 60], PCTN = 'n';
+  const RIVALV = { nick: 's', role: 's', style: 's', age: 'n', ovr: 'n', org: 's', color: 'color', squad: 's', retired: 'b', status: 's', rv: 'n', rs: 'n', label: 's', w: 'n', l: 'n', news: 's', titles: 'n', hist: HIST, epilogue: 's?' };
+  const SCENE = {
+    pickOrg: { offers: [{ name: 's', org: 'org', note: 's', need1: 'n', need2: 'n', str: 'n' }, 1, 6] },
+    event: { ev: 'ev', title: 's', text: 's', rid: 's?', choices: [{ label: 's', p: 'n?', disabled: 'b?', bd: 'bd?' }, 1, 4] },
+    result: { title: 's', text: 's', ok: 'b', checked: 'b', p: 'n?', lines: ['s', 0, 16] },
+    month: { title: 's', sub: 's', plan: 's', ovr: 'n', salary: 'n', notes: ['s', 0, 16], growth: ['pair', 0, 16],
+      matches: [{ opp: 's', win: 'b', plays: 'b', r: 'n', k: 'n', d: 'n', a: 'n', label: 's?', score: 's?', mvp: 'b?', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8, '?'], rv: [{ nick: 's', r: 'n' }, 0, 6, '?'] }, 0, 16],
+      eval: { r: 'n', rank: 'n', d: 'n?', rivals: [{ nick: 's', rank: 'n', r: 'n' }, 0, 6, '?'], '?': 1 }, fans: [{ v: 's', t: 's' }, 0, 8, '?'] },
+    info: { title: 's', text: 's', tone: 's', lines: ['s', 0, 12], news: 's?', cele: 'n?' },
+    season: { year: 'n', age: 'n', org: 's', squad: 'squad', tag: 's', g: 'n', w: 'n', avg: 'n', mvp: 'n', ovr: 'n', salary: 'n', titles: ['s', 0, 30], awards: ['s', 0, 30] },
+    cards: { cards: ['card', 1, 6], reroll: 'n' },
+    stove: { years: 'n', salary: 'n', canRetire: 'b', scouted: 'b?' },
+    offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n' }, 0, 8] },
+    tryout: { p: PCTN, text: 's', vet: 'b', retry: 'b' },
+    moment: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', mid: 's', sit: 's', set: 'n', bo: 'n', x: 'n', y: 'n', base: 'n', rival: 's?', choices: [{ label: 's', p: 'n', up: 'n', down: 'n', bd: 'bd' }, 2, 3] },
+    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b' },
+    retire: { nick: 's', role: 's', reason: 's', age: 'n', years: 'n', g: 'n', w: 'n', avg: 'n', mvp: 'n', kda: 'n', peak: 'n', earn: 'n', score: 'n', pct: 'n', grade: 's', ep: 's',
+      ax: { '기량': 'n', '우승': 'n', '개인상': 'n', '인기': 'n', '롱런': 'n' }, titles: [{ y: 'n', name: 's', tier: 'tier' }, 0, 120], awards: [{ y: 'n', name: 's' }, 0, 120], orgs: ['s', 0, 40],
+      news: 's?', rid: 's?', at: 'n?', rivals: [RIVALV, 0, 8, '?'] },
+  };
+  function fits(v, rule) {
+    if (typeof rule === 'string') {
+      const opt = rule.endsWith('?'), t = opt ? rule.slice(0, -1) : rule;
+      if (v == null) return opt;
+      switch (t) {
+        case 'n': return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1e13;
+        case 's': return typeof v === 'string' && v.length <= 600;
+        case 'b': return typeof v === 'boolean';
+        case 'org': return typeof v === 'string' && !!D.ORG[v];
+        case 'card': return typeof v === 'string' && D.CARDS.some(c => c.id === v);
+        case 'ev': return typeof v === 'string' && D.EVENTS.some(e => e.id === v);
+        case 'squad': return v === 'trainee' || v === 'second' || v === 'first';
+        case 'tier': return TIERS.includes(v);
+        case 'color': return typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v);
+        case 'pair': return Array.isArray(v) && v.length === 2 && fits(v[0], 's') && fits(v[1], 'n');
+        case 'bd': return Array.isArray(v) && v.length <= 16 && v.every(x => fits(x, 'pair'));
+      }
+      return false;
+    }
+    if (Array.isArray(rule)) { if (v == null) return rule[3] === '?'; return Array.isArray(v) && v.length >= rule[1] && v.length <= rule[2] && v.every(x => fits(x, rule[0])); }
+    if (v == null) return !!rule['?'];
+    if (typeof v !== 'object' || Array.isArray(v)) return false;
+    for (const k in rule) if (k !== '?' && !fits(v[k], rule[k])) return false;
+    return true;
+  }
+  function validScene(sc) {
+    if (!sc || typeof sc !== 'object' || !SCENE[sc.type] || !fits(sc, SCENE[sc.type])) return false;
+    if (sc.type === 'event') { const ev = D.EVENTS.find(e => e.id === sc.ev); if (sc.choices.length > ev.c.length) return false; }
+    if (sc.type === 'mresult' && !(sc.i >= 0 && sc.i <= 2)) return false;
+    return true;
+  }
+  // 엔진이 계속 돌릴 수 있는 상태인지
+  function sane() {
+    if (!S || typeof S !== 'object' || !Array.isArray(S.q)) return false;
+    for (const st of D.STATS) if (!(S.stats[st.id] >= 1 && S.stats[st.id] <= 99) || !(S.caps[st.id] >= 20 && S.caps[st.id] <= 99)) return false;
+    for (const k of ['cond', 'wrist', 'trust', 'fame']) if (!(S[k] >= 0 && S[k] <= 100)) return false;
+    if (!Number.isFinite(S.money) || !(S.m >= 0 && S.m < MONTHS.length) || !(S.age >= 14 && S.age <= 60) || (S.org && (!D.ORG[S.org] || !Number.isFinite(ovr())))) return false;
+    return S.q.every(validScene);
+  }
+  /* 시험 주행: 복원하기 전에 그 저장을 임시 저장소 안에서 실제로 은퇴까지 자동으로 돌려 본다(수십 밀리초). 도중에 오류가 나거나 값이 망가지면 복원하지 않는다.
+     실제 저장소·진행 중인 게임·게임 난수는 건드리지 않는다(끝나면 모두 원래대로 돌린다). */
+  const DRY_STEPS = 6000;
+  function dryRun(c) {
+    const keep = { S, rnd, saveFailed, backupNext, legRaw, legObj, legFail, addFail, achRaw, achObj, achFail };
+    let ok = true, a = 0x2545F491;
+    try {
+      box = {}; legRaw = achRaw = null; legObj = achObj = null;
+      rnd = function () { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+      S = JSON.parse(JSON.stringify(c));
+      if (!sane()) ok = false;
+      else {
+        const views = () => { if (S.org && !S.over) { table(); goal(); S.rivals.map(rivalView); rivalFixtures(); org(); region(); role(); isStarter(); } };   // 화면이 부르는 조회
+        views(); flush(); save(); views();
+        for (let i = 0; ok && i < DRY_STEPS && !S.over; i++) { autoStep(); ok = sane(); if (ok && i < 40) views(); }
+        if (ok && S.over) ok = !!fin(S) && !!recFromScene(fin(S), S);
+      }
+    } catch (e) { ok = false; }
+    box = null;
+    ({ S, rnd, saveFailed, backupNext, legRaw, legObj, legFail, addFail, achRaw, achObj, achFail } = keep);
+    return ok;
+  }
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
   function validCareer(c) {
     const fin01 = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi, int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
     const s = migrate(c); if (!s) return null;
@@ -871,7 +958,22 @@
     for (const st of D.STATS) if (!fin01(s.stats[st.id], 1, 99) || !s.caps || !fin01(s.caps[st.id], 20, 99)) return null;
     if (!s.contract || !Number.isFinite(s.contract.salary) || !fin01(s.contract.years, 0, 20)) return null;
     if (!['trainee', 'second', 'first'].includes(s.squad) || !D.PLANS.find(x => x.id === s.plan)) return null;
-    if (s.q.length > 40 || s.q.some(x => !x || typeof x !== 'object' || !SCENE_TYPES.includes(x.type))) return null;
+    if (s.q.length > 40 || !s.q.every(validScene)) return null;
+    // 화면과 엔진이 그대로 읽는 묶음들의 모양
+    for (const k of ['stats', 'caps', 'contract', 'shop', 'used', 'flags', 'opt', 'car', 'stat', 'orgStr', 'evn', 'fan']) if (!isObj(s[k])) return null;
+    for (const k of ['g', 'w', 'rs', 'mvp']) if (s.yr && !(Number.isFinite(s.yr[k]) && s.yr[k] >= 0)) return null;
+    if (s.org && (!isObj(s.yr) || !Array.isArray(s.yr.titles) || !Array.isArray(s.yr.awards) || !isObj(s.dom))) return null;
+    for (const sp in s.dom || {}) { if (!isObj(s.dom[sp])) return null; for (const rg in s.dom[sp]) { const d = s.dom[sp][rg]; if (!isObj(d) || !D.ORG[d.champ] || !D.ORG[d.runner]) return null; } }
+    if (s.lg != null && !isObj(s.lg)) return null;
+    if (s.sim != null && !isObj(s.sim)) return null;
+    if (s.buff != null && !isObj(s.buff)) return null;
+    for (const k of ['gear', 'coach', 'care']) if (!Number.isInteger(s.shop[k]) || s.shop[k] < 0 || s.shop[k] > 9) return null;
+    for (const id in s.orgStr) if (!D.ORG[id] || !Number.isFinite(s.orgStr[id])) return null;
+    if (s.org && D.ORGS.some(o => !Number.isFinite(s.orgStr[o.id]))) return null;
+    if (!Number.isFinite(s.monthsInOrg) || !Number.isFinite(s.pity) || !Number.isFinite(s.injury) || !Number.isFinite(s.grow)) return null;
+    if (!Array.isArray(s.recentEv) || !Array.isArray(s.recentMom) || s.perks.some(x => typeof x !== 'string')) return null;
+    if (s.log.some(l => !isObj(l) || !fits(l, { y: 'n', m: 'n', msg: 's', tone: 's?' })) || s.hist.some(h => !isObj(h) || !fits(h, { year: 'n', age: 'n', tag: 's', squad: 'squad', g: 'n', w: 'n', avg: 'n', ovr: 'n' }))) return null;
+    if (s.rivals.some(r => !fits(r.hist, HIST) || !Number.isFinite(r.ovr) || !D.ORG[r.org])) return null;
     if (!Array.isArray(s.hist) || s.hist.length > 45 || !Array.isArray(s.log) || s.log.length > 2000 || !Array.isArray(s.perks) || s.rivals.length > 8) return null;
     const c2 = s.car;
     for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut', 'tryouts', 'retry']) if (!Number.isFinite(c2[k]) || c2[k] < 0) return null;
@@ -880,6 +982,7 @@
     if (!Array.isArray(c2.orgs) || c2.orgs.some(id => !D.ORG[id])) return null;
     if (s.org && (!s.orgStr || !Number.isFinite(s.orgStr[s.org]))) return null;
     if (s.over && !(s.q[0] && s.q[0].type === 'retire')) return null;
+    if (!dryRun(s)) return null;
     return s;
   }
   // 반환: { ok: true, data, preview } 또는 { ok: false, err } (err: big, json, format, version, newer, payload, career, hall, legacy)
@@ -1509,11 +1612,12 @@
     hallDel: legacyDel, hallUndo: legacyUndo, hallTrash: () => legacy().trash.slice(),
     hallInfo: () => ({ n: legacy().recs.length, max: LEG_MAX, failed: legFail || addFail }),
     achList, achSeen, achFresh: () => ach().fresh.slice(), achInfo: () => ({ n: Object.keys(ach().got).length, of: D.ACH.length, runs: ach().runs.n, failed: achFail }),
-    exportData, importCheck, importApply, BACKUP_MAX,
+    exportData, importCheck, importApply, BACKUP_MAX, validScene,
     // 은퇴 화면의 기록(보관소에 쓰지 못했어도 카드는 만들 수 있게)
     endRec: () => (S && fin(S) ? recFromScene(fin(S), S) : null),
     wipe() { store.del(KEY); store.del(BAK); S = null; },
   };
+  (root.PG_VER = root.PG_VER || {}).engine = VERSION;
   root.PG = Game;
   if (typeof module !== 'undefined') module.exports = Game;
 })(typeof window !== 'undefined' ? window : globalThis);
