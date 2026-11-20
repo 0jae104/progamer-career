@@ -25,7 +25,7 @@
 | `node test/browser/update-chain.js` | v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0 → v0.10.0 | 종료 코드 0. 확인 29개, 실패 0개 |
 | `npm run test:quick` (300회) | v0.10.0 최종 코드 | 종료 코드 0 |
 | `node --check` (js 4개, sw.js, 검사 스크립트) | v0.10.0 | 오류 없음 |
-| GitHub Actions(`test.yml`) | PR | CI_PENDING |
+| GitHub Actions(`test.yml`) | PR | 첫 실행은 `layout`에서 실패(320px에서 긴 상대 이름 잘림, 6절). 고친 뒤 두 번째 실행에서 문법 검사·시뮬레이션 1,000회·화면 검사·갱신 검사 모두 통과 |
 
 시뮬레이션 한 번(3,000 커리어)은 약 115초 걸렸습니다. 5개 시드 실행은 `js/ui.js`의 마지막 수정(도전 과제 알림 시점) 전에 떠 둔 사본으로 돌렸습니다. 시뮬레이션이 읽는 `js/data.js`, `js/engine.js`, `js/card.js`, `test/sim.js`는 최종 코드와 바이트 단위로 같음을 확인했고, 최종 코드에서는 300회 실행을 다시 돌렸습니다.
 
