@@ -207,8 +207,12 @@ module.exports = async function records(browser, url, R) {
   {
     const { ctx, pg } = await open(browser, url); await pg.click('[data-act=create]'); await pg.fill('#nick', 'Ach'); await pg.click('[data-act=start]');
     await pg.evaluate(() => { let n = 0; while (!PG.state().car.debut && !PG.state().over && n++ < 20000) PG.autoStep(); });
-    await pg.reload(); await pg.waitForTimeout(200); await pg.click('[data-act=continue]'); await pg.waitForTimeout(150);
+    // 새로 고치지 않고 그 자리에서 다시 그린다. (새로 고치면 타이틀 화면에서 알림이 먼저 떠 버려, 아래의 '창이 열려 있는 동안 미룬다'를 볼 수 없다.
+    //  예전에는 새로 고친 뒤 확인했는데, 이어하기 직후 창이 열려 있는 경우에만 실패하는 불안정한 확인이었다.)
+    R.ok(await pg.evaluate(() => PG.achFresh().length > 0), 'H: 데뷔까지 진행했는데 알릴 도전 과제가 없음');
+    await pg.evaluate(() => { for (let i = 0; i < 24 && !PG.scene() && !PG.state().over; i++) PG.next(); PG_UI.render(); }); await pg.waitForTimeout(150);   // 한 달 진행해 창을 연 상태로 그린다
     // 창이 열려 있는 동안에는 알림을 미룬다(창의 윗부분을 가리지 않게). 창을 닫으면 그때 뜬다.
+    R.ok(await pg.locator('.veil').count() > 0 || await pg.evaluate(() => PG.state().over), 'H: 진행했는데 창이 열리지 않음(알림을 미루는지 볼 수 없음)');   // 데뷔 전에 은퇴한 드문 커리어는 창 없이 은퇴 화면이다
     if (await pg.locator('.veil').count()) R.ok(await pg.evaluate(() => !document.getElementById('toast') || !document.getElementById('toast').classList.contains('on')) && await pg.evaluate(() => PG.achFresh().length > 0), 'H: 창이 열려 있는데 알림이 떴거나 알림 대기가 사라짐');
     for (let i = 0; i < 12 && await pg.locator('.veil').count(); i++) { await pg.evaluate(() => PG.resolve(PG.scene().type === 'offers' ? 'stay' : PG.scene().type === 'stove' ? 'stay' : ['event', 'cards', 'moment', 'pickOrg'].includes(PG.scene().type) ? 0 : undefined)); await pg.evaluate(() => PG_UI.render()); }
     const toast = await pg.evaluate(() => { const t = document.getElementById('toast'); return t ? [t.classList.contains('on'), t.textContent, t.getAttribute('role')] : null; }), got = await pg.evaluate(() => PG.achInfo().n);
