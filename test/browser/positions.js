@@ -39,6 +39,7 @@ module.exports = async function positions(browser, url, R) {
       R.ok(got.moment && got.offers && got.home, `${w} ${id}: 검사용 상황을 만들지 못함`);
       const put = s => pg.evaluate(x => { localStorage.setItem('pg_career_v1', x); }, s);
       await put(got.moment); await reopen(pg);
+      await pg.evaluate(() => { const b = document.querySelector('[data-act=wskip]'); if (b) b.click(); }); await pg.waitForTimeout(60);   // 0.11.0: 승부처 앞의 관전을 건너뛴다
       const mo = await pg.evaluate(() => ({ n: document.querySelectorAll('.sheet .choice').length, cond: document.querySelector('.sheet').textContent.includes('컨디션') === PG.D.MOMENTS.find(x => x.id === PG.scene().mid).c.some(c => !!c.chk.cond),   // 컨디션이 걸린 상황에서만 보여야 한다(0.10.0의 sup_swap 은 컨디션이 없다)
          pct: document.querySelectorAll('.sheet .choice .pill').length, role: PG.D.MOMENTS.find(x => x.id === PG.scene().mid).role, label: document.querySelector('.sheet').getAttribute('aria-label') }));
       R.ok(mo.n === 3 && mo.cond && mo.pct === 3 && mo.role === id && !!mo.label, `${w} ${id}: 전용 승부처 화면 구성 ${JSON.stringify(mo)}`); await m('승부처 ' + id);

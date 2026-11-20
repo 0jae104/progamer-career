@@ -24,7 +24,7 @@ module.exports = async function mobile(browser, url, R) {
   const seed = await open(browser, url), saves = await collectSaves(seed.pg, 'sup');
   const backup = await seed.pg.evaluate(s => { localStorage.setItem('pg_career_v1', s); PG.load(); return JSON.stringify(PG.exportData()); }, saves.home);
   await seed.ctx.close();
-  const kinds = ['pickOrg', 'event', 'result', 'month', 'monthEval', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'moment', 'mresult'];
+  const kinds = ['pickOrg', 'event', 'result', 'month', 'monthEval', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'moment', 'mresult', 'prematch', 'match'];
   R.ok(kinds.every(k => saves[k]) && saves.home && saves.retire, `검사용 저장을 다 만들지 못함: ${Object.keys(saves)}`);
 
   for (const [w, h, tag] of SIZES) {
@@ -40,7 +40,11 @@ module.exports = async function mobile(browser, url, R) {
     await look('타이틀');
     await pg.click('[data-act=create]'); await pg.fill('#nick', '가나다라마바사아자차');
     for (const id of ['van', 'rov', 'core', 'gun', 'sup']) { await pg.click(`[data-grp=role][data-id=${id}]`); await look('선수 등록 ' + id); }
-    for (const k of kinds) { await load(saves[k]); await look('장면 ' + k); }
+    for (const k of kinds) {
+      await load(saves[k]); await look('장면 ' + k);
+      // 0.11.0: 승부처와 경기 결과는 관전으로 시작할 수 있다. 관전 화면을 본 뒤 건너뛰어 선택·결과 화면도 본다
+      if (await pg.evaluate(() => { const b = document.querySelector('[data-act=wskip]'); if (b) b.click(); return !!b; })) { await pg.waitForTimeout(80); await look('장면 ' + k + ' (관전 뒤)'); }
+    }
     await load(saves.home); for (const t of ['home', 'stats', 'league', 'shop', 'record']) { await pg.click(`[data-act=tab][data-id=${t}]`); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + t); }
     await pg.click('[data-act=tab][data-id=home]');
     R.ok(await pg.evaluate(() => { scrollTo(0, document.documentElement.scrollHeight); const f = document.querySelector('.foot').getBoundingClientRect(), kids = [...document.querySelector('main.content').children].filter(e => e.getBoundingClientRect().height > 0), last = kids[kids.length - 1].getBoundingClientRect(); return last.bottom <= f.top + 20; }), `${tag}: 홈 화면의 마지막 내용이 하단 진행 버튼 뒤에 가려짐`);

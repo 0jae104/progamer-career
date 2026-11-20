@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.10.2';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -237,7 +237,48 @@
   const tStr = (t, id) => t.kind === 'nations' ? t.teams[id].s : t.kind === 'playoff' ? str(id, t.tier) : S.orgStr[id];
   const tName = (t, id) => t.kind === 'nations' ? t.teams[id].name : D.ORG[id].name;
   const tRef = (t, x) => (x && typeof x === 'object') ? t.w[x.w] : x;
-  const newSeries = () => ({ x: 0, y: 0, plays: decidePlays(), rs: 0, n: 0, k: 0, d: 0, a: 0, mom: 0, mod: null, asked: -1, used: [], moms: [] });
+  const newSeries = () => ({ x: 0, y: 0, plays: decidePlays(), rs: 0, n: 0, k: 0, d: 0, a: 0, mom: 0, mod: null, asked: -1, used: [], moms: [], sets: [], shown: 0 });
+
+  /* ---------- 경기 전 전략(0.11.0) ----------
+     내가 출전하는 토너먼트 시리즈(플레이오프·국제전·네이션스컵)가 시작될 때 전략을 하나 고른다. 고른 전략은 그 시리즈의 세트에만,
+     세트마다 한 번씩, 팀 전력에 작은 보정(절댓값 B.tac.cap 이하)으로 들어가고 시리즈가 끝나면 사라진다(c.tac 은 시리즈 상태 안에 있다).
+     - 난수를 쓰지 않는다. 보정은 세트 승률 계산에 더해질 뿐이고, 승패는 원래의 난수 한 번으로 정해진다.
+     - 고르지 않으면(c.tac 이 '' 또는 없음) 보정이 0이고 판정이 0.10.2와 글자 단위로 같다. 예전 저장의 진행 중 시리즈, 빠른 진행, 자동 진행이 여기에 해당한다.
+     - 정규 리그 경기는 한 달 치를 한꺼번에 계산하고 상대를 미리 알려 주는 구조가 아니라서 적용하지 않는다(없는 대진을 지어내지 않는다). */
+  const TAC = { press: 1, steady: 1, wait: 1 };
+  function tacS(c, T, O) {
+    const id = c && c.tac; if (!id || !TAC[id]) return 0;
+    const K = B.tac, base = winP(effStr(T, true), O), lead = c.x - c.y;
+    let v = 0;
+    if (id === 'press') v = lead >= 0 ? clamp(K.press[0] + (S.cond - 60) / K.press[1], K.press[2], K.press[3]) : K.press[4];   // 앞서거나 동률일 때 컨디션만큼 밀어붙인다. 뒤지면 무리수가 된다
+    else if (id === 'steady') v = base >= K.fav ? K.steady[0] : base > 1 - K.fav ? K.steady[1] : K.steady[2];                    // 전력이 앞설 때 실수를 줄인다. 열세면 말려 들어간다
+    else if (id === 'wait') v = lead < 0 ? K.wait[0] : base <= 1 - K.fav ? K.wait[3] : lead === 0 ? K.wait[1] : K.wait[2];             // 뒤질 때와 전력이 밀릴 때 받아친다. 전력이 앞서는데 기다리면 주도권을 내준다
+    return clamp(v, -K.cap, K.cap);
+  }
+  const tacMod = (c, T, O, m) => { const ts = tacS(c, T, O); return ts ? { s: (m ? m.s : 0) + ts, r: m ? m.r : 0 } : m; };
+  const pips = c => (c.sets || []).map(x => (x.w ? 'W' : 'L')).join('');
+  function prematchScene(t, m, c, T, O, opp) {
+    const pct = v => Math.round(v * 100), base = winP(effStr(T, true), O), meO = t.kind === 'nations' ? null : D.ORG[t.me], opO = t.kind === 'nations' ? null : D.ORG[opp];
+    const rv = t.kind === 'nations' ? [] : rivalsAlive().filter(r => r.org === opp && r.squad === (t.kind === 'playoff' ? t.tier : 'first') && !r.out);
+    return {
+      type: 'prematch', tour: t.name, label: m.label, bo: m.bo, me: tName(t, t.me), opp: tName(t, opp),
+      meTag: meO ? meO.tag : '', oppTag: opO ? opO.tag : '', meColor: meO ? meO.color : '', oppColor: opO ? opO.color : '',
+      base: pct(base), cond: Math.round(S.cond), role: role().name,
+      rival: rv.map(r => r.nick).join(', '), h2h: rv.length ? `${rv[0].nick}와의 통산 ${rv[0].w}승 ${rv[0].l}패` : '',
+      tacs: D.TACTICS.map(k => ({ id: k.id, p: pct(winP(effStr(T, true, { s: tacS({ tac: k.id, x: 0, y: 0 }, T, O), r: 0 }), O)) })),
+    };
+  }
+  function matchScene(t, m, c, rec, opp, adv) {
+    const meO = t.kind === 'nations' ? null : D.ORG[t.me], opO = t.kind === 'nations' ? null : D.ORG[opp], v = (rec.rv || [])[0];
+    return {
+      type: 'match', tour: t.name, label: m.label, bo: m.bo, me: tName(t, t.me), opp: rec.opp, win: rec.win, x: c.x, y: c.y,
+      meTag: meO ? meO.tag : '', oppTag: opO ? opO.tag : '', meColor: meO ? meO.color : '', oppColor: opO ? opO.color : '',
+      sets: c.sets.map(x => ({ w: !!x.w, d: x.d })), from: Math.min(c.shown || 0, c.sets.length), tac: c.tac || '',
+      r: rec.r, k: rec.k, d: rec.d, a: rec.a, mvp: !!rec.mvp, moms: c.moms.map(x => ({ title: x.title, label: x.label, ok: x.ok, auto: !!x.auto })),
+      rival: v ? `${v.nick}의 ${rec.opp}와(과) 통산 ${v.w}승 ${v.l}패` : '',
+      next: rec.win ? (adv ? '다음 라운드 진출' : m.label === '결승' ? '우승' : '시리즈 승리') : (m.label === '결승' ? '준우승' : '이 대회는 여기까지'),
+    };
+  }
 
   // 승부처가 나오는 세트: 결승은 어느 한쪽이 매치 포인트인 세트마다(시리즈당 최대 3회), 그 밖의 시리즈는 마지막 세트 1회
   function momentDue(m, c, need) {
@@ -256,15 +297,18 @@
     if (!pool.length) pool = D.MOMENTS.filter(x => !x.role && x.sit === 'any' && !c.used.includes(x.id));
     const mo = pick(pool), pct = v => Math.round(v * 100);
     c.used.push(mo.id); S.recentMom.push(mo.id); while (S.recentMom.length > B.momentMemory) S.recentMom.shift();
-    return {
+    const ts = tacS(c, T, O);
+    const sc = {
       type: 'moment', mid: mo.id, tour: t.name, label: m.label, bo: m.bo, set: c.x + c.y + 1, me: tName(t, t.me), opp: tName(t, opp), x: c.x, y: c.y, sit,
       rival: t.kind === 'nations' ? '' : rivalsAlive().filter(r => r.org === opp && r.squad === (t.kind === 'playoff' ? t.tier : 'first') && !r.out).map(r => r.nick).join(', '),
-      title: mo.title, text: mo.text, base: pct(winP(effStr(T, true), O)),
+      title: mo.title, text: mo.text, base: pct(winP(effStr(T, true, ts ? { s: ts } : null), O)),
       choices: mo.c.map(ch => {
         const k = chance(ch.chk);
-        return { label: ch.label, p: k.p, bd: k.bd, up: pct(winP(effStr(T, true, { s: ch.s[0] }), O)), down: pct(winP(effStr(T, true, { s: ch.s[1] }), O)) };
+        return { label: ch.label, p: k.p, bd: k.bd, up: pct(winP(effStr(T, true, { s: ch.s[0] + ts }), O)), down: pct(winP(effStr(T, true, { s: ch.s[1] + ts }), O)) };
       }),
     };
+    if (c.tac !== undefined) { sc.tac = c.tac || ''; sc.pips = pips(c); sc.from = Math.min(c.shown || 0, (c.sets || []).length); }   // 전략 흐름으로 시작한 시리즈: 화면이 지금까지의 세트를 보여 준다
+    return sc;
   }
   // 자동 판단: 기대 세트 승률이 가장 높은 선택
   function bestChoice(sc) { let b = 0, bv = -1; sc.choices.forEach((c, i) => { const v = c.p * c.up + (100 - c.p) * c.down; if (v > bv) { bv = v; b = i; } }); return b; }
@@ -278,8 +322,11 @@
     return { ok, s, label: ch.label, text: ok ? ch.ok : ch.no };
   }
   function playSet(t, c, T, O) {
-    const g = playGame(T, O, t.stage, c.plays, c.mod); c.mod = null;
+    const ts = c.plays ? tacS(c, T, O) : 0;
+    const d = ts ? Math.round((winP(effStr(T, true, { s: (c.mod ? c.mod.s : 0) + ts }), O) - winP(effStr(T, true, c.mod), O)) * 100) : 0;   // 전략이 이 세트 승률을 몇 %p 바꿨는가(기록용)
+    const g = playGame(T, O, t.stage, c.plays, ts ? tacMod(c, T, O, c.mod) : c.mod); c.mod = null;
     g.win ? c.x++ : c.y++;
+    if (c.sets) c.sets.push({ w: g.win ? 1 : 0, d });
     if (c.plays) { c.rs += g.r; c.n++; c.k += g.k; c.d += g.d; c.a += g.a; }
     return g;
   }
@@ -293,8 +340,13 @@
         t.w[t.i++] = x > y ? a : b; continue;
       }
       const opp = a === t.me ? b : a, T = tStr(t, t.me), O = tStr(t, opp);
-      if (!t.cur) t.cur = newSeries();
+      if (!t.cur) {
+        t.cur = newSeries();
+        // 내가 출전하는 시리즈: 전략을 묻고 멈춘다. 빠른 진행에서는 묻지 않는다(승부처와 같은 규칙. 판정은 예전과 같다).
+        if (t.cur.plays && !S.opt.fast) { t.cur.tac = null; S.q.push(prematchScene(t, m, t.cur, T, O, opp)); return false; }
+      }
       const c = t.cur;
+      if (c.tac === null) { if (S.q.some(x => x.type === 'prematch')) return false; c.tac = ''; }   // 전략 선택을 기다리는 중(장면이 사라진 손상 저장이면 전략 없이 진행)
       while (c.x < need && c.y < need) {
         const set = c.x + c.y;
         if (c.asked !== set && momentDue(m, c, need)) {
@@ -309,6 +361,10 @@
       const rec = { opp: tName(t, opp), win, plays: c.plays, r: c.n ? Math.round(c.rs / c.n * 10) / 10 : 0, k: c.k, d: c.d, a: c.a, label: m.label, score: c.x + '-' + c.y, moms: c.moms };
       record(rec, t.first, t.stage); t.lines.push(rec);
       if (t.kind !== 'nations') rivalMatch(opp, t.kind === 'playoff' ? t.tier : 'first', rec, `${S.year}-${S.m}-${t.kind}${t.i}`, T, O, t.name);
+      if (c.plays && c.tac !== undefined && c.sets) {
+        const adv = win && t.ms.slice(t.i + 1).some(x => (x.a && x.a.w === t.i) || (x.b && x.b.w === t.i));
+        S.q.push(matchScene(t, m, c, rec, opp, adv));   // 시리즈 결과 장면(판정은 이미 끝났다. 화면은 이 기록만 읽는다)
+      }
       t.w[t.i++] = win ? t.me : opp; t.cur = null;
     }
     return true;
@@ -890,8 +946,11 @@
     stove: { years: 'n', salary: 'n', canRetire: 'b', scouted: 'b?' },
     offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n' }, 0, 8] },
     tryout: { p: PCTN, text: 's', vet: 'b', retry: 'b' },
-    moment: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', mid: 's', sit: 's', set: 'n', bo: 'n', x: 'n', y: 'n', base: 'n', rival: 's?', choices: [{ label: 's', p: 'n', up: 'n', down: 'n', bd: 'bd' }, 2, 3] },
-    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b' },
+    moment: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', mid: 's', sit: 's', set: 'n', bo: 'n', x: 'n', y: 'n', base: 'n', rival: 's?', pips: 's?', tac: 's?', from: 'n?', seen: 'n?', choices: [{ label: 's', p: 'n', up: 'n', down: 'n', bd: 'bd' }, 2, 3] },
+    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b', pips: 's?', tac: 's?', d: 'n?' },
+    prematch: { tour: 's', label: 's', bo: 'n', me: 's', opp: 's', meTag: 's', oppTag: 's', meColor: 's', oppColor: 's', base: 'n', cond: 'n', role: 's', rival: 's', h2h: 's', tacs: [{ id: 's', p: 'n' }, 3, 3] },
+    match: { tour: 's', label: 's', bo: 'n', me: 's', opp: 's', win: 'b', x: 'n', y: 'n', meTag: 's', oppTag: 's', meColor: 's', oppColor: 's', sets: [{ w: 'b', d: 'n' }, 1, 7], from: 'n', tac: 's',
+      r: 'n', k: 'n', d: 'n', a: 'n', mvp: 'b', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8], rival: 's', next: 's', seen: 'n?' },
     retire: { nick: 's', role: 's', reason: 's', age: 'n', years: 'n', g: 'n', w: 'n', avg: 'n', mvp: 'n', kda: 'n', peak: 'n', earn: 'n', score: 'n', pct: 'n', grade: 's', ep: 's',
       ax: { '기량': 'n', '우승': 'n', '개인상': 'n', '인기': 'n', '롱런': 'n' }, titles: [{ y: 'n', name: 's', tier: 'tier' }, 0, 120], awards: [{ y: 'n', name: 's' }, 0, 120], orgs: ['s', 0, 40],
       news: 's?', rid: 's?', at: 'n?', rivals: [RIVALV, 0, 8, '?'] },
@@ -987,6 +1046,12 @@
         if (!isObj(t) || !Array.isArray(t.ms) || t.ms.length < 1 || t.ms.length > 16 || t.ms.some(m => !isObj(m) || ![1, 3, 5, 7].includes(m.bo))) return null;
         if (!small(t.i, t.ms.length) || !Array.isArray(t.w) || t.w.length > 16 || !Array.isArray(t.lines) || t.lines.length > 16) return null;
         if (t.cur != null && (!isObj(t.cur) || !small(t.cur.x, 4) || !small(t.cur.y, 4) || !small(t.cur.mom, 3) || !Array.isArray(t.cur.used) || !Array.isArray(t.cur.moms) || t.cur.moms.length > 8)) return null;
+        if (t.cur != null) {
+          const c = t.cur;
+          if (!(c.tac === undefined || c.tac === null || c.tac === '' || TAC[c.tac] === 1)) return null;
+          if (c.sets !== undefined && (!Array.isArray(c.sets) || c.sets.length > 7 || c.sets.some(x => !isObj(x) || (x.w !== 0 && x.w !== 1) || !Number.isFinite(x.d) || Math.abs(x.d) > 50))) return null;
+          if (c.shown !== undefined && !small(c.shown, 7)) return null;
+        }
       }
     }
     if (s.buff != null && !isObj(s.buff)) return null;
@@ -1367,6 +1432,8 @@
   }
   function tutSkip() { if (S && !S.tut.done) { tutFinish(); save(); } }
   function tutReplay() { if (S) { S.tut = { p: 0, g: 0, r: 0, done: false, replay: true }; save(); } }
+  // 관전 연출을 본 장면에 표시한다(다시 열면 연출 없이 같은 내용만 보여 준다). 판정·난수와 무관하다.
+  function watched() { const sc = S && S.q[0]; if (sc && (sc.type === 'match' || sc.type === 'moment') && !sc.seen) { sc.seen = 1; save(); } }
   function celePlayed() { const sc = S && S.q[0]; if (sc && sc.cele === 1) { sc.cele = 2; save(); } }
 
   /* ---------- 진행 ---------- */
@@ -1451,6 +1518,12 @@
         S.q[0] = { type: 'result', title: sc.title, ok, checked: !!c.chk, p: sc.choices[arg].p, text, lines };
         log(`${sc.title} — ${text}`, ok ? '' : 'bad'); break;
       }
+      case 'prematch': {
+        const t = S.sim && S.sim.tour, c = t && t.cur;
+        if (c && c.tac === null) c.tac = TAC[arg] ? arg : '';   // 한 번만 정해진다. 이미 정해진 시리즈에는 다시 적용하지 않는다
+        done(); break;
+      }
+      case 'match': done(); break;
       case 'moment': {
         const t = S.sim && S.sim.tour, c = t && t.cur;
         if (!c) { done(); break; }                       // 대회 상태가 없으면 장면만 닫는다
@@ -1462,6 +1535,8 @@
           type: 'mresult', ok: d.ok, p: sc.choices[i].p, i, title: sc.title, choice: d.label, text: d.text, eff: d.s,
           tour: sc.tour, label: sc.label, set: sc.set, me: sc.me, opp: sc.opp, x: c.x, y: c.y, setWin: g.win, over: c.x >= need || c.y >= need,
         };
+        if (c.sets) { c.shown = c.sets.length; if (c.tac !== undefined) { S.q[0].pips = pips(c); S.q[0].tac = c.tac || ''; S.q[0].d = c.sets[c.sets.length - 1].d; } }
+
         break;
       }
       case 'cards': {
@@ -1607,13 +1682,47 @@
     save(); return true;
   }
 
+  /* ---------- 경기 체험(0.11.0) ----------
+     타이틀의 "경기 체험하기"가 쓴다. 실제 엔진으로 새 선수를 만들어 1군 토너먼트 시리즈 직전까지 자동으로 진행한 뒤 멈춘다.
+     백업 검사(dryRun)와 같은 방식으로 저장소를 메모리 상자로 바꿔 놓고 돌리므로, 체험 중의 저장·명예의 전당·도전 과제 쓰기는
+     전부 그 상자 안에서 끝나고 실제 기기 저장에는 한 글자도 닿지 않는다. 진행 중인 커리어(S)와 난수도 따로 떼어 두었다가 demoEnd 에서 되돌린다. */
+  let demo = null;
+  function demoStart(seed) {
+    if (demo || box) return false;
+    demo = { S, rnd, saveFailed, backupNext, legRaw, legObj, legFail, addFail, achRaw, achObj, achFail };
+    let a = (seed >>> 0) || 1, ok = false;
+    box = {}; legRaw = achRaw = null; legObj = achObj = null;
+    rnd = function () { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const t0 = Date.now();
+    try {
+      for (let k = 0; k < 40 && !ok && Date.now() - t0 < 3000; k++) {
+        newGame({ nick: '체험선수', region: D.REGIONS[(seed + k) % D.REGIONS.length].id, role: D.ROLES[(seed + k) % D.ROLES.length].id, trait: D.TRAITS[(seed + k) % D.TRAITS.length].id });
+        for (let i = 0; i < 6000 && S && !S.over; i++) {
+          const sc = S.q[0];
+          if (sc && sc.type === 'prematch' && S.squad === 'first') { ok = true; break; }
+          autoStep();
+        }
+      }
+    } catch (e) { ok = false; }
+    if (!ok) { demoEnd(); return false; }
+    return true;
+  }
+  function demoEnd() {
+    if (!demo) return;
+    box = null;
+    ({ S, rnd, saveFailed, backupNext, legRaw, legObj, legFail, addFail, achRaw, achObj, achFail } = demo);
+    demo = null;
+  }
   // 자동 진행 (밸런스 검증용)
+  let autoTac = null;   // 검사용: 자동 진행이 고를 전략을 정하는 함수(없으면 전략 없음)
   function autoStep() {
     const sc = S.q[0];
     if (!sc) { S.plan = S.cond < 38 || S.wrist < 35 ? 'rest' : ['solo', 'scrim', 'review'][(S.year * 10 + S.m) % 3]; next(); return; }
     if (sc.type === 'pickOrg' || sc.type === 'cards') return resolve(ri(0, 2));
     if (sc.type === 'event') { let b = 0, bv = -1; sc.choices.forEach((c, i) => { const v = c.disabled ? -2 : c.p == null ? 55 : c.p; if (v > bv) { bv = v; b = i; } }); return resolve(b); }
     if (sc.type === 'moment') return resolve('auto');
+    if (sc.type === 'prematch') return resolve(autoTac ? autoTac(sc, S) : '');   // 기본은 전략 없음: 판정이 0.10.2와 같다
+    if (sc.type === 'match') return resolve();
     if (sc.type === 'offers') {
       // 1군 제안을 가장 먼저, 그다음 2군, 연습생 순으로 받는다. 잔류할 수 있을 때는 1군 제안이 있을 때만 옮긴다.
       const rank = { first: 0, second: 1, trainee: 2 };
@@ -1664,7 +1773,8 @@
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,
-    fanReact, FAN_GAP, tutTip, tutNext, tutSkip, tutReplay, celePlayed,
+    fanReact, FAN_GAP, tutTip, tutNext, tutSkip, tutReplay, celePlayed, watched, demoStart, demoEnd, inDemo: () => !!demo,
+    _autoTac: f => { autoTac = typeof f === 'function' ? f : null; },
     rivals: () => S ? S.rivals.map(rivalView) : [],
     roleLabel, roleReview, offerInfo,
     rivalFixtures: () => (S && S.org ? rivalFixtures().map(r => ({ nick: r.nick, org: D.ORG[r.org].name, w: r.w, l: r.l })) : []),
