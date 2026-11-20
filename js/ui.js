@@ -1,8 +1,8 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const G = window.PG, D = G.D, app = document.getElementById('app');
+  const G = window.PG, D = G.D, CARD = window.PG_CARD, app = document.getElementById('app');
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const U = { view: 'title', tab: 'home', C: { nick: '', region: 'kr', role: 'core', trait: 'genius' }, confirm: '', notice: '' };
+  const U = { view: 'title', tab: 'home', C: { nick: '', region: 'kr', role: 'core', trait: 'genius' }, confirm: '', notice: '', vt: 'hall', vfrom: 'title', sort: 'score', cmp: [], rec: '', dlg: null, undo: '', vmsg: '', card: null, imp: null };
   const money = G.fmtMoney, f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 
   /* ---- 도트 아바타 (직접 그린 14×14 스프라이트) ---- */
@@ -12,16 +12,22 @@
   function hash(s) { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
   function drawAvatars() {
     app.querySelectorAll('canvas.av').forEach(cv => {
-      const h = hash(cv.dataset.seed || 'x'), x = cv.getContext('2d');
-      const pal = { h: HAIR[h % HAIR.length], s: SKIN[(h >> 3) % SKIN.length], e: '#0e1126', k: '#62e4ff', m: '#62e4ff', j: cv.dataset.color || '#ff4d6d', d: 'rgba(14,17,38,.45)' };
+      const x = cv.getContext('2d');
       cv.width = cv.height = 14; x.clearRect(0, 0, 14, 14); cv.setAttribute('aria-hidden', 'true');
-      SPRITE.forEach((row, y) => [...row].forEach((ch, i) => {
-        if (ch === '.') return;
-        if (ch === 'd') { x.fillStyle = pal.j; x.fillRect(i, y, 1, 1); }
-        x.fillStyle = pal[ch]; x.fillRect(i, y, 1, 1);
-      }));
-      if ((h >> 5) % 2) { x.fillStyle = pal.h; x.fillRect(5, 3, 2, 1); }
+      sprite(x, 0, 0, 1, cv.dataset.seed || 'x', cv.dataset.color);
     });
+  }
+  // 도트 아바타 한 장. px: 점 하나의 크기(커리어 카드에서는 크게 그린다)
+  function sprite(x, ox, oy, px, seed, color) {
+    const h = hash(seed);
+    const pal = { h: HAIR[h % HAIR.length], s: SKIN[(h >> 3) % SKIN.length], e: '#0e1126', k: '#62e4ff', m: '#62e4ff', j: color || '#ff4d6d', d: 'rgba(14,17,38,.45)' };
+    const dot = (i, y, w) => x.fillRect(ox + i * px, oy + y * px, (w || 1) * px, px);
+    SPRITE.forEach((row, y) => [...row].forEach((ch, i) => {
+      if (ch === '.') return;
+      if (ch === 'd') { x.fillStyle = pal.j; dot(i, y); }
+      x.fillStyle = pal[ch]; dot(i, y);
+    }));
+    if ((h >> 5) % 2) { x.fillStyle = pal.h; dot(5, 3, 2); }
   }
 
   /* ---- 화면 ---- */
@@ -35,7 +41,7 @@
       <div class="stack">
         ${sv ? `<button class="btn cta" data-act="continue">${sv.over ? '지난 커리어 결과 보기' : '이어하기'}<small>${esc(sv.nick)} · ${sv.started ? `${sv.year}년차 ${sv.age}세` : '입단 구단 선택 중'}</small></button>` : ''}
         <button class="btn ${sv ? 'ghost' : ''}" data-act="create">${live && U.confirm === 'new' ? '한 번 더 누르면 진행 중인 커리어가 삭제된다' : '새 커리어'}</button>
-        <button class="btn line" data-act="hall">명예의 전당</button>
+        <button class="btn line two" data-act="hall">기록실<small>명예의 전당 · 도전 과제 · 백업</small></button>
       </div>
       ${U.notice ? `<p class="warn">${U.notice}</p>` : ''}
       ${G.storageOk() ? '' : '<p class="warn">이 브라우저에서는 저장이 되지 않는다. 사생활 보호 모드를 끄거나 다른 브라우저로 열어야 진행 상황이 남는다.</p>'}
@@ -54,13 +60,143 @@
       <button class="btn line" data-act="title">돌아가기</button>
     </section>`;
   }
-  function vHall() {
-    const h = G.hall();
-    return `<section class="page"><div><p class="eyebrow">HALL OF FAME</p><h2>명예의 전당</h2></div>
-      ${h.length ? `<div class="scroll-x"><table><tr><th>선수</th><th class="l">평가</th><th>최고</th><th>우승</th><th>점수</th></tr>
-        ${h.map(r => `<tr><td><b>${esc(r.nick)}</b> <span class="dim">${r.role}</span></td><td class="l">${r.grade} · ${r.ep}</td><td>${r.peak}</td><td>${r.titles}</td><td>${r.score}</td></tr>`).join('')}</table></div>`
-        : '<p class="dim">아직 은퇴한 선수가 없다. 첫 커리어를 끝까지 살아 보자.</p>'}
-      <button class="btn line" data-act="title">돌아가기</button></section>`;
+  /* ---- 기록실: 명예의 전당 · 도전 과제 · 백업 ---- */
+  const none = '<span class="dim">기록 없음</span>';
+  const val = (v, f) => (typeof v === 'number' && isFinite(v) ? (f ? f(v) : String(v)) : none);
+  const day = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`; };
+  const seg = (act, cur, items) => `<div class="seg" role="group">${items.map(([id, name]) => `<button data-act="${act}" data-id="${id}" aria-pressed="${cur === id}">${name}</button>`).join('')}</div>`;
+  function vVault() {
+    const body = U.vt === 'ach' ? vAch() : U.vt === 'backup' ? vBackup() : vHallList();
+    return `<section class="page vault" ${U.dlg ? 'inert aria-hidden="true"' : ''}>
+      <div><p class="eyebrow">RECORDS</p><h2>기록실</h2></div>
+      ${seg('vt', U.vt, [['hall', '명예의 전당'], ['ach', '도전 과제'], ['backup', '백업']])}
+      ${U.vmsg ? `<p class="warn" role="status">${esc(U.vmsg)}</p>` : ''}
+      ${body}
+      <button class="btn line" data-act="back">돌아가기</button></section>${U.dlg ? vDialog() : ''}`;
+  }
+  function vHallList() {
+    const h = G.hall(U.sort), info = G.hallInfo(), trash = U.undo && G.hallTrash().find(r => r.id === U.undo);
+    U.cmp = U.cmp.filter(id => h.some(r => r.id === id));
+    return `${info.failed ? '<p class="warn">명예의 전당을 이 브라우저에 저장하지 못했다. 저장 공간이 부족하거나 저장이 막혀 있다. 지금 보이는 기록은 창을 닫으면 사라질 수 있다.</p>' : ''}
+      ${trash ? `<div class="warn undo" role="status"><span>${esc(trash.nick)}의 기록을 지웠다.</span><button data-act="undo" data-id="${esc(trash.id)}">되돌리기</button></div>` : ''}
+      ${h.length ? `<p class="dim small">${h.length}명 보관 중 (최대 ${info.max}명. 가득 차면 점수가 가장 낮은 기록부터 빠진다)</p>
+        ${seg('sort', U.sort, [['score', '점수순'], ['titles', '우승순'], ['recent', '최근 은퇴순']])}
+        <ol class="hlist">${h.map((r, i) => `<li><button class="hmain" data-act="rec" data-id="${esc(r.id)}"><span class="rk">${i + 1}</span><span class="who"><b>${esc(r.nick)}</b><small>${esc(r.role)} · ${esc(r.grade || '-')} ${esc(r.ep)}</small></span><span class="pt"><b>${r.score}</b><small>우승 ${typeof r.big === 'number' ? r.big : '-'}</small></span></button><button class="hcmp" data-act="cmp" data-id="${esc(r.id)}" aria-pressed="${U.cmp.includes(r.id)}" aria-label="${esc(r.nick)} 비교에 담기">비교</button></li>`).join('')}</ol>
+        ${U.cmp.length === 2 ? '<button class="btn" data-act="compare">고른 두 선수 비교하기</button>' : U.cmp.length === 1 ? '<p class="dim small">한 명을 더 고르면 비교할 수 있다.</p>' : ''}`
+        : '<p class="dim">아직 은퇴한 선수가 없다. 첫 커리어를 끝까지 살아 보자.</p>'}`;
+  }
+  const trophyChips = r => (r.titles.length + r.awards.length ? `<div class="chips">${r.titles.map(t => `<span class="chip gold">${t.y}년차 ${esc(t.name)}</span>`).join('')}${r.awards.map(a => `<span class="chip">${a.y}년차 ${esc(a.name)}</span>`).join('')}</div>` : '<p class="dim">트로피 없이 커리어를 마쳤다.</p>');
+  function vRec() {
+    const r = G.hallGet(U.rec); if (!r) return vVault();
+    const full = r.src === 'play';
+    return `<section class="page vault" ${U.dlg ? 'inert aria-hidden="true"' : ''}>
+      <div><p class="eyebrow">HALL OF FAME</p><h2 class="wrap">${esc(r.nick)}</h2><p class="dim">${[esc(r.role), typeof r.age === 'number' ? `${r.age}세 은퇴` : '', typeof r.years === 'number' ? `${r.years}시즌` : ''].filter(Boolean).join(' · ')}</p></div>
+      <div class="grade"><b>${esc(r.grade || '-')}</b><div><h2>${esc(r.ep) || '-'}</h2><p>커리어 점수 ${r.score}점${typeof r.pct === 'number' ? ` · 자동 시뮬레이션 커리어 대비 상위 ${r.pct}%` : ''}</p></div></div>
+      ${full ? '' : '<p class="warn">예전 버전의 명예의 전당에서 옮긴 기록이다. 그때 저장된 요약만 남아 있어 나머지는 "기록 없음"으로 보인다.</p>'}
+      <div class="kv"><div><span>1군 경기</span><b>${val(r.g)}</b></div><div><span>승률</span><b>${r.g > 0 ? val(r.w, w => Math.round(w / r.g * 100) + '%') : none}</b></div><div><span>평균 평점</span><b>${r.g > 0 ? val(r.avg, f1) : none}</b></div>
+        <div><span>최고 OVR</span><b>${val(r.peak)}</b></div><div><span>경기 MVP</span><b>${val(r.mvp)}</b></div><div><span>1군 우승</span><b>${val(r.big, v => v + '회')}</b></div>
+        <div><span>통산 수입</span><b>${val(r.earn, money)}</b></div><div><span>1군 데뷔</span><b>${full ? (r.debut ? r.debut + '세' : '데뷔 못 함') : none}</b></div><div><span>은퇴한 날</span><b>${r.at ? day(r.at) : none}</b></div></div>
+      <div><p class="sec">트로피·수상</p>${full ? trophyChips(r) : `<p>${none}</p>`}</div>
+      <div><p class="sec">거쳐 간 팀</p><p>${full && r.orgs.length ? r.orgs.map(esc).join(' → ') : none}</p></div>
+      ${full && r.rv.length ? `<div><p class="sec">라이벌 상대 전적</p><ul class="plain">${r.rv.map(v => `<li><b>${esc(v.nick)}</b> ${v.w}승 ${v.l}패${v.label ? ` · ${esc(v.label)}` : ''}</li>`).join('')}</ul></div>` : ''}
+      ${full && r.reason ? `<p class="dim">${esc(r.reason)}</p>` : ''}
+      <div class="stack"><button class="btn" data-act="card" data-id="${esc(r.id)}">커리어 카드 만들기</button>
+        <button class="btn line" data-act="cmp" data-id="${esc(r.id)}" aria-pressed="${U.cmp.includes(r.id)}">${U.cmp.includes(r.id) ? '비교에서 빼기' : '비교에 담기'}</button>
+        <button class="btn line" data-act="askdel" data-id="${esc(r.id)}">이 기록 삭제</button>
+        <button class="btn line" data-act="back">목록으로</button></div></section>${U.dlg ? vDialog() : ''}`;
+  }
+  function vCompare() {
+    const a = G.hallGet(U.cmp[0]), b = G.hallGet(U.cmp[1]); if (!a || !b) return vVault();
+    const rows = [['포지션', r => esc(r.role) || none], ['등급', r => esc(r.grade) || none], ['별칭', r => esc(r.ep) || none], ['커리어 점수', r => val(r.score)], ['은퇴 나이', r => val(r.age, v => v + '세')], ['시즌', r => val(r.years)],
+      ['1군 경기', r => val(r.g)], ['승률', r => (r.g > 0 ? val(r.w, w => Math.round(w / r.g * 100) + '%') : none)], ['평균 평점', r => (r.g > 0 ? val(r.avg, f1) : none)], ['최고 OVR', r => val(r.peak)], ['경기 MVP', r => val(r.mvp)],
+      ['1군 우승', r => val(r.big, v => v + '회')], ['월드 우승', r => (r.src === 'play' ? r.titles.filter(t => t.tier === 'world').length + '회' : none)], ['개인상', r => (r.src === 'play' ? r.awards.length + '개' : none)], ['통산 수입', r => val(r.earn, money)], ['은퇴한 날', r => (r.at ? day(r.at) : none)]];
+    return `<section class="page vault"><div><p class="eyebrow">COMPARE</p><h2>기록 비교</h2></div>
+      <table class="cmp"><caption class="srhide">두 선수의 은퇴 기록 비교</caption><tr><th scope="col">항목</th><th scope="col">${esc(a.nick)}</th><th scope="col">${esc(b.nick)}</th></tr>
+        ${rows.map(([k, f]) => `<tr><th scope="row">${k}</th><td>${f(a)}</td><td>${f(b)}</td></tr>`).join('')}</table>
+      <button class="btn line" data-act="back">목록으로</button></section>`;
+  }
+  function vDialog() {
+    const r = G.hallGet(U.dlg.id); if (!r) return '';
+    return `<div class="veil"><section class="sheet bad" role="alertdialog" aria-modal="true" aria-label="기록 삭제 확인" tabindex="-1"><h2>기록 삭제</h2>
+      <p>${esc(r.nick)}(${esc(r.grade || '-')} · ${r.score}점)의 기록을 명예의 전당에서 지운다.</p>
+      <p class="dim">지운 직후에는 목록 위의 "되돌리기"로 복구할 수 있다. 그 뒤에는 미리 내려받은 백업 파일이 있어야 복구할 수 있다. 이미 달성한 도전 과제는 지워지지 않는다.</p>
+      <button class="btn" data-act="del" data-id="${esc(r.id)}">삭제한다</button><button class="btn ghost" data-act="canceldlg">취소</button></section></div>`;
+  }
+  function vAch() {
+    const list = G.achList(), info = G.achInfo();
+    return `${info.failed ? '<p class="warn">도전 과제를 이 브라우저에 저장하지 못했다. 창을 닫으면 달성 기록이 사라질 수 있다.</p>' : ''}
+      <p class="dim small">${info.n} / ${info.of} 달성 · 은퇴까지 마친 커리어 ${info.runs}개. 도전 과제는 기록용이며 경기·능력치·연봉에는 영향이 없다.</p>
+      <ul class="achs">${list.map(a => `<li class="${a.got ? 'got' : ''}"><span class="mk" aria-hidden="true">${a.got ? '★' : '☆'}</span><div><b>${a.name}</b><small>${a.desc}</small>
+        <small class="st">${a.got ? `달성${a.got.at ? ' ' + day(a.got.at) : ''}${a.got.nick ? ` · ${esc(a.got.nick)}${a.got.y ? ` ${a.got.y}년차` : ''}${a.got.age ? ` ${a.got.age}세` : ''}` : ''}` : a.prog ? `미달성 · ${a.prog[2] ? '이번 커리어 ' : ''}${a.prog[0]} / ${a.prog[1]}` : '미달성'}</small></div></li>`).join('')}</ul>`;
+  }
+  const IMP_ERR = { big: '파일이 너무 크다(3MB 초과). 이 게임의 백업 파일이 아니다.', json: '파일을 읽을 수 없다. 내용이 깨졌거나 백업 파일이 아니다.', format: '이 게임의 백업 파일이 아니다.', version: '백업 파일의 버전 표시가 올바르지 않다.',
+    newer: '더 새로운 버전의 게임에서 만든 백업이다. 게임을 최신으로 새로 고친 뒤 다시 시도해 달라.', payload: '백업 파일의 구조가 올바르지 않다.', career: '백업 안의 커리어 데이터가 올바르지 않아 복원하지 않았다.',
+    hall: '백업 안의 명예의 전당 데이터가 올바르지 않아 복원하지 않았다.', legacy: '백업 안의 명예의 전당 데이터가 올바르지 않아 복원하지 않았다.', read: '파일을 읽지 못했다.', apply: '복원하지 못했다(저장 공간 부족 또는 저장 차단). 이 기기의 데이터는 원래대로 남아 있다.' };
+  const careerLine = c => (c ? `${esc(c.nick)} · ${c.over ? '은퇴함' : c.started ? `${c.year}년차 ${c.age}세 진행 중` : '입단 구단 선택 중'}` : '없음');
+  function vBackup() {
+    const m = U.imp, here = G.saveInfo(), hi = G.hallInfo(), ai = G.achInfo();
+    let imp = '';
+    if (m && m.res) {
+      const p = m.res.preview;
+      imp = `<div class="impbox" role="group" aria-label="복원 미리보기"><p class="sec">이 파일의 내용</p>
+        <dl class="dl"><dt>만든 때</dt><dd>${p.exportedAt ? day(p.exportedAt) : '기록 없음'}${p.app ? ` · v${esc(p.app)}` : ''}</dd><dt>커리어</dt><dd>${careerLine(p.career)}</dd><dt>명예의 전당</dt><dd>${p.hall}명</dd><dt>도전 과제</dt><dd>${p.ach}개 달성</dd></dl>
+        <p class="sec">지금 이 기기</p>
+        <dl class="dl"><dt>커리어</dt><dd>${careerLine(here)}</dd><dt>명예의 전당</dt><dd>${hi.n}명</dd><dt>도전 과제</dt><dd>${ai.n}개 달성</dd></dl>
+        <p class="warn">복원하면 "지금 이 기기"의 데이터가 모두 지워지고 파일의 내용으로 바뀐다. 두 쪽을 합치지 않는다. 남기고 싶다면 먼저 위에서 백업 파일을 내려받아 둔다.</p>
+        <button class="btn" data-act="impok">덮어쓰고 복원한다</button><button class="btn ghost" data-act="impcancel">취소</button></div>`;
+    } else if (m && m.err) imp = `<p class="warn" role="alert">${IMP_ERR[m.err] || IMP_ERR.json}${m.err === 'apply' ? '' : ' 이 기기의 데이터는 바뀌지 않았다.'}</p>`;
+    return `${G.storageOk() ? '' : '<p class="warn">이 브라우저에서는 저장이 막혀 있다. 백업 파일을 내려받을 수는 있지만 복원은 할 수 없다.</p>'}
+      <div class="stack"><p class="sec">백업 파일 만들기</p>
+        <p class="dim">진행 중인 커리어, 시즌 시작 사본, 명예의 전당, 도전 과제를 파일 하나(JSON)로 내려받는다. 이 게임의 데이터만 담긴다.</p>
+        <button class="btn" data-act="export">백업 파일 내려받기</button>
+        ${U.expmsg ? `<p class="dim small" role="status">${esc(U.expmsg)}</p>` : ''}</div>
+      <div class="stack"><p class="sec">백업 파일에서 복원</p>
+        <p class="dim">전체 복원이다. 파일을 고르면 내용을 먼저 보여 주고, 확인한 뒤에만 바꾼다.</p>
+        <input type="file" id="impfile" class="srhide" accept=".json,application/json"><label class="btn ghost" for="impfile">백업 파일 고르기</label>
+        ${imp}</div>
+      <p class="fine">저장은 이 기기의 이 브라우저 안에만 있다. 브라우저 데이터를 지우면 사라지고, 시크릿(사생활 보호) 모드나 다른 기기·다른 브라우저에서는 보이지 않으며 자동으로 옮겨지지 않는다. 옮기거나 지키려면 백업 파일을 내려받아 두었다가 복원한다.</p>`;
+  }
+
+  /* ---- 커리어 카드 ---- */
+  function vCard() {
+    const c = U.card, r = c.rec;
+    const alt = `${r.nick}의 커리어 카드. ${r.grade || ''}등급 ${r.ep || ''}, 커리어 점수 ${r.score}점`;
+    return `<section class="page vault"><div><p class="eyebrow">CAREER CARD</p><h2>커리어 카드</h2><p class="dim">${esc(r.nick)}의 은퇴 기록을 그림 한 장(1080×1350)으로 만든다. 기록에 있는 값만 들어간다.</p></div>
+      <div class="cardbox">${c.state === 'ready' ? `<img class="cardimg" src="${c.url}" width="1080" height="1350" alt="${esc(alt)}">` : `<div class="cardwait ${c.state === 'fail' ? 'fail' : ''}">${c.state === 'fail' ? '카드를 만들지 못했다' : '카드를 만드는 중…'}</div>`}</div>
+      <p class="cardst ${c.state === 'fail' ? 'warn' : 'dim'}" role="status" aria-live="polite">${esc(c.msg || (c.state === 'ready' ? '완성. 아래 버튼으로 저장하거나, 그림을 길게 눌러 저장할 수 있다.' : c.state === 'fail' ? '이 브라우저에서 그림을 만들지 못했다. 다른 브라우저에서 다시 시도해 달라. 게임 진행에는 영향이 없다.' : '카드를 만드는 중…'))}</p>
+      <div class="stack"><button class="btn" data-act="cardsave" ${c.state === 'ready' ? '' : 'disabled'}>PNG 저장</button>
+        ${c.state === 'ready' && c.file ? '<button class="btn ghost" data-act="cardshare">공유</button>' : c.state === 'ready' ? '<p class="dim small">이 브라우저는 그림 공유를 지원하지 않는다. PNG로 저장한 뒤 직접 올리면 된다.</p>' : ''}
+        ${c.state === 'fail' ? '<button class="btn ghost" data-act="cardretry">다시 만들기</button>' : ''}
+        <button class="btn line" data-act="back">돌아가기</button></div></section>`;
+  }
+  const fileNick = n => (String(n).replace(/[^\w가-힣-]/g, '_').slice(0, 20) || 'player');
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+  function openCard(rec, from) {
+    if (U.card && U.card.url) URL.revokeObjectURL(U.card.url);
+    U.card = { rec, from, state: 'busy', msg: '', url: '', blob: null, file: null };
+    go('card'); makeCard();
+  }
+  function makeCard() {
+    const c = U.card; if (!c) return;
+    c.state = 'busy'; c.msg = '';
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    // 글꼴을 기다리되 오래 걸리면 기기의 기본 한글 글꼴로 그린다.
+    const fonts = document.fonts && document.fonts.load ? Promise.race([Promise.all(CARD.fonts.map(f => document.fonts.load(f, '가A1').catch(() => 0))), wait(2500)]) : Promise.resolve();
+    fonts.then(() => new Promise((res, rej) => {
+      const cv = document.createElement('canvas');
+      CARD.draw(cv, c.rec, { avatar: (x, ox, oy, px, seed) => sprite(x, ox, oy, px, seed) });
+      if (!cv.toBlob) return rej(new Error('toBlob'));
+      cv.toBlob(b => (b && b.size > 1000 ? res(b) : rej(new Error('blob'))), 'image/png');
+    })).then(blob => {
+      if (U.card !== c) return;
+      c.blob = blob; c.url = URL.createObjectURL(blob); c.state = 'ready';
+      try { const f = new File([blob], `progamer-career-${fileNick(c.rec.nick)}.png`, { type: 'image/png' }); if (navigator.canShare && navigator.share && navigator.canShare({ files: [f] })) c.file = f; } catch (e) { c.file = null; }
+      if (U.view === 'card') render();
+    }).catch(() => { if (U.card !== c) return; c.state = 'fail'; if (U.view === 'card') render(); });
   }
 
   const meter = (name, v, cls) => `<div class="meter"><span>${name}<b>${Math.round(v)}</b></span><div class="bar ${cls || ''} ${v < 35 ? 'low' : ''}"><i style="width:${Math.round(v)}%"></i></div></div>`;
@@ -148,6 +284,10 @@
     return `<div><p class="sec">통산</p><div class="kv"><div><span>1군 경기</span><b>${c.g}</b></div><div><span>평균 평점</span><b>${c.g ? f1(c.rs / c.g) : '-'}</b></div><div><span>경기 MVP</span><b>${c.mvp}</b></div></div></div>
       <div><p class="sec">트로피·수상</p>${c.titles.length + c.awards.length ? `<div class="chips">${c.titles.map(t => `<span class="chip gold">${t.y}년차 ${t.name}</span>`).join('')}${c.awards.map(a => `<span class="chip">${a.y}년차 ${a.name}</span>`).join('')}</div>` : '<p class="dim">아직 비어 있다.</p>'}</div>
       <div><p class="sec">시즌 기록</p>${S.hist.length ? `<div class="scroll-x"><table><tr><th>연차</th><th class="l">팀</th><th>경기</th><th>승</th><th>평점</th><th>OVR</th></tr>${S.hist.map(h => `<tr><td>${h.year} <span class="dim">${h.age}세</span></td><td class="l">${h.tag} ${G.SQUAD[h.squad]}</td><td>${h.g}</td><td>${h.w}</td><td>${h.g ? f1(h.avg) : '-'}</td><td>${h.ovr}</td></tr>`).join('')}</table></div>` : '<p class="dim">첫 시즌을 마치면 기록이 쌓인다.</p>'}</div>
+      <div class="stack"><p class="sec">기록실</p>
+        <button class="btn line" data-act="vault" data-id="hall">명예의 전당 — ${G.hallInfo().n}명</button>
+        <button class="btn line" data-act="vault" data-id="ach">도전 과제 — ${G.achInfo().n} / ${G.achInfo().of}</button>
+        <button class="btn line" data-act="vault" data-id="backup">백업 관리 — 내려받기·복원</button></div>
       <div class="stack"><p class="sec">설정</p>
         <button class="btn line" data-act="fast">빠른 진행 ${S.opt.fast ? '켜짐' : '꺼짐'} — 평범한 달의 결과 화면을 건너뛰고 승부처는 자동으로 고른다</button>
         <button class="btn line" data-act="tutreplay">처음 안내 다시 보기</button>
@@ -232,6 +372,8 @@
       <div><p class="eyebrow">CAREER END · ${r.years}시즌</p><h2>${esc(r.nick)}, 은퇴</h2><p class="dim">${r.reason}</p></div>
       ${r.news ? `<p class="news"><b>뉴스</b>${esc(r.news)}</p>` : ''}
       <div class="grade"><b>${r.grade}</b><div><h2>${r.ep}</h2><p>커리어 점수 ${r.score}점 · 자동 시뮬레이션 커리어 대비 상위 ${r.pct}%</p></div></div>
+      ${G.hallGet(r.rid) && !G.hallInfo().failed ? '<p class="dim small" role="status">명예의 전당에 기록했다. 새 커리어를 시작해도 이 기록은 남는다.</p>' : '<p class="warn" role="status">명예의 전당에 기록하지 못했다(저장 공간 부족 또는 저장 차단). 아래에서 커리어 카드를 저장해 두면 그림으로는 남는다.</p>'}
+      <button class="btn" data-act="endcard">커리어 카드 만들기</button>
       <svg class="radar" viewBox="0 0 300 250" role="img" aria-label="커리어 평가 5개 축">
         ${[100, 66, 33].map(v => `<polygon points="${poly(v)}" fill="none" stroke="#2d3363"/>`).join('')}
         <polygon points="${poly()}" fill="rgba(255,77,109,.35)" stroke="#ff4d6d" stroke-width="2"/>
@@ -242,7 +384,7 @@
       <div><p class="sec">트로피·수상</p>${r.titles.length + r.awards.length ? `<div class="chips">${r.titles.map(t => `<span class="chip gold">${t.y}년차 ${t.name}</span>`).join('')}${r.awards.map(a => `<span class="chip">${a.y}년차 ${a.name}</span>`).join('')}</div>` : '<p class="dim">트로피 없이 커리어를 마쳤다.</p>'}</div>
       <div><p class="sec">거쳐 간 팀</p><p>${r.orgs.join(' → ')}</p></div>
       ${r.rivals && r.rivals.length ? `<div><p class="sec">라이벌</p>${r.rivals.map(v => rivalCard(v, `<p class="epi">${esc(v.epilogue)}</p>`)).join('')}</div>` : ''}
-      <button class="btn" data-act="again">새 커리어</button><button class="btn line" data-act="hall">명예의 전당</button></section>`;
+      <button class="btn ghost" data-act="endcard">커리어 카드 만들기</button><button class="btn" data-act="again">새 커리어</button><button class="btn line" data-act="hall">기록실 — 명예의 전당 · 도전 과제 · 백업</button></section>`;
   }
 
   function vGame(S) {
@@ -257,22 +399,34 @@
       ${sc ? vScene(sc, S) : ''}`;
   }
 
+  // 화면을 그리다 오류가 나면(손상된 저장의 장면 등) 멈춘 화면에 가두지 않고 타이틀로 돌려보낸다. 저장 데이터는 건드리지 않는다.
   function render() {
+    try { paint(); } catch (err) {
+      window.__pgRenderError = String(err && err.message || err);
+      if (window.console && console.error) console.error(err);
+      if (U.view === 'title') return;
+      U.view = 'title'; U.dlg = null; U.notice = '이 데이터는 화면에 표시할 수 없어 타이틀로 돌아왔다. 저장 데이터는 지우지 않았다. 기록실의 백업에서 복원하거나 새 커리어를 시작할 수 있다.';
+      try { paint(); } catch (e2) {}
+    }
+  }
+  function paint() {
     const y = window.scrollY, S = G.state();
     if (U.view === 'game' && !S) U.view = 'title';
     // 키보드 사용자를 위해, 다시 그린 뒤에도 방금 누른 버튼에 포커스를 돌려준다.
     const a = document.activeElement, fk = a && app.contains(a) && a.dataset && a.dataset.act ? [a.dataset.act, a.dataset.id || '', a.dataset.i || '', a.dataset.grp || ''] : (a && a.id === 'nick' ? 'nick' : null);
     const prevScene = U.sceneKey;
-    app.innerHTML = U.view === 'title' ? vTitle() : U.view === 'create' ? vCreate() : U.view === 'hall' ? vHall() : vGame(S);
+    if (U.view === 'card' && !U.card) U.view = 'hall';
+    app.innerHTML = U.view === 'title' ? vTitle() : U.view === 'create' ? vCreate() : U.view === 'hall' ? vVault() : U.view === 'rec' ? vRec() : U.view === 'compare' ? vCompare() : U.view === 'card' ? vCard() : vGame(S);
     drawAvatars();
     const sheet = app.querySelector('.sheet'), sc = U.view === 'game' && S ? G.scene() : null;
-    U.sceneKey = sheet ? [sc.type, sc.title || '', sc.sub || '', sc.ev || '', sc.mid || '', sc.set || ''].join('|') : '';
+    U.sceneKey = sheet ? (sc ? [sc.type, sc.title || '', sc.sub || '', sc.ev || '', sc.mid || '', sc.set || ''].join('|') : 'dlg') : '';
     document.body.classList.toggle('modal', !!sheet);      // 장면이 열려 있는 동안 뒤 화면이 따라 움직이지 않게
     window.scrollTo(0, y);
     let target = null;
     if (fk === 'nick') target = document.getElementById('nick');
     else if (fk && U.sceneKey === prevScene) target = [...app.querySelectorAll(`[data-act="${fk[0]}"]`)].find(e => (e.dataset.id || '') === fk[1] && (e.dataset.i || '') === fk[2] && (e.dataset.grp || '') === fk[3] && !e.disabled && !e.closest('[inert]'));
     if (!target && sheet && U.sceneKey !== prevScene) target = sheet;       // 새 장면이 열리면 대화상자로 포커스를 옮긴다
+    if (U.focusNext) { const el = app.querySelector(U.focusNext); U.focusNext = ''; if (el) { if (!el.matches('button, input, a')) el.setAttribute('tabindex', '-1'); target = el; } }
     if (target) try { target.focus({ preventScroll: true }); } catch (e) {}
     // 홈의 안내가 화면 밖(또는 하단 바 뒤)에 있으면 안내마다 한 번만 보이는 곳으로 옮긴다.
     const tp = app.querySelector('.stagebg:not([inert]) .tip'), foot = app.querySelector('.foot');
@@ -282,10 +436,30 @@
       if (r.top < 0 || r.bottom > lim) tp.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
     if (sc && sc.cele === 1) G.celePlayed();               // 우승 연출은 한 번만. 다시 열면 같은 내용이 연출 없이 나온다
+    toastAch();
   }
-  function go(v) { U.view = v; U.confirm = ''; render(); window.scrollTo(0, 0); }
+  // 도전 과제 달성 알림: 화면 위쪽에 잠깐 뜨는 한 줄. 진행을 막지 않는다.
+  let toastEl = null, toastTimer = 0;
+  function toastAch() {
+    const ids = G.achFresh(); if (!ids.length) return;
+    G.achSeen();
+    const names = ids.map(id => (D.ACH.find(a => a.id === id) || {}).name).filter(Boolean); if (!names.length) return;
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'toast'; toastEl.setAttribute('role', 'status'); toastEl.setAttribute('aria-live', 'polite'); document.body.appendChild(toastEl); toastEl.addEventListener('click', () => toastEl.classList.remove('on')); }
+    toastEl.textContent = '도전 과제 달성 — ' + names.join(', ');
+    toastEl.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('on'), 5000);
+  }
+  function readImport(file) {
+    if (!file) return;
+    if (file.size > G.BACKUP_MAX) { U.imp = { err: 'big' }; return render(); }
+    const fr = new FileReader();
+    fr.onerror = () => { U.imp = { err: 'read' }; render(); };
+    fr.onload = () => { const res = G.importCheck(String(fr.result || '')); U.imp = res.ok ? { res } : { err: res.err }; render(); };
+    fr.readAsText(file);
+  }
+  function go(v) { U.view = v; U.confirm = ''; U.dlg = null; if (v !== 'game' && v !== 'title' && v !== 'create' && !U.focusNext) U.focusNext = '.page h2'; render(); window.scrollTo(0, 0); }
 
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
+  app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
@@ -293,10 +467,61 @@
     if (live && U.confirm !== 'new') { U.confirm = 'new'; return render(); }
     if (a !== 'retire' && a !== 'wipe') U.confirm = '';
     if (a !== 'continue') U.notice = '';
+    if (a !== 'undo') U.vmsg = '';
     switch (a) {
       case 'create': return go('create');
       case 'title': return go('title');
-      case 'hall': return go('hall');
+      case 'hall': U.vfrom = U.view === 'game' ? 'game' : 'title'; U.vt = 'hall'; U.imp = null; U.undo = ''; return go('hall');
+      case 'vault': U.vfrom = 'game'; U.vt = id; U.imp = null; U.undo = ''; return go('hall');
+      case 'vt': U.vt = id; U.imp = null; U.expmsg = ''; break;
+      case 'sort': U.sort = id; break;
+      case 'rec': U.rec = id; return go('rec');
+      case 'cmp': U.cmp = U.cmp.includes(id) ? U.cmp.filter(x => x !== id) : U.cmp.concat([id]).slice(-2); break;
+      case 'compare': return go('compare');
+      case 'back': {
+        if (U.view === 'card') return go(U.card && U.card.from === 'game' ? 'game' : 'rec');
+        if (U.view === 'rec' || U.view === 'compare') return go('hall');
+        return go(U.vfrom === 'game' && G.state() ? 'game' : 'title');
+      }
+      case 'askdel': U.dlg = { id }; break;
+      case 'canceldlg': U.dlg = null; break;
+      case 'del': {
+        const ok = G.hallDel(id); U.dlg = null; U.cmp = U.cmp.filter(x => x !== id);
+        if (ok) { U.undo = id; U.focusNext = '[data-act=undo]'; return go('hall'); }
+        U.vmsg = '기록을 지우지 못했다(저장 실패). 기록은 그대로 있다.'; return go('hall');
+      }
+      case 'undo': { const ok = G.hallUndo(id); U.undo = ''; U.vmsg = ok ? '기록을 되돌렸다.' : '되돌리지 못했다.'; break; }
+      case 'endcard': { const r = G.endRec(); if (r) return openCard(r, 'game'); break; }
+      case 'card': { const r = G.hallGet(id); if (r) return openCard(r, 'rec'); break; }
+      case 'cardretry': makeCard(); break;
+      case 'cardsave': {
+        const c = U.card; if (!c || !c.blob) break;
+        try { download(c.blob, `progamer-career-${fileNick(c.rec.nick)}.png`); c.msg = 'PNG 저장을 시작했다. 브라우저의 다운로드 폴더에 들어왔는지 확인한다. 저장 창을 닫았거나 파일이 보이지 않으면 다시 누르거나, 그림을 길게 눌러 저장한다.'; }
+        catch (err) { c.msg = '파일로 저장하지 못했다. 그림을 길게 눌러 저장해 달라.'; }
+        break;
+      }
+      case 'cardshare': {
+        const c = U.card; if (!c || !c.file) break;
+        // 공유 창은 누른 순간에 바로 열어야 한다. 취소하거나 실패해도 게임에는 영향이 없다.
+        let pr; try { pr = navigator.share({ files: [c.file], title: '프로게이머 키우기', text: `${c.rec.nick} — ${c.rec.grade || ''} ${c.rec.ep || ''} (커리어 점수 ${c.rec.score}점)` }); } catch (err) { pr = Promise.reject(err); }
+        Promise.resolve(pr).then(() => { c.msg = '공유 창으로 넘겼다.'; }, err => { c.msg = err && err.name === 'AbortError' ? '공유를 취소했다.' : '공유하지 못했다. PNG 저장을 이용해 달라.'; }).then(() => { if (U.card === c && U.view === 'card') render(); });
+        return;
+      }
+      case 'export': {
+        try {
+          const d = new Date(), p = n => String(n).padStart(2, '0');
+          download(new Blob([JSON.stringify(G.exportData())], { type: 'application/json' }), `progamer-career-backup-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`);
+          U.expmsg = '백업 파일 내려받기를 시작했다. 브라우저의 다운로드 폴더에 파일이 들어왔는지 꼭 확인한 뒤, 잃어버리지 않을 곳에 보관한다.';
+        } catch (err) { U.expmsg = '백업 파일을 만들지 못했다.'; }
+        break;
+      }
+      case 'impcancel': U.imp = null; break;
+      case 'impok': {
+        if (!U.imp || !U.imp.res) break;
+        const ok = G.importApply(U.imp.res.data);
+        if (!ok) { U.imp = { err: 'apply' }; break; }
+        U.imp = null; U.cmp = []; U.rec = ''; U.undo = ''; U.card = null; go('title'); U.notice = '백업을 복원했다. 이어하기로 복원된 커리어를 연다.'; return render();
+      }
       case 'continue': {
         const r = G.load();
         if (r === 'backup') U.notice = '저장 데이터가 손상되어 이번 시즌 시작 시점으로 되돌렸다.';

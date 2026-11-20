@@ -827,6 +827,31 @@
   // 은퇴 점수 → 상위 % (자동 시뮬레이션 커리어 분포 기준. test/sim.js 로 갱신)
   D.PCT = [[99, 1], [94, 3], [75, 8], [55, 16], [43, 28], [34, 42], [28, 58], [22, 74], [11, 90]];
 
+  // 도전 과제: 수집 요소. 경기·능력치·연봉에는 영향이 없다. 판정식은 engine.js 의 ACHV(같은 id).
+  D.ACH = [
+    { id: 'debut', name: '1군 데뷔', desc: '1군 선수가 된다' },
+    { id: 'win1', name: '첫 승', desc: '1군 공식전에서 처음 이긴다' },
+    { id: 'mvp1', name: '오늘의 주인공', desc: '경기 MVP에 처음 뽑힌다' },
+    { id: 'g100', name: '백 경기', desc: '한 커리어에서 1군 100경기에 출전한다' },
+    { id: 't_second', name: '2군 정상', desc: '2군 리그에서 우승한다' },
+    { id: 't_dom', name: '리그 우승', desc: '자국 1군 리그에서 우승한다' },
+    { id: 't_mid', name: '미드시즌 컵', desc: '미드시즌 컵에서 우승한다' },
+    { id: 't_nations', name: '나라의 이름으로', desc: '네이션스컵에서 우승한다' },
+    { id: 't_world', name: '세계 정상', desc: '월드 파이널에서 우승한다' },
+    { id: 'rookie', name: '신인상', desc: '신인상을 받는다' },
+    { id: 'poy', name: '올해의 선수', desc: '올해의 선수에 뽑힌다' },
+    { id: 'rv_win', name: '동기를 넘어서', desc: '공식전에서 라이벌이 뛴 팀을 이긴다' },
+    { id: 'rv_10', name: '천적', desc: '한 커리어에서 같은 라이벌을 10번 이긴다' },
+    { id: 'fin1', name: '첫 은퇴', desc: '커리어 하나를 은퇴까지 마친다' },
+    { id: 'fin3', name: '세 번의 인생', desc: '커리어 세 개를 은퇴까지 마친다' },
+    { id: 'fin10', name: '열 번의 인생', desc: '커리어 열 개를 은퇴까지 마친다' },
+    { id: 'no_title', name: '무관의 끝', desc: '1군에서 뛰었지만 1군 우승 없이 은퇴한다' },
+    { id: 'no_debut', name: '닿지 못한 무대', desc: '1군에 데뷔하지 못하고 은퇴한다' },
+    { id: 'age30', name: '롱런', desc: '서른 살 이후에 은퇴한다' },
+    { id: 'grade_a', name: '리그의 간판', desc: 'A등급 이상으로 은퇴한다' },
+    { id: 'grade_s', name: '전설', desc: 'S등급 이상으로 은퇴한다' },
+  ];
+
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

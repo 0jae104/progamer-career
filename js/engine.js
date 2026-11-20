@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.6.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.7.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -14,6 +14,15 @@
     ok() { try { if (!root.localStorage) return false; root.localStorage.setItem('pg_probe', '1'); root.localStorage.removeItem('pg_probe'); return true; } catch (e) { return false; } },
   };
   let saveFailed = false;
+  // 기록 보관(커리어 저장과 별개로 기기에 쌓인다)
+  //   HALL  pg_hall_v1   : 예전 형식의 명예의 전당(상위 30명). 그대로 유지한다.
+  //   LEG   pg_legacy_v1 : 은퇴한 커리어의 상세 기록. 기록마다 ID와 은퇴 시각이 있다.
+  //   ACH   pg_ach_v1    : 도전 과제 달성 상태.
+  const LEG = 'pg_legacy_v1', ACH = 'pg_ach_v1', LEG_MAX = 200, BACKUP_MAX = 3 * 1024 * 1024, BACKUP_FORMAT = 'progamer-career-backup';
+  // 실제로 저장소에 쓰였는지 확인하며 쓴다(용량 초과·저장 차단이면 false)
+  function put(k, v) { store.set(k, v); try { return root.localStorage ? root.localStorage.getItem(k) === v : true; } catch (e) { return false; } }
+  const txt = (v, n) => (typeof v === 'string' ? v.replace(/[<>]/g, '').slice(0, n) : '');
+  const hash36 = str => { let h = 7; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h.toString(36); };
 
   const MONTHS = [
     { m: 2, label: '스프링 1라운드', type: 'league', split: 'spring', rounds: [0, 5] },
@@ -115,7 +124,7 @@
     const r = D.ROLES.find(x => x.id === o.role);
     store.del(BAK);
     S = {
-      v: 1, nick: String(o.nick || 'Player').slice(0, 12), home: o.region, role: o.role, trait: o.trait,
+      v: 1, cid: 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36), nick: (String(o.nick || '').replace(/[<>&"'`]/g, '').trim() || 'Player').slice(0, 12), home: o.region, role: o.role, trait: o.trait,
       age: 16, year: 1, m: 0, stats: {}, caps: {}, cond: 80, trust: 30, fame: 0, money: 100, wrist: 100,
       org: null, squad: 'trainee', contract: { salary: 600, years: 3 }, plan: 'solo', monthsInOrg: 0,
       perks: [], shop: { gear: 0, coach: 0, care: 0 }, used: {}, buff: null, injury: 0, pity: 0, recentEv: [],
@@ -673,10 +682,247 @@
       news: c.g ? `${S.nick}, ${S.age}세에 은퇴 — 1군 ${c.g}경기${c.titles.filter(t => t.tier !== 'second').length ? `, 우승 ${c.titles.filter(t => t.tier !== 'second').length}회` : ''}` : `${S.nick}, 1군 무대를 밟지 못하고 ${S.age}세에 은퇴`,
       rivals: S.rivals.map(r => Object.assign(rivalView(r), { epilogue: rivalEpilogue(r), hist: r.hist.slice(0, 1).concat(r.hist.slice(1).slice(-4)) })),
     }, ev);
+    sc.rid = S.cid; sc.at = Date.now();
     S.q = [sc];
+    legacy();   // 예전 명예의 전당을 아직 옮기지 않았다면, 이번 기록을 더하기 전에 먼저 옮긴다
     let hall = []; try { hall = JSON.parse(store.get(HALL) || '[]'); } catch (e) {}
     hall.push({ nick: S.nick, role: role().name, score: ev.score, grade: ev.grade, ep: ev.ep, peak: sc.peak, titles: c.titles.filter(t => t.tier !== 'second').length, years: sc.years });
     hall.sort((a, b) => b.score - a.score); store.set(HALL, JSON.stringify(hall.slice(0, 30)));
+    legacyAdd(recFromScene(sc, S));
+  }
+
+  /* ---------- 기록 보관소(명예의 전당) ----------
+     { v: 1, hall1: 예전 명예의 전당을 옮겼는지, recs: [기록], trash: [방금 지운 기록(되돌리기용)], gone: [지운 기록 ID] }
+     기록 = { id, src: 'play'(상세 기록 있음) | 'hall1'(예전 명예의 전당에서 옮김, 요약만 있음), at: 은퇴 시각(ms, 모르면 null), ... }
+     없는 값은 넣지 않는다. 화면은 없는 값을 "기록 없음"으로 보여 준다. */
+  const TIERS = ['world', 'mid', 'nations', 'dom', 'second'];
+  let legRaw = null, legObj = null, legFail = false, addFail = false;   // addFail: 은퇴 기록을 넣지 못했다(다음에 그 저장을 열 때 다시 넣는다)
+  function cleanRec(r) {
+    if (!r || typeof r !== 'object') return null;
+    const nick = txt(r.nick, 12); if (!nick || !Number.isFinite(r.score)) return null;
+    const o = { id: txt(r.id, 40), src: r.src === 'play' ? 'play' : 'hall1', at: Number.isFinite(r.at) && r.at > 0 ? r.at : null, nick, role: txt(r.role, 12), score: clamp(Math.round(r.score), 0, 100), grade: txt(r.grade, 2), ep: txt(r.ep, 24) };
+    const num = (k, lo, hi, int) => { if (Number.isFinite(r[k])) o[k] = clamp(int ? Math.round(r[k]) : r[k], lo, hi); };
+    num('peak', 0, 99, 1); num('big', 0, 999, 1); num('years', 0, 60, 1); num('age', 10, 60, 1); num('g', 0, 1e5, 1); num('w', 0, 1e5, 1); num('avg', 0, 10); num('mvp', 0, 1e5, 1);
+    num('kda', 0, 999); num('earn', 0, 1e12, 1); num('pct', 0, 100, 1); num('debut', 0, 60, 1);
+    if (o.src !== 'play') return o;
+    for (const [k, list] of [['roleId', D.ROLES], ['home', D.REGIONS], ['trait', D.TRAITS]]) if (list.find(x => x.id === r[k])) o[k] = r[k];
+    o.ver = txt(r.ver, 10); o.reason = txt(r.reason, 120);
+    o.titles = (Array.isArray(r.titles) ? r.titles : []).filter(t => t && Number.isFinite(t.y) && typeof t.name === 'string' && TIERS.includes(t.tier)).slice(0, 80).map(t => ({ y: clamp(Math.round(t.y), 1, 60), name: txt(t.name, 40), tier: t.tier }));
+    o.awards = (Array.isArray(r.awards) ? r.awards : []).filter(a => a && Number.isFinite(a.y) && typeof a.name === 'string').slice(0, 80).map(a => ({ y: clamp(Math.round(a.y), 1, 60), name: txt(a.name, 40) }));
+    o.orgs = (Array.isArray(r.orgs) ? r.orgs : []).filter(x => typeof x === 'string').slice(0, 30).map(x => txt(x, 30));
+    o.rv = (Array.isArray(r.rv) ? r.rv : []).filter(v => v && typeof v.nick === 'string').slice(0, 6).map(v => ({ nick: txt(v.nick, 16), w: clamp(Math.round(+v.w || 0), 0, 1e5), l: clamp(Math.round(+v.l || 0), 0, 1e5), label: txt(v.label, 12) }));
+    if (r.ax && typeof r.ax === 'object') { o.ax = {}; for (const k of ['기량', '우승', '개인상', '인기', '롱런']) if (Number.isFinite(r.ax[k])) o.ax[k] = clamp(Math.round(r.ax[k]), 0, 100); }
+    return o;
+  }
+  function recFromScene(sc, st) {
+    return cleanRec({
+      id: sc.rid || st.cid, src: 'play', at: sc.at, ver: VERSION, nick: sc.nick, role: sc.role, roleId: st.role, home: st.home, trait: st.trait, age: sc.age, years: sc.years,
+      score: sc.score, grade: sc.grade, ep: sc.ep, pct: sc.pct, ax: sc.ax, g: sc.g, w: sc.w, avg: sc.avg, mvp: sc.mvp, kda: sc.kda, peak: sc.peak, earn: sc.earn,
+      titles: sc.titles, awards: sc.awards, orgs: sc.orgs, reason: sc.reason, big: (sc.titles || []).filter(t => t.tier !== 'second').length, debut: st.car.debut || 0,
+      rv: (sc.rivals || []).map(v => ({ nick: v.nick, w: v.w, l: v.l, label: v.label })),
+    });
+  }
+  function cleanLegacy(p) {
+    const o = { v: 1, hall1: !!(p && p.hall1), recs: [], trash: [], gone: [] }, ids = new Set();
+    for (const key of ['recs', 'trash']) for (const r0 of (p && Array.isArray(p[key]) ? p[key] : [])) {
+      const r = cleanRec(r0); if (!r) continue;
+      if (!r.id) r.id = 'x' + hash36(JSON.stringify(r)) + '-' + o[key].length;
+      if (ids.has(r.id)) continue; ids.add(r.id); o[key].push(r);
+    }
+    o.recs = o.recs.slice(0, LEG_MAX); o.trash = o.trash.slice(-5);
+    o.gone = (p && Array.isArray(p.gone) ? p.gone : []).filter(x => typeof x === 'string').map(x => txt(x, 40)).slice(-100);
+    return o;
+  }
+  // 예전 명예의 전당(pg_hall_v1)의 한 줄. 있는 항목만 옮기고 나머지는 비워 둔다.
+  function cleanHall1(h) {
+    if (!h || typeof h !== 'object' || typeof h.nick !== 'string' || !Number.isFinite(h.score)) return null;
+    const o = { nick: txt(h.nick, 12), role: txt(h.role, 12), score: clamp(Math.round(h.score), 0, 100), grade: txt(h.grade, 2), ep: txt(h.ep, 24) };
+    for (const k of ['peak', 'titles', 'years']) if (Number.isFinite(h[k])) o[k] = clamp(Math.round(h[k]), 0, 999);
+    return o.nick ? o : null;
+  }
+  const hall1Key = h => [h.nick, h.role, h.score, h.grade, h.peak, h.titles, h.years].join('|');
+  function legacy() {
+    const raw = store.get(LEG);
+    if (raw && raw === legRaw) return legObj;
+    let p = null;
+    if (raw) { try { p = JSON.parse(raw); if (!p || p.v !== 1 || !Array.isArray(p.recs)) p = null; } catch (e) { p = null; } if (!p) store.set(LEG + '_bad', raw); }
+    const o = cleanLegacy(p);
+    if (!o.hall1) {
+      let old = []; try { old = JSON.parse(store.get(HALL) || '[]'); } catch (e) {}
+      (Array.isArray(old) ? old : []).slice(0, 30).forEach((h0, i) => {
+        const h = cleanHall1(h0); if (!h) return;
+        const r = cleanRec({ id: 'h' + hash36(hall1Key(h)) + '-' + i, src: 'hall1', at: null, nick: h.nick, role: h.role, score: h.score, grade: h.grade, ep: h.ep, peak: h.peak, big: h.titles, years: h.years });
+        if (r && !o.recs.some(x => x.id === r.id)) o.recs.push(r);
+      });
+      o.hall1 = true; legacyWrite(o);
+      return legObj || o;
+    }
+    legRaw = raw; legObj = o; return o;
+  }
+  function legacyWrite(o) {
+    const json = JSON.stringify(o), ok = put(LEG, json);
+    if (ok) { legRaw = json; legObj = o; legFail = false; } else { legFail = true; if (store.get(LEG) === json) { legRaw = json; legObj = o; } }
+    return ok;
+  }
+  // 같은 ID는 한 번만 들어간다. fromLoad: 예전 버전에서 은퇴한 저장을 열었을 때(요약만 있던 항목을 상세 기록으로 바꾼다)
+  function legacyAdd(rec, fromLoad) {
+    if (!rec || !rec.id) return false;
+    const o = legacy(), cur = { v: 1, hall1: o.hall1, recs: o.recs.slice(), trash: o.trash.slice(), gone: o.gone.slice() };
+    const i = cur.recs.findIndex(r => r.id === rec.id);
+    if (i >= 0) { if (cur.recs[i].at && !rec.at) rec.at = cur.recs[i].at; cur.recs[i] = rec; }
+    else {
+      if (fromLoad && cur.gone.includes(rec.id)) return false;
+      const key = hall1Key({ nick: rec.nick, role: rec.role, score: rec.score, grade: rec.grade, peak: rec.peak, titles: rec.big, years: rec.years });
+      const j = fromLoad ? cur.recs.findIndex(r => r.src === 'hall1' && hall1Key({ nick: r.nick, role: r.role, score: r.score, grade: r.grade, peak: r.peak, titles: r.big, years: r.years }) === key) : -1;
+      if (j >= 0) cur.recs[j] = rec; else cur.recs.push(rec);
+      if (cur.recs.length > LEG_MAX) {   // 가득 차면 방금 넣은 기록을 뺀 나머지 가운데 점수가 가장 낮은 기록이 빠진다
+        let lo = -1; cur.recs.forEach((r, k) => { if (r.id !== rec.id && (lo < 0 || r.score < cur.recs[lo].score)) lo = k; });
+        cur.recs.splice(lo, 1);
+      }
+    }
+    const ok = legacyWrite(cur); addFail = !ok; return ok;
+  }
+  function legacyDel(id) {
+    const o = legacy(), i = o.recs.findIndex(r => r.id === id); if (i < 0) return false;
+    const cur = { v: 1, hall1: true, recs: o.recs.filter(r => r.id !== id), trash: o.trash.concat([o.recs[i]]).slice(-5), gone: o.gone.concat([id]).slice(-100) };
+    return legacyWrite(cur);
+  }
+  function legacyUndo(id) {
+    const o = legacy(), i = o.trash.findIndex(r => r.id === id); if (i < 0 || o.recs.length >= LEG_MAX) return false;
+    return legacyWrite({ v: 1, hall1: true, recs: o.recs.concat([o.trash[i]]), trash: o.trash.filter(r => r.id !== id), gone: o.gone.filter(x => x !== id) });
+  }
+
+  /* ---------- 도전 과제 ----------
+     { v: 1, got: { id: { at, nick, y, age, rid } }, runs: { n: 은퇴까지 마친 커리어 수, ids: [센 커리어 ID] }, fresh: [아직 알리지 않은 ID] }
+     판정은 저장된 기록(S.car, 라이벌 전적, 은퇴 평가)만 읽는다. 경기 계산과 난수에는 관여하지 않는다.
+     상태를 보고 판정하므로 저장·불러오기를 되풀이해도 같은 과제가 두 번 달성되지 않는다. */
+  const bigT = s => s.car.titles.filter(t => t.tier !== 'second').length, hasT = (s, tier) => s.car.titles.some(t => t.tier === tier);
+  const fin = s => (s.over && s.q[0] && s.q[0].type === 'retire' ? s.q[0] : null);
+  const ACHV = {
+    debut: s => s.car.debut > 0, win1: s => s.car.w > 0, mvp1: s => s.car.mvp > 0, g100: s => s.car.g >= 100,
+    t_second: s => hasT(s, 'second'), t_dom: s => hasT(s, 'dom'), t_mid: s => hasT(s, 'mid'), t_nations: s => hasT(s, 'nations'), t_world: s => hasT(s, 'world'),
+    rookie: s => s.car.awards.some(a => a.name === '신인상'), poy: s => s.car.awards.some(a => a.name === '올해의 선수'),
+    rv_win: s => s.rivals.some(r => r.w > 0), rv_10: s => s.rivals.some(r => r.w >= 10),
+    fin1: (s, a) => a.runs.n >= 1, fin3: (s, a) => a.runs.n >= 3, fin10: (s, a) => a.runs.n >= 10,
+    no_title: s => !!fin(s) && s.car.g > 0 && bigT(s) === 0, no_debut: s => !!fin(s) && !s.car.debut && s.car.g === 0,
+    grade_a: s => !!fin(s) && ['A', 'S', 'S+'].includes(fin(s).grade), grade_s: s => !!fin(s) && ['S', 'S+'].includes(fin(s).grade), age30: s => !!fin(s) && s.age >= 30,
+  };
+  let achRaw = null, achObj = null, achFail = false;
+  function cleanAch(p) {
+    const o = { v: 1, got: {}, runs: { n: 0, ids: [] }, fresh: [] };
+    if (!p || typeof p !== 'object' || p.v !== 1) return o;
+    for (const d of D.ACH) {
+      const g = p.got && p.got[d.id]; if (!g || typeof g !== 'object') continue;
+      o.got[d.id] = { at: Number.isFinite(g.at) && g.at > 0 ? g.at : null, nick: txt(g.nick, 12), y: Number.isFinite(g.y) ? clamp(Math.round(g.y), 1, 60) : null, age: Number.isFinite(g.age) ? clamp(Math.round(g.age), 10, 60) : null, rid: txt(g.rid, 40) };
+    }
+    if (p.runs && typeof p.runs === 'object') { o.runs.ids = (Array.isArray(p.runs.ids) ? p.runs.ids : []).filter(x => typeof x === 'string').map(x => txt(x, 40)).slice(-500); o.runs.n = Number.isFinite(p.runs.n) ? clamp(Math.round(p.runs.n), o.runs.ids.length, 1e6) : o.runs.ids.length; }
+    o.fresh = (Array.isArray(p.fresh) ? p.fresh : []).filter(id => o.got[id]).slice(0, D.ACH.length);
+    return o;
+  }
+  function ach() {
+    const raw = store.get(ACH);
+    if (raw && raw === achRaw) return achObj;
+    let p = null; if (raw) { try { p = JSON.parse(raw); } catch (e) { p = null; } }
+    achRaw = raw; achObj = cleanAch(p); return achObj;
+  }
+  function achWrite(o) { const json = JSON.stringify(o), ok = put(ACH, json); achFail = !ok; if (ok || store.get(ACH) === json) { achRaw = json; achObj = o; } return ok; }
+  function achCheck() {
+    if (!S || !S.org || !S.cid) return;
+    const a = ach(); let cur = null;
+    const edit = () => cur || (cur = { v: 1, got: Object.assign({}, a.got), runs: { n: a.runs.n, ids: a.runs.ids.slice() }, fresh: a.fresh.slice() });
+    if (fin(S) && !a.runs.ids.includes(S.cid)) { const c = edit(); c.runs.ids.push(S.cid); c.runs.ids = c.runs.ids.slice(-500); c.runs.n++; }
+    for (const d of D.ACH) {
+      const st = cur || a;
+      if (!st.got[d.id] && ACHV[d.id](S, st)) { const c = edit(); c.got[d.id] = { at: Date.now(), nick: S.nick, y: S.year, age: S.age, rid: S.cid }; c.fresh.push(d.id); }
+    }
+    if (cur) achWrite(cur);
+  }
+  function achList() {
+    const a = ach(), runs = a.runs.n, c = S && S.org ? S.car : null;
+    const prog = { fin3: [runs, 3], fin10: [runs, 10], g100: c ? [c.g, 100, 1] : null, rv_10: S && S.org && S.rivals.length ? [Math.max(...S.rivals.map(r => r.w)), 10, 1] : null };
+    return D.ACH.map(d => ({ id: d.id, name: d.name, desc: d.desc, got: a.got[d.id] || null, prog: !a.got[d.id] && prog[d.id] ? [Math.min(prog[d.id][0], prog[d.id][1]), prog[d.id][1], !!prog[d.id][2]] : null }));
+  }
+  function achSeen() { const a = ach(); if (a.fresh.length) achWrite({ v: 1, got: a.got, runs: a.runs, fresh: [] }); }
+
+  /* ---------- 백업 내보내기·가져오기 ----------
+     이 게임의 저장 키만 담는다. 가져오기는 전체 복원(기기의 데이터를 파일 내용으로 바꾼다)이며, 하나라도 쓰지 못하면 원래대로 되돌린다. */
+  const SCENE_TYPES = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'retire', 'moment', 'mresult'];
+  function exportData() {
+    const pj = k => { try { return JSON.parse(store.get(k) || 'null'); } catch (e) { return null; } };
+    return { format: BACKUP_FORMAT, version: 1, app: VERSION, exportedAt: new Date().toISOString(),
+      payload: { career: pj(KEY), careerBackup: pj(BAK), hall: pj(HALL), legacy: legacy(), achievements: ach(), tutorialDone: store.get(TUT) === '1' } };
+  }
+  // 문자열의 꺾쇠를 무해한 글자로 바꾼다(파일 내용이 화면에서 태그로 해석되지 않게). 너무 깊거나 큰 구조는 거부한다.
+  function scrub(v, depth, budget) {
+    if (depth > 24 || --budget.n < 0) throw new Error('too big');
+    if (typeof v === 'string') return v.replace(/</g, '‹').replace(/>/g, '›');
+    if (Array.isArray(v)) return v.map(x => scrub(x, depth + 1, budget));
+    if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) { if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue; o[scrub(k, depth + 1, budget)] = scrub(v[k], depth + 1, budget); } return o; }
+    if (typeof v === 'number' && !Number.isFinite(v)) return 0;
+    return v;
+  }
+  function validCareer(c) {
+    const fin01 = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi, int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+    const s = migrate(c); if (!s) return null;
+    if (typeof s.nick !== 'string' || !s.nick || s.nick.length > 12) return null;
+    if (!D.REGION[s.home] || !D.ROLES.find(x => x.id === s.role) || !D.TRAITS.find(x => x.id === s.trait)) return null;
+    if (!int(s.age, 14, 45) || !int(s.year, 1, 40) || !Number.isFinite(s.money) || Math.abs(s.money) > 1e12) return null;
+    for (const k of ['cond', 'trust', 'fame', 'wrist']) if (!fin01(s[k], 0, 100)) return null;
+    for (const st of D.STATS) if (!fin01(s.stats[st.id], 1, 99) || !s.caps || !fin01(s.caps[st.id], 20, 99)) return null;
+    if (!s.contract || !Number.isFinite(s.contract.salary) || !fin01(s.contract.years, 0, 20)) return null;
+    if (!['trainee', 'second', 'first'].includes(s.squad) || !D.PLANS.find(x => x.id === s.plan)) return null;
+    if (s.q.length > 40 || s.q.some(x => !x || typeof x !== 'object' || !SCENE_TYPES.includes(x.type))) return null;
+    if (!Array.isArray(s.hist) || s.hist.length > 45 || !Array.isArray(s.log) || s.log.length > 2000 || !Array.isArray(s.perks) || s.rivals.length > 8) return null;
+    const c2 = s.car;
+    for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut', 'tryouts', 'retry']) if (!Number.isFinite(c2[k]) || c2[k] < 0) return null;
+    if (!Array.isArray(c2.titles) || c2.titles.some(t => !t || !TIERS.includes(t.tier) || typeof t.name !== 'string' || !Number.isFinite(t.y))) return null;
+    if (!Array.isArray(c2.awards) || c2.awards.some(a => !a || typeof a.name !== 'string' || !Number.isFinite(a.y))) return null;
+    if (!Array.isArray(c2.orgs) || c2.orgs.some(id => !D.ORG[id])) return null;
+    if (s.org && (!s.orgStr || !Number.isFinite(s.orgStr[s.org]))) return null;
+    if (s.over && !(s.q[0] && s.q[0].type === 'retire')) return null;
+    return s;
+  }
+  // 반환: { ok: true, data, preview } 또는 { ok: false, err } (err: big, json, format, version, newer, payload, career, hall, legacy)
+  function importCheck(text) {
+    if (typeof text !== 'string' || !text) return { ok: false, err: 'json' };
+    if (text.length > BACKUP_MAX) return { ok: false, err: 'big' };
+    let f; try { f = JSON.parse(text); } catch (e) { return { ok: false, err: 'json' }; }
+    if (!f || typeof f !== 'object' || Array.isArray(f) || f.format !== BACKUP_FORMAT) return { ok: false, err: 'format' };
+    if (!Number.isInteger(f.version) || f.version < 1) return { ok: false, err: 'version' };
+    if (f.version > 1) return { ok: false, err: 'newer' };
+    let p; try { p = scrub(f.payload, 0, { n: 400000 }); } catch (e) { return { ok: false, err: 'big' }; }
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return { ok: false, err: 'payload' };
+    const data = { career: null, careerBackup: null, hall: null, legacy: null, ach: null, tut: p.tutorialDone === true };
+    for (const k of ['career', 'careerBackup']) if (p[k] != null) { try { data[k] = validCareer(p[k]); } catch (e) { data[k] = null; } if (!data[k]) return { ok: false, err: 'career' }; }
+    if (p.hall != null) {
+      if (!Array.isArray(p.hall) || p.hall.length > 30) return { ok: false, err: 'hall' };
+      data.hall = p.hall.map(cleanHall1); if (data.hall.some(h => !h)) return { ok: false, err: 'hall' };
+    }
+    if (p.legacy != null) {
+      const l = p.legacy;
+      if (typeof l !== 'object' || l.v !== 1 || !Array.isArray(l.recs) || l.recs.length > LEG_MAX || l.recs.some(r => !cleanRec(r))) return { ok: false, err: 'legacy' };
+      data.legacy = cleanLegacy(l); data.legacy.hall1 = true;
+    }
+    if (p.achievements != null) { if (typeof p.achievements !== 'object' || p.achievements.v !== 1) return { ok: false, err: 'payload' }; data.ach = cleanAch(p.achievements); }
+    const c = data.career || data.careerBackup, when = Date.parse(typeof f.exportedAt === 'string' ? f.exportedAt : '');
+    return { ok: true, data, preview: {
+      exportedAt: Number.isFinite(when) ? when : null, app: txt(String(f.app || ''), 10),
+      career: c ? { nick: c.nick, year: c.year, age: c.age, over: !!c.over, started: !!c.org } : null,
+      hall: data.legacy ? data.legacy.recs.length : data.hall ? data.hall.length : 0, ach: data.ach ? Object.keys(data.ach.got).length : 0,
+    } };
+  }
+  // 전체 복원. 하나라도 쓰지 못하면 모든 키를 원래 값으로 되돌리고 false 를 돌려준다.
+  function importApply(data) {
+    if (!data || typeof data !== 'object') return false;
+    const want = [[KEY, data.career], [BAK, data.careerBackup], [HALL, data.hall], [LEG, data.legacy], [ACH, data.ach]].map(([k, v]) => [k, v == null ? null : JSON.stringify(v)]);
+    want.push([TUT, data.tut ? '1' : null]);
+    const before = want.map(([k]) => [k, store.get(k)]);
+    let ok = true;
+    for (const [k, v] of want) { if (v == null) store.del(k); else if (!put(k, v)) { ok = false; break; } }
+    if (!ok) for (const [k, v] of before) { if (v == null) store.del(k); else store.set(k, v); }
+    legRaw = achRaw = null; legObj = achObj = null;
+    if (ok) { S = null; saveFailed = false; legFail = achFail = addFail = false; }
+    return ok;
   }
 
   /* ---------- 라이벌 ----------
@@ -1112,6 +1358,7 @@
     store.set(KEY, json);
     if (backupNext) { backupNext = false; store.set(BAK, json); }
     saveFailed = store.get(KEY) !== json;
+    achCheck();
   }
   function migrate(s) {
     if (!s || typeof s !== 'object' || s.v !== 1 || !s.stats || !s.car || !Array.isArray(s.q)) return null;
@@ -1145,7 +1392,8 @@
       if (!r.retired) r.retired = null;
     }
     s.rivalSeq = Math.max(num(s.rivalSeq, 0, 0, 1e6), ...s.rivals.map(r => +String(r.id).replace(/\D/g, '') || 0));
-    def(s, 'stat', { turns: 99, t0: 0, t20: 0, ev20: 0 });   // 예전 저장: 첫 20번 측정 대상이 아니다 def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });
+    def(s, 'stat', { turns: 99, t0: 0, t20: 0, ev20: 0 });   // 예전 저장: 첫 20번 측정 대상이 아니다
+    def(s, 'monthsInOrg', 0); def(s, 'dom', { spring: {}, summer: {} });   // (0.6.0까지는 이 줄이 위 주석에 붙어 실행되지 않았다. 두 값이 없는 저장은 지금까지 없었다)
     s.shop = Object.assign({ gear: 0, coach: 0, care: 0 }, s.shop);
     for (const k of ['g', 'w', 'rs', 'mvp', 'k', 'd', 'a', 'g2', 'peak', 'earn', 'inj', 'moves', 'debut', 'tryouts', 'retry']) def(s.car, k, 0);
     for (const k of ['titles', 'awards', 'orgs']) def(s.car, k, []);
@@ -1153,6 +1401,8 @@
     if (s.org && !D.ORG[s.org]) return null;
     if (!s.org && !(s.q[0] && s.q[0].type === 'pickOrg')) return null;
     if (s.org && !s.yr) s.yr = { g: 0, w: 0, rs: 0, mvp: 0, g1: 0, rs1: 0, titles: [], awards: [] };
+    // 커리어 ID: 없던 시절의 저장은 내용에서 계산한다(같은 저장은 언제 열어도 같은 ID).
+    if (typeof s.cid !== 'string' || !s.cid) s.cid = 'o' + hash36([s.nick, s.home, s.role, s.trait, s.stat.t0 || 0].join('|'));
     return s;
   }
   function read(key) { try { return migrate(JSON.parse(store.get(key) || 'null')); } catch (e) { return null; } }
@@ -1165,7 +1415,11 @@
       if (!s) return '';
       if (raw) store.set(BAD, raw);   // 손상된 원본은 지우지 않고 따로 둔다
     }
-    S = s; flush(); save(); return from;
+    S = s;
+    // 은퇴 화면에서 멈춘 저장인데 보관소에 없으면(예전 버전에서 은퇴했거나 그때 쓰지 못한 경우) 지금 넣는다. 일부러 지운 기록은 다시 넣지 않는다.
+    const end = fin(S);
+    if (end) { if (!end.rid) end.rid = S.cid; if (!legacy().recs.some(r => r.id === end.rid)) legacyAdd(recFromScene(end, S), true); }
+    flush(); save(); return from;
   }
   function buy(id) {
     const it = D.SHOP.find(x => x.id === id); if (!it || !S) return false;
@@ -1245,7 +1499,19 @@
     // 타이틀 화면에 보여 줄 저장 요약
     saveInfo() { const s = read(KEY) || read(BAK); return s ? { nick: s.nick, year: s.year, age: s.age, over: !!s.over, started: !!s.org } : null; },
     storageOk: () => store.ok(), saveFailed: () => saveFailed,
-    hall() { try { return JSON.parse(store.get(HALL) || '[]'); } catch (e) { return []; } },
+    // 명예의 전당: 보관소의 기록(예전 30명 포함). sort: score 점수, titles 우승, recent 최근 은퇴
+    hall(sort) {
+      const r = legacy().recs.map((x, i) => [x, i]), big = x => x.big || 0;
+      const by = { titles: (a, b) => big(b[0]) - big(a[0]) || b[0].score - a[0].score || a[1] - b[1], recent: (a, b) => (b[0].at || 0) - (a[0].at || 0) || b[1] - a[1] }[sort] || ((a, b) => b[0].score - a[0].score || a[1] - b[1]);
+      return r.sort(by).map(x => x[0]);
+    },
+    hallGet: id => legacy().recs.find(r => r.id === id) || null,
+    hallDel: legacyDel, hallUndo: legacyUndo, hallTrash: () => legacy().trash.slice(),
+    hallInfo: () => ({ n: legacy().recs.length, max: LEG_MAX, failed: legFail || addFail }),
+    achList, achSeen, achFresh: () => ach().fresh.slice(), achInfo: () => ({ n: Object.keys(ach().got).length, of: D.ACH.length, runs: ach().runs.n, failed: achFail }),
+    exportData, importCheck, importApply, BACKUP_MAX,
+    // 은퇴 화면의 기록(보관소에 쓰지 못했어도 카드는 만들 수 있게)
+    endRec: () => (S && fin(S) ? recFromScene(fin(S), S) : null),
     wipe() { store.del(KEY); store.del(BAK); S = null; },
   };
   root.PG = Game;
