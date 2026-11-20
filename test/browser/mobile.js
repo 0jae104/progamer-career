@@ -91,4 +91,20 @@ module.exports = async function mobile(browser, url, R) {
     R.note('두 번 눌림 방지', '진행 버튼을 연달아 눌러도 한 번만 진행, 0.45초 뒤 입력은 정상, 선택 직후의 두 번째 입력은 다음 창에 닿지 않음');
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
+  // 200% 확대(0.10.2): 화면을 두 배로 키우면 CSS 폭이 절반이 된다. PC 1280x720 → 640x360, 폰 390x844(iOS 사파리의 페이지 확대) → 195x422.
+  // 가로로 넘치지 않고 버튼이 옆으로 잘리지 않아야 한다. 320px 폰의 200%(160px)는 넘친다는 것을 알고 있어 기록만 한다(docs/stage10-2-qa-report.md).
+  for (const [w, h, must] of [[640, 360, true], [195, 422, true], [160, 284, false]]) {
+    const { ctx, pg } = await open(browser, url, { w, h });
+    const m = () => pg.evaluate(() => { const off = [...document.querySelectorAll('button:not([disabled]), input')].filter(b => { const r = b.getBoundingClientRect(); return r.width && (r.right > innerWidth + 1 || r.left < -1); }).length; return [Math.max(0, document.documentElement.scrollWidth - innerWidth), off]; });
+    const seen = [['타이틀', await m()]];
+    await pg.click('[data-act=create]'); await pg.waitForTimeout(200); seen.push(['선수 등록', await m()]);
+    await pg.evaluate(() => { PG.newGame({ nick: '가나다라마바사아자차', region: 'kr', role: 'core', trait: 'brain' }); for (let i = 0; i < 40; i++) PG.autoStep(); });
+    await pg.reload(); await pg.waitForTimeout(200); await pg.click('[data-act=continue]'); await pg.waitForTimeout(300); seen.push(['장면 창', await m()]);
+    for (let i = 0; i < 30 && await pg.evaluate(() => !!PG.scene()); i++) await step(pg);
+    seen.push(['홈', await m()]);
+    const bad = seen.filter(x => x[1][0] > 1 || x[1][1] > 0);
+    if (must) R.ok(!bad.length, `200% 확대(${w}x${h}): ${bad.map(x => `${x[0]} 가로 넘침 ${x[1][0]}px·잘린 버튼 ${x[1][1]}`).join(', ')}`);
+    R.note(`200% 확대 ${w}x${h}`, bad.length ? `넘침: ${bad.map(x => `${x[0]} ${x[1][0]}px`).join(', ')}${must ? '' : ' (알려진 한계, 기록만)'}` : '가로 넘침 없음, 옆으로 잘린 버튼 없음(타이틀·선수 등록·장면 창·홈)');
+    await ctx.close();
+  }
 };
