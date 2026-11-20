@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.10.2';
+  const UI_VERSION = '0.11.0';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -46,6 +46,8 @@
         ${sv ? `<button class="btn cta" data-act="continue">${sv.over ? '지난 커리어 결과 보기' : '이어하기'}<small>${esc(sv.nick)} · ${sv.started ? `${esc(sv.year)}년차 ${esc(sv.age)}세` : '입단 구단 선택 중'}</small></button>` : ''}
         <button class="btn ${sv ? 'ghost' : ''}" data-act="create">${live && U.confirm === 'new' ? '한 번 더 누르면 진행 중인 커리어가 삭제된다' : '새 커리어'}</button>
         <button class="btn line two" data-act="hall">기록실<small>명예의 전당 · 도전 과제 · 백업</small></button>
+        <button class="btn line two" data-act="demo">경기 체험하기<small>1군 토너먼트 한 경기 · 약 3분 · 기록에 남지 않는 비공식 체험전</small></button>
+        ${sndBtn('btn line')}
       </div>
       ${verNote()}${U.notice ? `<p class="warn">${esc(U.notice)}</p>` : ''}
       ${G.storageOk() ? '' : '<p class="warn">이 브라우저에서는 저장이 되지 않는다. 사생활 보호 모드를 끄거나 다른 브라우저로 열어야 진행 상황이 남는다.</p>'}
@@ -130,6 +132,34 @@
         ${rows.map(([k, f]) => `<tr><th scope="row">${esc(k)}</th><td>${f(a)}</td><td>${f(b)}</td></tr>`).join('')}</table>
       <button class="btn line" data-act="back">목록으로</button></section>`;
   }
+  function endDemo(msg) { stopWatch(); G.demoEnd(); U.view = 'title'; U.tab = 'home'; U.tac = ''; U.akey = ''; U.arenaShown = ''; if (msg) U.notice = msg; }
+  function stopWatch() { if (U.watch) { clearTimeout(U.watch.t); U.watch = null; } }
+  const finalCue = sc => (sc.type === 'match' ? (sc.win ? (sc.label === '결승' ? 'winbig' : 'win') : 'lose') : 'tension');
+  // 장면이 바뀌었을 때 한 번: 아직 보여 주지 않은 세트가 있으면 관전을 시작하고, 없으면 그 장면의 소리만 낸다.
+  // 장면에 seen 표시가 남으므로(엔진의 watched) 다시 그리거나 새로 고쳐도 같은 연출이 두 번 나오지 않는다.
+  function arenaSync(sc) {
+    const k = akey(sc);
+    if (k === U.akey) return;
+    U.akey = k; stopWatch();
+    if (!sc || !ARENA[sc.type]) { U.tac = ''; return; }
+    if (sc.type === 'prematch') { U.tac = ''; return; }
+    if ((sc.type === 'match' || (sc.type === 'moment' && sc.pips != null)) && !sc.seen) {
+      const n = wl(sc).length, from = Math.max(0, Math.min(n, sc.from | 0));
+      if (from < n) { U.watch = { k, i: from, n, fast: false, t: setTimeout(tickWatch, 650) }; return; }
+      SND.play(finalCue(sc)); G.watched();
+    }
+  }
+  function tickWatch() {
+    const w = U.watch, sc = U.view === 'game' && G.state() ? G.scene() : null;
+    if (!w || akey(sc) !== w.k) { U.watch = null; return; }
+    if (w.i < w.n) {
+      w.i++; SND.play(wl(sc)[w.i - 1] === 'W' ? 'setw' : 'setl');
+      w.t = setTimeout(tickWatch, w.i < w.n ? (w.fast ? 380 : 1150) : (w.fast ? 420 : 1000));
+      return render();
+    }
+    endWatch(sc);
+  }
+  function endWatch(sc) { stopWatch(); SND.play(finalCue(sc)); G.watched(); render(); }
   // 다른 탭(또는 예전 버전의 탭)이 저장을 바꿨을 때: 이 탭의 오래된 상태로 덮어쓰지 않도록 멈추고 새로 고침을 안내한다.
   function vStale() {
     return `<div class="veil"><section class="sheet bad" role="alertdialog" aria-modal="true" aria-label="다른 탭에서 진행됨" tabindex="-1"><h2>다른 탭에서 진행됐다</h2>
@@ -339,7 +369,7 @@
         <button class="btn line" data-act="vault" data-id="ach">도전 과제 — ${G.achInfo().n} / ${G.achInfo().of}</button>
         <button class="btn line" data-act="vault" data-id="backup">백업 관리 — 내려받기·복원</button></div>
       <div class="stack"><p class="sec">설정</p>
-        <button class="btn line" data-act="fast">빠른 진행 ${S.opt.fast ? '켜짐' : '꺼짐'} — 평범한 달의 결과 화면을 건너뛰고 승부처는 자동으로 고른다</button>
+        ${sndBtn('btn line')}<button class="btn line" data-act="fast">빠른 진행 ${S.opt.fast ? '켜짐' : '꺼짐'} — 평범한 달의 결과 화면을 건너뛰고 승부처는 자동으로 고른다(경기 전 전략도 묻지 않는다)</button>
         <button class="btn line" data-act="tutreplay">처음 안내 다시 보기</button>
         <button class="btn line" data-act="title">타이틀로 (자동 저장됨)</button>
         <button class="btn line" data-act="wipe">${U.confirm === 'wipe' ? '한 번 더 누르면 이 커리어가 삭제된다' : '커리어 삭제'}</button></div>`;
@@ -368,6 +398,125 @@
     if (!v.here) L.push(`지금 연봉보다 ${money(Math.abs(v.pay))} ${v.pay >= 0 ? '많다' : '적다'}.${v.abroad ? ` 다른 나라 리그다. 국가대표는 그대로 ${esc(v.home)}.` : ''}`);
     return `<ul class="oinfo">${L.map(x => `<li>${x}</li>`).join('')}</ul>`;
   }
+  /* ---------- 소리(0.11.0) ----------
+     효과음은 전부 이 파일에서 Web Audio 로 직접 합성한다(음원 파일 없음. docs/audio-assets.md).
+     - 사용자가 화면을 처음 누른 뒤에만 오디오를 켠다(모바일 자동 재생 제한). 켜지 못해도 게임은 그대로 진행된다.
+     - 설정은 커리어 저장과 별개인 pg_opt_v1 에 둔다(백업·복원·저장 형식과 무관).
+     - 탭이 숨겨지면 멈추고, 돌아오면 설정이 켜져 있을 때만 다시 켠다. 같은 소리는 짧은 간격으로 겹쳐 내지 않는다.
+     - 경기 판정·난수와는 아무 관계가 없다. 소리를 꺼도, 낼 수 없어도 결과는 같다. */
+  const SND = (() => {
+    const OPT = 'pg_opt_v1', log = (window.__pgSnd = window.__pgSnd || []);
+    let on = true, ctx = null, master = null, nbuf = null, last = {};
+    try { const o = JSON.parse(localStorage.getItem(OPT) || '{}'); if (o && o.snd === 0) on = false; } catch (e) {}
+    const AC = () => window.AudioContext || window.webkitAudioContext;
+    function unlock() {
+      if (!on) return;
+      try {
+        if (!ctx) { const A = AC(); if (!A) return; ctx = new A(); master = ctx.createGain(); master.gain.value = .42; master.connect(ctx.destination); }
+        if (ctx.state === 'suspended' && !document.hidden) { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
+      } catch (e) { ctx = null; }
+    }
+    function quiet() { try { if (ctx && ctx.state === 'running') { const p = ctx.suspend(); if (p && p.catch) p.catch(() => {}); } } catch (e) {} }
+    function tone(t, f, dur, type, vol, f2) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type || 'triangle'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol || .2, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .03);
+    }
+    function noise(t, dur, vol, freq) {
+      if (!nbuf) { nbuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = nbuf.getChannelData(0); let x = 22222; for (let i = 0; i < d.length; i++) { x = (x * 16807) % 2147483647; d[i] = x / 1073741823.5 - 1; } }   // 고정된 수열: 게임 난수를 쓰지 않는다
+      const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      n.buffer = nbuf; f.type = 'bandpass'; f.frequency.value = freq || 900; f.Q.value = .7;
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol || .12, t + dur * .35); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      n.connect(f); f.connect(g); g.connect(master); n.start(t); n.stop(t + dur + .03);
+    }
+    const CUES = {
+      tap: t => tone(t, 240, .07, 'square', .07, 190),                                                                    // 전략 선택·주요 버튼: 낮고 짧게
+      start: t => { noise(t, .55, .12, 800); tone(t, 110, .32, 'sawtooth', .09, 220); tone(t + .2, 330, .24, 'triangle', .16); },   // 경기 시작: 1초 안의 전환
+      setw: t => { tone(t, 523, .11, 'triangle', .16); tone(t + .09, 784, .18, 'triangle', .16); },                          // 세트를 가져옴
+      setl: t => { tone(t, 392, .13, 'triangle', .14); tone(t + .1, 294, .22, 'triangle', .14); },                           // 세트를 내줌
+      tension: t => { noise(t, .7, .06, 500); tone(t, 147, .15, 'sawtooth', .08); tone(t + .2, 165, .15, 'sawtooth', .08); tone(t + .4, 196, .22, 'sawtooth', .09); },   // 승부처 진입: 짧은 상승
+      ok: t => [523, 659, 784, 1047].forEach((f, i) => tone(t + i * .07, f, .16, 'triangle', .17)),                           // 승부처 성공
+      fail: t => tone(t, 330, .36, 'sine', .17, 233),                                                                        // 승부처 실패: 짧은 아쉬움
+      win: t => { [523, 659, 784].forEach((f, i) => tone(t + i * .12, f, .2, 'triangle', .18)); tone(t + .36, 1047, .5, 'triangle', .2); },
+      winbig: t => { noise(t + .3, 1.1, .1, 1400); [523, 659, 784, 1047].forEach((f, i) => tone(t + i * .12, f, .22, 'triangle', .18)); tone(t + .5, 1319, .7, 'triangle', .2); tone(t + .5, 659, .7, 'sine', .12); },   // 결승 승리
+      lose: t => { tone(t, 262, .3, 'sine', .16); tone(t + .26, 196, .55, 'sine', .16); },
+    };
+    function play(name) {
+      const now = Date.now(); let played = false;
+      if (CUES[name] && on && !(now - (last[name] || 0) < 90)) {
+        last[name] = now; unlock();
+        try { if (ctx && ctx.state === 'running') { CUES[name](ctx.currentTime + .01); played = true; } } catch (e) {}
+      }
+      log.push({ c: name, on, played }); if (log.length > 200) log.shift();
+      return played;
+    }
+    function set(v) { on = !!v; try { localStorage.setItem(OPT, JSON.stringify({ snd: on ? 1 : 0 })); } catch (e) {} if (on) unlock(); else quiet(); }
+    return { play, set, unlock, quiet, on: () => on, cues: Object.keys(CUES), state: () => (ctx ? ctx.state : 'none') };
+  })();
+  const sndBtn = cls => `<button class="${cls || 'sndb'}" data-act="snd" aria-pressed="${SND.on()}" aria-label="소리 ${SND.on() ? '끄기' : '켜기'}">소리 ${SND.on() ? '켜짐' : '꺼짐'}</button>`;
+
+  /* ---------- 경기장(0.11.0): 경기 준비 → 관전 → 승부처 → 결과를 한 장의 창 안에서 이어 보여 준다 ----------
+     화면은 장면에 저장된 실제 기록(세트별 승패, 전략이 바꾼 승률, 승부처 결과, 내 성적)만 읽는다. 판정은 엔진이 이미 끝냈다.
+     관전 속도·건너뛰기·소리는 U(화면 상태)에만 있고 엔진을 부르지 않으므로 결과에 영향을 줄 수 없다. */
+  const ARENA = { prematch: 1, moment: 1, mresult: 1, match: 1 };
+  const hex = c => (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '#3a4070');
+  const teamOf = name => D.ORGS.find(o => o.name === name) || null;
+  const skey = sc => (sc && ARENA[sc.type] ? [sc.tour, sc.label, sc.opp].join('|') : '');
+  const akey = sc => (sc && ARENA[sc.type] ? [sc.type, sc.tour, sc.label, sc.opp, sc.set || '', sc.x == null ? '' : sc.x, sc.y == null ? '' : sc.y].join('|') : '');
+  const wl = sc => (sc.type === 'match' ? sc.sets.map(x => (x.w ? 'W' : 'L')).join('') : String(sc.pips || ''));
+  const TAC = id => D.TACTICS.find(t => t.id === id);
+  const sgn = v => (v > 0 ? '+' : '') + v;
+  const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  function arenaHead(sc, seq, shown) {
+    const need = (sc.bo + 1) / 2, vis = seq.slice(0, shown), x = [...vis].filter(c => c === 'W').length, y = vis.length - x;
+    const a = teamOf(sc.me), b = teamOf(sc.opp), tag = (o, t) => esc(t || (o ? o.tag : '') || '');
+    const slots = Math.max(sc.bo || 0, seq.length);
+    return `<div class="arena"><div class="ateam"><span class="tagb" style="border-color:${hex(sc.meColor || (a && a.color))}">${tag(a, sc.meTag) || '우리'}</span><span class="tn">${esc(sc.me)}</span></div>
+      <div class="ascore" aria-label="세트 스코어 ${esc(x)} 대 ${esc(y)}"><b>${esc(x)}</b><i>:</i><b>${esc(y)}</b></div>
+      <div class="ateam opp"><span class="tn">${esc(sc.opp)}</span><span class="tagb" style="border-color:${hex(sc.oppColor || (b && b.color))}">${tag(b, sc.oppTag) || '상대'}</span></div></div>
+      <div class="pips" role="img" aria-label="${esc(sc.bo)}전 ${esc(need)}선승. ${vis.length ? [...vis].map((c, i) => `${i + 1}세트 ${c === 'W' ? '승' : '패'}`).join(', ') : '아직 치른 세트 없음'}">${Array.from({ length: slots }, (_, i) => `<i class="${i < vis.length ? (vis[i] === 'W' ? 'w' : 'l') : ''}"></i>`).join('')}</div>`;
+  }
+  const arenaTop = (sc, sub) => `${G.inDemo() ? '<p class="demo" role="note">비공식 체험전이다. 이 경기는 기록·저장·도전 과제에 남지 않는다.<button class="sndb" data-act="demoend">체험 끝내기</button></p>' : ''}<div class="arow"><p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)}${sub ? ' · ' + esc(sub) : ''}</p>${sndBtn()}</div>`;
+  // 관전: 아직 보여 주지 않은 세트를 하나씩 드러낸다. U.watch.i = 지금까지 드러낸 세트 수.
+  function vWatch(sc) {
+    const seq = wl(sc), w = U.watch, i = w.i, need = (sc.bo + 1) / 2, vis = seq.slice(0, i), x = [...vis].filter(c => c === 'W').length, y = vis.length - x;
+    const lastW = i > 0 ? seq[i - 1] === 'W' : null, d = sc.type === 'match' && i > 0 ? sc.sets[i - 1].d : 0;
+    const pos = clampN(50 + (x - y) / need * 38, 8, 92);   // 전선: 이길수록 상대 진영 쪽으로 밀린다
+    const cap = i === 0 ? '경기가 시작됐다.' : `${i}세트를 ${lastW ? '가져왔다' : '내줬다'}.${i < seq.length || sc.type === 'moment' ? (x === need - 1 && y === need - 1 ? ' 마지막 세트로 간다.' : x === need - 1 ? ' 매치 포인트다.' : y === need - 1 ? ' 벼랑 끝이다.' : '') : ''}`;
+    return `${arenaTop(sc, '관전')}${arenaHead(sc, seq, i)}
+      <div class="lane" aria-hidden="true"><span class="lme">우리 진영</span><div class="track"><i class="mark ${lastW === null ? '' : lastW ? 'w' : 'l'}" style="left:${pos}%"></i></div><span class="lop">상대 진영</span></div>
+      <p class="wcap ${lastW === null ? '' : lastW ? 'w' : 'l'}" role="status" aria-live="polite">${esc(cap)}${d ? ` <span class="chip ${d > 0 ? 'up' : 'down'}">전략 ${esc(sgn(d))}%p</span>` : ''}</p>
+      <div class="wbtns"><button class="btn ghost" data-act="wfast" aria-pressed="${!!w.fast}">빠르게</button><button class="btn ghost" data-act="wskip">${sc.type === 'match' ? '바로 결과' : '바로 승부처로'}</button></div>`;
+  }
+  function vPrematch(sc) {
+    const need = (sc.bo + 1) / 2;
+    return `${arenaTop(sc)}${arenaHead(sc, '', 0)}
+      <p class="stake"><b>${esc(sc.bo)}전 ${esc(need)}선승</b>${sc.label === '결승' ? '이기면 우승이다.' : '지면 이 대회는 여기서 끝난다.'}</p>
+      <div class="chips"><span class="chip">${esc(sc.role)} 출전</span><span class="chip ${sc.cond >= 70 ? 'up' : sc.cond < 50 ? 'down' : ''}">컨디션 ${esc(sc.cond)}</span><span class="chip ${sc.base >= 55 ? 'up' : sc.base <= 45 ? 'down' : ''}">전력으로 본 세트 승률 ${esc(sc.base)}%</span></div>
+      ${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. ${esc(sc.h2h)}${sc.h2h ? '.' : ''}</p>` : ''}
+      <h2>어떻게 싸울까</h2>
+      ${sc.tacs.map(t => { const k = TAC(t.id); if (!k) return ''; const dd = t.p - sc.base; return `<button class="choice tac" data-act="tac" data-id="${esc(t.id)}" aria-pressed="${U.tac === t.id}"><div class="grow"><b>${esc(k.name)}</b><small class="tgood">유리 — ${esc(k.good)}</small><small class="tbad">불리 — ${esc(k.bad)}</small></div><span class="pill ${dd > 0 ? 'hi' : dd < 0 ? 'lo' : ''}">${esc(t.p)}%<small>1세트 ${esc(sgn(dd))}</small></span></button>`; }).join('')}
+      <button class="btn" data-act="kick" ${U.tac ? '' : 'disabled'}>${U.tac ? `${esc((TAC(U.tac) || {}).name || '')} — 경기 시작` : '전략을 고르면 시작할 수 있다'}</button>
+      <button class="btn line" data-act="kick" data-id="none">전략 없이 시작한다</button>
+      <p class="fine">고른 전략은 이 시리즈의 세트 승률에 실제로 반영된다(세트당 최대 약 ±6%p). 오른쪽 숫자는 1세트 승률이다. 세트 스코어가 바뀌면 효과도 바뀐다.</p>`;
+  }
+  function vMatch(sc) {
+    const k = TAC(sc.tac), plus = sc.sets.filter(x => x.d > 0), minus = sc.sets.filter(x => x.d < 0);
+    const line = !k ? '전략 없이 치렀다. 세트 승률에 보정은 없었다.'
+      : `전략이 유리하게 작용한 세트 ${plus.length}개(그중 ${plus.filter(x => x.w).length}승), 불리하게 작용한 세트 ${minus.length}개(그중 ${minus.filter(x => !x.w).length}패).`;
+    return `${arenaTop(sc, '결과')}${arenaHead(sc, wl(sc), sc.sets.length)}
+      <div class="verdict ${sc.win ? 'w' : 'l'}"><b>${sc.win ? '승리' : '패배'}</b><span>${esc(sc.x)}:${esc(sc.y)} · ${esc(sc.next)}</span></div>
+      <p class="sec">내 전략 — ${esc(k ? k.name : '없음')}</p>
+      <div class="chips">${sc.sets.map((x, i) => `<span class="chip ${x.d > 0 ? 'up' : x.d < 0 ? 'down' : ''}">${i + 1}세트 ${x.w ? '승' : '패'}${k ? ' · ' + esc(sgn(x.d)) + '%p' : ''}</span>`).join('')}</div>
+      <p>${esc(line)}</p>
+      ${sc.moms.map(m => `<p class="fine">승부처 「${esc(m.title)}」 — ${esc(m.label)} · ${m.ok ? '성공' : '실패'}${m.auto ? '(감독 판단)' : ''}</p>`).join('')}
+      <p class="sec">내 활약</p>
+      <div class="chips"><span class="chip ${sc.r >= 7 ? 'up' : sc.r < 5.5 ? 'down' : ''}">평점 ${esc(Number(sc.r).toFixed(1))}</span><span class="chip">K/D/A ${esc(sc.k)}/${esc(sc.d)}/${esc(sc.a)}</span>${sc.mvp ? '<span class="chip gold">시리즈 MVP</span>' : ''}</div>
+      ${sc.rival ? `<p class="rvnote">${esc(sc.rival)}.</p>` : ''}
+      ${okBtn(G.inDemo() ? '다음으로' : '다음 일정으로')}
+      <p class="fine">${G.inDemo() ? '체험전에서는 여기까지의 기록이 남지 않는다.' : '자세한 성적과 팬 반응은 이어지는 월간 보고에 있다.'}</p>`;
+  }
   // 승부처의 판돈: 몇 전제인지, 지금 스코어, 이 세트에 걸린 것. 장면에 저장된 실제 값(bo, x, y)에서만 만든다.
   function stakeLine(sc) {
     const need = (sc.bo + 1) / 2; if (!(need >= 1)) return '';
@@ -392,18 +541,23 @@
         h = `<p class="eyebrow">선택의 순간</p><h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${esc(i)}" ${c.disabled ? 'disabled' : ''}><div class="grow"><b>${esc(c.label)}</b>${c.bd ? `<small>${c.bd.map(b => `${esc(b[0])} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${esc(b[1])}`).join(' · ')}</small>` : ''}${c.disabled ? '<small>자금이 부족하다</small>' : ''}</div>${pill(c.p)}</button>`).join('')}
           <p class="fine">표시된 숫자가 실제 성공 확률이다. 실패가 이어지면 다음 판정에 보정이 붙는다.</p>`; break;
+      case 'prematch': cls = 'arenas'; h = vPrematch(sc); break;
+      case 'match':
+        cls = 'arenas ' + (U.watch ? '' : sc.win ? 'good' : 'bad');
+        h = U.watch ? vWatch(sc) : vMatch(sc); break;
       case 'moment':
-        cls = 'clutch';
-        h = `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트 · ${SIT[sc.sit]}</p>${board(sc, sc.x, sc.y)}
-          ${stakeLine(sc)}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. 이 시리즈 결과가 상대 전적에 남는다.</p>` : ''}<p class="fine">지금 이 세트를 이길 확률은 ${esc(sc.base)}%. 선택이 성공하면 오르고 실패하면 내려간다.</p>
+        cls = 'clutch' + (sc.pips != null ? ' arenas' : '');
+        if (U.watch) { h = vWatch(sc); break; }
+        h = `${sc.pips != null ? arenaTop(sc, `${sc.set}세트 · ${SIT[sc.sit]}`) + arenaHead(sc, wl(sc), wl(sc).length) : `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트 · ${SIT[sc.sit]}</p>${board(sc, sc.x, sc.y)}`}
+          ${stakeLine(sc)}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. 이 시리즈 결과가 상대 전적에 남는다.</p>` : ''}<p class="fine">지금 이 세트를 이길 확률은 ${esc(sc.base)}%${sc.tac && TAC(sc.tac) ? `(전략 「${esc(TAC(sc.tac).name)}」 반영)` : ''}. 선택이 성공하면 오르고 실패하면 내려간다.</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${esc(i)}"><div class="grow"><b>${riskTag(c)}${esc(c.label)}</b><small>${c.bd.map(b => `${esc(b[0])} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${esc(b[1])}`).join(' · ')}</small><small class="swing">성공하면 세트 승률 <em class="up">${esc(c.up)}%</em> · 실패하면 <em class="down">${esc(c.down)}%</em></small></div>${pill(c.p)}</button>`).join('')}
           <button class="btn line" data-act="auto">감독 판단에 맡긴다 (자동 선택)</button>`; break;
       case 'mresult':
-        cls = sc.ok ? 'good' : 'bad';
-        h = `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트</p><span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${esc(sc.p)}%</span>
+        cls = (sc.ok ? 'good' : 'bad') + (sc.pips != null ? ' arenas' : '');
+        h = `${sc.pips != null ? arenaTop(sc, `${sc.set}세트`) + arenaHead(sc, wl(sc), wl(sc).length) : `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트</p>`}<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${esc(sc.p)}%</span>
           <h2>${esc(sc.title)}</h2><p class="dim">${esc(sc.choice)}</p><p>${esc(sc.text)}</p>
-          <div class="chips"><span class="chip ${sc.eff > 0 ? 'up' : 'down'}">이 세트 팀 전력 ${sc.eff > 0 ? '+' : ''}${esc(sc.eff)}</span><span class="chip ${sc.setWin ? 'up' : 'down'}">${esc(sc.set)}세트 ${sc.setWin ? '승리' : '패배'}</span></div>
-          ${board(sc, sc.x, sc.y)}<p>${sc.over ? (sc.x > sc.y ? '시리즈를 가져왔다.' : '시리즈를 내줬다.') : '경기는 계속된다.'}</p>${okBtn(sc.over ? '결과 보기' : '다음 세트로')}`; break;
+          <div class="chips"><span class="chip ${sc.eff > 0 ? 'up' : 'down'}">이 세트 팀 전력 ${sc.eff > 0 ? '+' : ''}${esc(sc.eff)}</span><span class="chip ${sc.setWin ? 'up' : 'down'}">${esc(sc.set)}세트 ${sc.setWin ? '승리' : '패배'}</span>${sc.d ? `<span class="chip ${sc.d > 0 ? 'up' : 'down'}">전략 ${esc(sgn(sc.d))}%p</span>` : ''}</div>
+          ${sc.pips != null ? '' : board(sc, sc.x, sc.y)}<p>${sc.over ? (sc.x > sc.y ? '시리즈를 가져왔다.' : '시리즈를 내줬다.') : '경기는 계속된다.'}</p>${okBtn(sc.over ? '결과 보기' : '다음 세트로')}`; break;
       case 'result':
         cls = sc.checked ? (sc.ok ? 'good' : 'bad') : '';
         h = `${sc.checked ? `<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${esc(sc.p)}%</span>` : ''}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>
@@ -442,7 +596,10 @@
         cls = 'bad';
         h = `<h2>${sc.vet ? '갈림길' : '무소속'}</h2><p>${esc(sc.text)}</p><button class="choice" data-act="try"><div class="grow"><b>공개 테스트에 지원한다</b><small>${sc.vet ? '합격하면 하위 구단 1군과 1년 계약. 떨어지면 은퇴한다' : sc.retry ? '합격하면 2군 1년 계약. 떨어져도 최하위 구단에서 한 번은 더 기회를 준다' : '합격하면 2군 1년 계약. 떨어지면 그대로 은퇴한다'}</small></div>${pill(sc.p)}</button>${retireBtn()}`; break;
     }
-    return `<div class="veil"><section class="sheet ${esc(cls)}" role="dialog" aria-modal="true" aria-label="${esc(sc.title || sc.sub || '선택')}" tabindex="-1">${h}</section></div>`;
+    // 이 버전이 모르는 장면(더 새 버전에서 저장된 것): 빈 창에 가두지 않고 넘어갈 수 있게 한다. 엔진은 모르는 장면을 그냥 닫는다.
+    if (!h) h = `<h2>표시할 수 없는 장면</h2><p>이 버전에서는 이 장면을 보여 줄 수 없다. 더 새로운 버전에서 저장된 것일 수 있다. 저장 데이터는 그대로다.</p>${okBtn('넘어간다')}`;
+    const still = ARENA[sc.type] && U.arenaShown === skey(sc) ? ' still' : '';   // 같은 시리즈 안에서는 창이 다시 올라오지 않고 내용만 바뀐다
+    return `<div class="veil"><section class="sheet ${esc(cls)}${still}" role="dialog" aria-modal="true" aria-label="${esc(sc.title || sc.sub || (ARENA[sc.type] ? `${sc.me} 대 ${sc.opp}` : '선택'))}" tabindex="-1">${h}</section></div>`;
   }
 
   function vRetire(r) {
@@ -490,8 +647,12 @@
     }
   }
   function paint() {
-    const y = window.scrollY, S = G.state();
+    let S = G.state();
+    // 체험전은 경기 장면이 이어지는 동안만 유지한다. 그 밖의 화면으로 넘어가면 끝내고 원래 상태로 돌아온다.
+    if (G.inDemo() && !(U.view === 'game' && S && G.scene() && ARENA[G.scene().type])) { endDemo('체험전이 끝났다. 이 경기는 기록에 남지 않았다. 마음에 들었다면 새 커리어에서 진짜 시즌을 시작해 보자.'); S = G.state(); }
+    const y = window.scrollY;
     if (U.view === 'game' && !S) U.view = 'title';
+    arenaSync(U.view === 'game' && S ? G.scene() : null);
     // 키보드 사용자를 위해, 다시 그린 뒤에도 방금 누른 버튼에 포커스를 돌려준다.
     const a = document.activeElement, fk = a && app.contains(a) && a.dataset && a.dataset.act ? [a.dataset.act, a.dataset.id || '', a.dataset.i || '', a.dataset.grp || ''] : (a && a.id === 'nick' ? 'nick' : null);
     const prevScene = U.sceneKey;
@@ -500,7 +661,8 @@
     if (U.stale) { app.querySelectorAll('.veil').forEach(v => v.remove()); app.insertAdjacentHTML('beforeend', vStale()); }
     drawAvatars();
     const sheet = app.querySelector('.sheet'), sc = U.view === 'game' && S ? G.scene() : null;
-    U.sceneKey = sheet ? (sc ? [sc.type, sc.title || '', sc.sub || '', sc.ev || '', sc.mid || '', sc.set || ''].join('|') : 'dlg') : '';
+    U.sceneKey = sheet ? (sc ? [sc.type, sc.title || '', sc.sub || '', sc.ev || '', sc.mid || '', sc.set || '', ARENA[sc.type] ? skey(sc) + (U.watch ? 'w' : '') : ''].join('|') : 'dlg') : '';
+    U.arenaShown = sc && ARENA[sc.type] && sheet ? skey(sc) : '';
     document.body.classList.toggle('modal', !!sheet);      // 장면이 열려 있는 동안 뒤 화면이 따라 움직이지 않게
     window.scrollTo(0, y);
     let target = null;
@@ -522,6 +684,7 @@
   // 도전 과제 달성 알림: 화면 위쪽에 잠깐 뜨는 한 줄. 진행을 막지 않는다.
   let toastEl = null, toastTimer = 0;
   function toastAch() {
+    if (G.inDemo()) return;   // 체험전의 달성은 실제 기록이 아니다
     const ids = G.achFresh(); if (!ids.length) return;
     if (app.querySelector('.veil')) return;   // 창이 열려 있으면 창의 윗부분을 가리므로, 창이 닫힌 다음에 알린다
     G.achSeen();
@@ -544,24 +707,40 @@
   window.addEventListener('storage', e => { if (e.key === null || e.key === 'pg_career_v1') checkStale(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStale(); });
   window.addEventListener('pageshow', () => checkStale());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) SND.quiet(); else if (SND.state() !== 'none') SND.unlock(); });   // 숨겨진 탭에서는 소리를 멈춘다
+  document.addEventListener('pointerdown', () => SND.unlock(), { passive: true });
   try { if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('controllerchange', checkVersion); } catch (e) {}
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
-  const TAP_GUARD = new Set(['next', 'ok', 'res', 'auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
+  const DEMO_OK = new Set(['res', 'ok', 'auto', 'tac', 'kick', 'wfast', 'wskip', 'snd', 'demoend', 'reload']);
+  const TAP_GUARD = new Set(['kick', 'demo', 'wskip', 'next', 'ok', 'res', 'auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
+    SND.unlock();   // 사용자의 입력 뒤에만 오디오를 켠다
     if (a === 'reload') { window.location.reload(); return; }
     if (checkStale()) return;
     // 두 번 눌림 방지: 진행·선택·확정 버튼은 직전 입력 뒤 잠깐 동안 다시 받지 않는다.
     // 화면이 바뀌면서 같은 자리에 다른 버튼이 오면, 연달아 누른 두 번째 입력이 엉뚱한 선택이 되기 때문이다.
+    if (G.inDemo() && !DEMO_OK.has(a)) return;   // 체험전 중에는 경기 장면의 조작만 받는다
     if (TAP_GUARD.has(a)) { const now = Date.now(), ms = window.__pgTapGuard != null ? window.__pgTapGuard : 320; if (now - (U.lastTap || 0) < ms) return; U.lastTap = now; }
     const live = a === 'create' && U.view === 'title' && G.saveInfo() && !G.saveInfo().over;
     if (live && U.confirm !== 'new') { U.confirm = 'new'; return render(); }
     if (a !== 'retire' && a !== 'wipe') U.confirm = '';
     if (a !== 'continue') U.notice = '';
     if (a !== 'undo') U.vmsg = '';
+    const sc0 = U.view === 'game' && G.state() ? G.scene() : null, t0 = sc0 ? sc0.type : '';
     switch (a) {
+      case 'snd': SND.set(!SND.on()); SND.play('tap'); return render();
+      case 'tac': U.tac = TAC(id) ? id : ''; SND.play('tap'); return render();
+      case 'kick': if (t0 !== 'prematch' || (id !== 'none' && !U.tac)) return; G.resolve(id === 'none' ? '' : U.tac); SND.play('start'); U.tac = ''; break;
+      case 'wfast': if (U.watch) { U.watch.fast = !U.watch.fast; clearTimeout(U.watch.t); U.watch.t = setTimeout(tickWatch, 200); } return render();
+      case 'wskip': if (U.watch && sc0) return endWatch(sc0); return;
+      case 'demo': {
+        if (!G.demoStart((Date.now() % 1000000007) + 1)) { U.notice = '체험전을 준비하지 못했다. 잠시 뒤 다시 눌러 보자. 진행 중인 커리어와 기록은 그대로다.'; return render(); }
+        U.view = 'game'; U.tab = 'home'; U.confirm = ''; SND.play('tap'); render(); window.scrollTo(0, 0); return;
+      }
+      case 'demoend': endDemo('체험전을 끝냈다. 이 경기는 기록에 남지 않았다.'); return render();
       case 'create': return go('create');
       case 'title': return go('title');
       case 'hall': U.vfrom = U.view === 'game' ? 'game' : 'title'; U.vt = 'hall'; U.imp = null; U.undo = ''; return go('hall');
@@ -646,9 +825,11 @@
       case 'retire': if (U.confirm === 'retire') { U.confirm = ''; G.resolve('retire'); } else U.confirm = 'retire'; break;
       case 'wipe': if (U.confirm === 'wipe') { G.wipe(); return go('title'); } U.confirm = 'wipe'; break;
     }
+    // 승부처를 고른 직후: 판정이 끝난 결과 장면에 맞춰 소리를 낸다(성공·실패는 엔진이 정한 값을 읽을 뿐이다).
+    if (t0 === 'moment') { const r = G.state() ? G.scene() : null; if (r && r.type === 'mresult') SND.play(r.ok ? 'ok' : 'fail'); }
     render();
   });
 
-  window.PG_UI = { render, state: U };   // 자동 화면 검사(test/browser)에서 쓴다
+  window.PG_UI = { render, state: U, snd: SND };   // 자동 화면 검사(test/browser)에서 쓴다
   render();
 })();

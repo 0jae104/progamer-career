@@ -32,7 +32,7 @@ const seedArg = (args.find(a => a.startsWith('--seed=')) || '').split('=')[1];
 if (seedArg != null && G.seed) G.seed(+seedArg);
 const rand = () => (G.rand ? G.rand() : Math.random());
 const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak';
-const SCENES = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'retire', 'moment', 'mresult'];
+const SCENES = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'retire', 'moment', 'mresult', 'prematch', 'match'];
 const ROLES = ['van', 'rov', 'core', 'gun', 'sup'], TRAITS = ['genius', 'grinder', 'brain'], REGIONS = ['kr', 'cn', 'eu', 'na'];
 const t0 = Date.now();
 let checks = 0;
@@ -62,6 +62,17 @@ function invariants(tag) {
   }
   const sc = G.scene(); if (sc && !SCENES.includes(sc.type)) fail(`${tag} 알 수 없는 장면 ${sc.type}`);
   if (!sc && !s.over && (s.pendingSim || s.pendingNewYear || s.sim)) fail(`${tag} 진행이 멈춘 상태`);
+  if (sc && sc.type === 'prematch') {   // 0.11.0: 경기 전 전략 선택
+    const c = s.sim && s.sim.tour && s.sim.tour.cur;
+    if (!c || c.tac !== null || !c.plays || c.x || c.y) fail(`${tag} 전략 선택 장면인데 시리즈 상태가 맞지 않음`);
+    if (s.opt.fast) fail(`${tag} 빠른 진행인데 전략 선택 장면이 나옴`);
+    if (sc.tacs.length !== 3 || sc.tacs.some(t => !(t.p >= 1 && t.p <= 99) || Math.abs(t.p - sc.base) > 7)) fail(`${tag} 전략 선택 장면의 승률 표시 이상`);
+  }
+  if (sc && sc.type === 'match') {
+    if (sc.sets.length !== sc.x + sc.y || sc.sets.filter(x => x.w).length !== sc.x || sc.win !== (sc.x > sc.y)) fail(`${tag} 경기 결과 장면의 세트 기록과 스코어가 다름`);
+    if (sc.tac === '' && sc.sets.some(x => x.d !== 0)) fail(`${tag} 전략 없음인데 보정이 기록됨`);
+    if (!(sc.from >= 0 && sc.from <= sc.sets.length)) fail(`${tag} 경기 결과 장면의 관전 시작 위치 이상`);
+  }
   if (sc && sc.type === 'moment') {
     if (!(s.sim && s.sim.tour && s.sim.tour.cur)) fail(`${tag} 승부처인데 진행 중인 시리즈가 없음`);
     if (s.opt.fast) fail(`${tag} 빠른 진행인데 승부처 장면이 나옴`);

@@ -64,8 +64,10 @@ async function open(browser, url, o) {
 }
 // 화면에서 한 걸음 진행한다(장면이 있으면 첫 선택지나 확인, 없으면 "N월 진행")
 async function step(pg) {
+  await pg.evaluate(() => { const b = document.querySelector('[data-act=wskip]'); if (b) b.click(); });   // 관전 중이면 건너뛴다(0.11.0)
   const t = await pg.evaluate(() => (PG.scene() ? PG.scene().type : ''));
   if (!t) await pg.click('[data-act=next]');
+  else if (t === 'prematch') await pg.click('.sheet [data-act=kick][data-id=none]');
   else if (['pickOrg', 'event', 'cards', 'moment'].includes(t)) { const els = await pg.$$('.sheet [data-act=res]:not([disabled])'); await els[t === 'pickOrg' ? els.length - 1 : 0].click(); }
   else if (t === 'offers') await pg.click('.sheet [data-act=accept]');
   else if (t === 'stove') await pg.click('.sheet [data-act=stay]');
@@ -122,7 +124,7 @@ function auditor(pg) {
 }
 // 장면 종류마다 그 장면에서 멈춘 저장을 하나씩 모은다(+ 장면이 없는 홈 상태, 평가전이 있는 월간 보고). role 을 주면 그 포지션으로만 만든다.
 const collectSaves = (pg, role) => pg.evaluate(role => {
-  const out = {}, want = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'moment', 'mresult', 'retire'];
+  const out = {}, want = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'moment', 'mresult', 'retire', 'prematch', 'match'];
   for (let k = 0; k < 60 && Object.keys(out).length < want.length + 2; k++) {
     PG.newGame({ nick: '가나다라마바사아자차', region: ['kr', 'cn', 'eu', 'na'][k % 4], role: role || ['van', 'rov', 'core', 'gun', 'sup'][k % 5], trait: ['genius', 'grinder', 'brain'][k % 3] });
     for (let n = 0; n < 20000; n++) {
