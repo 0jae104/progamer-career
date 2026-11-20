@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.9.0';
+  const UI_VERSION = '0.10.0';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -343,6 +343,18 @@
     if (!v.here) L.push(`지금 연봉보다 ${money(Math.abs(v.pay))} ${v.pay >= 0 ? '많다' : '적다'}.${v.abroad ? ` 다른 나라 리그다. 국가대표는 그대로 ${esc(v.home)}.` : ''}`);
     return `<ul class="oinfo">${L.map(x => `<li>${x}</li>`).join('')}</ul>`;
   }
+  // 승부처의 판돈: 몇 전제인지, 지금 스코어, 이 세트에 걸린 것. 장면에 저장된 실제 값(bo, x, y)에서만 만든다.
+  function stakeLine(sc) {
+    const need = (sc.bo + 1) / 2; if (!(need >= 1)) return '';
+    const mine = sc.x === need - 1, theirs = sc.y === need - 1;
+    const stake = mine && theirs ? '이 세트를 이기는 쪽이 시리즈를 가져간다.' : mine ? '이 세트를 이기면 시리즈가 끝난다. 져도 한 세트가 더 남는다.' : theirs ? '이 세트를 지면 시리즈가 끝난다.' : '';
+    return `<p class="stake"><b>${esc(sc.bo)}전 ${esc(need)}선승</b>지금 ${esc(sc.x)}:${esc(sc.y)}. ${stake}${sc.label === '결승' ? ' 결승이다.' : ''}</p>`;
+  }
+  // 선택지의 위험도: 성공했을 때와 실패했을 때의 세트 승률 차이(화면에 보이는 두 숫자의 차)로 나눈다.
+  function riskTag(c) {
+    const gap = c.up - c.down; if (!(gap >= 0)) return '';
+    return gap >= 14 ? '<span class="risk hi">큰 승부</span>' : gap >= 9 ? '<span class="risk mid">승부</span>' : '<span class="risk lo">안전</span>';
+  }
   function retireBtn() { return `<button class="btn line" data-act="retire">${U.confirm === 'retire' ? '한 번 더 누르면 은퇴한다. 되돌릴 수 없다' : '은퇴한다'}</button>`; }
 
   function vScene(sc, S) {
@@ -358,8 +370,8 @@
       case 'moment':
         cls = 'clutch';
         h = `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트 · ${SIT[sc.sit]}</p>${board(sc, sc.x, sc.y)}
-          <h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. 이 시리즈 결과가 상대 전적에 남는다.</p>` : ''}<p class="fine">지금 이 세트를 이길 확률은 ${esc(sc.base)}%. 선택이 성공하면 오르고 실패하면 내려간다.</p>
-          ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${esc(i)}"><div class="grow"><b>${esc(c.label)}</b><small>${c.bd.map(b => `${esc(b[0])} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${esc(b[1])}`).join(' · ')}</small><small class="swing">성공하면 세트 승률 <em class="up">${esc(c.up)}%</em> · 실패하면 <em class="down">${esc(c.down)}%</em></small></div>${pill(c.p)}</button>`).join('')}
+          ${stakeLine(sc)}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. 이 시리즈 결과가 상대 전적에 남는다.</p>` : ''}<p class="fine">지금 이 세트를 이길 확률은 ${esc(sc.base)}%. 선택이 성공하면 오르고 실패하면 내려간다.</p>
+          ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${esc(i)}"><div class="grow"><b>${riskTag(c)}${esc(c.label)}</b><small>${c.bd.map(b => `${esc(b[0])} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${esc(b[1])}`).join(' · ')}</small><small class="swing">성공하면 세트 승률 <em class="up">${esc(c.up)}%</em> · 실패하면 <em class="down">${esc(c.down)}%</em></small></div>${pill(c.p)}</button>`).join('')}
           <button class="btn line" data-act="auto">감독 판단에 맡긴다 (자동 선택)</button>`; break;
       case 'mresult':
         cls = sc.ok ? 'good' : 'bad';
@@ -485,6 +497,7 @@
   let toastEl = null, toastTimer = 0;
   function toastAch() {
     const ids = G.achFresh(); if (!ids.length) return;
+    if (app.querySelector('.veil')) return;   // 창이 열려 있으면 창의 윗부분을 가리므로, 창이 닫힌 다음에 알린다
     G.achSeen();
     const names = ids.map(id => (D.ACH.find(a => a.id === id) || {}).name).filter(Boolean); if (!names.length) return;
     if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'toast'; toastEl.setAttribute('role', 'status'); toastEl.setAttribute('aria-live', 'polite'); document.body.appendChild(toastEl); toastEl.addEventListener('click', () => toastEl.classList.remove('on')); }
@@ -503,9 +516,13 @@
 
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
+  const TAP_GUARD = new Set(['next', 'ok', 'res', 'auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
+    // 두 번 눌림 방지: 진행·선택·확정 버튼은 직전 입력 뒤 잠깐 동안 다시 받지 않는다.
+    // 화면이 바뀌면서 같은 자리에 다른 버튼이 오면, 연달아 누른 두 번째 입력이 엉뚱한 선택이 되기 때문이다.
+    if (TAP_GUARD.has(a)) { const now = Date.now(), ms = window.__pgTapGuard != null ? window.__pgTapGuard : 320; if (now - (U.lastTap || 0) < ms) return; U.lastTap = now; }
     const live = a === 'create' && U.view === 'title' && G.saveInfo() && !G.saveInfo().over;
     if (live && U.confirm !== 'new') { U.confirm = 'new'; return render(); }
     if (a !== 'retire' && a !== 'wipe') U.confirm = '';

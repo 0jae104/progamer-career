@@ -316,3 +316,9 @@ input.srhide:focus + label.btn { outline: 2px solid var(--cy); outline-offset: 2
 .rkind.same b { color: #0e1126; background: var(--gold); border-color: var(--gold); }
 /* 장면 창의 내용이 창보다 길면 줄어들어 겹치지 않고 창 안에서 스크롤된다 */
 .sheet > * { flex-shrink: 0; }
+
+/* ---- 승부처의 판돈과 선택지 위험도 (10단계) ---- */
+.stake { font-size: 13px; line-height: 1.5; color: #d5d8f5; border-left: 3px solid var(--gold); padding: 2px 0 2px 10px; overflow-wrap: anywhere; }
+.stake b { font-weight: 700; color: var(--gold); margin-right: 8px; white-space: nowrap; }
+.risk { display: inline-block; font-size: 12px; font-weight: 700; padding: 0 6px; margin-right: 6px; border: 1px solid var(--line); white-space: nowrap; vertical-align: 1px; }
+.risk.hi { color: var(--bad); border-color: #7a3b4a; } .risk.mid { color: var(--gold); border-color: #7a6230; } .risk.lo { color: var(--ok); border-color: #2a6b55; }

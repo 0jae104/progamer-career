@@ -68,7 +68,8 @@ function invariants(tag) {
 const MO = { byRole: {}, ids: {}, n: 0, byChoice: [0, 1, 2].map(() => ({ n: 0, p: 0, ok: 0 })), okSet: { n: 0, w: 0, exp: 0 }, noSet: { n: 0, w: 0, exp: 0 }, resume: 0, series: 0, seriesWithMom: 0, perFinal: [0, 0, 0, 0] };
 function playMoment(tag) {
   const sc = G.scene(), snap = store[KEY];
-  { const mo = G.D.MOMENTS.find(x => x.id === sc.mid); if (!mo) fail(`${tag} 없는 승부처 ${sc.mid}`); if (mo.role) { PS.own[mo.id] = (PS.own[mo.id] || 0) + 1; if (mo.role !== G.state().role) fail(`${tag} 다른 포지션의 전용 승부처가 나옴: ${mo.id}`); if (!sc.choices[0].bd.some(b => /^컨디션/.test(b[0]))) fail(`${tag} 전용 승부처의 과감한 선택에 컨디션이 반영되지 않음`); } if (sc.choices.length !== 3) fail(`${tag} 승부처 선택지가 3개가 아님`); }
+  if (REP.cur) REP.cur.push(sc.mid);
+  { const mo = G.D.MOMENTS.find(x => x.id === sc.mid); if (!mo) fail(`${tag} 없는 승부처 ${sc.mid}`); if (mo.role) { PS.own[mo.id] = (PS.own[mo.id] || 0) + 1; if (mo.role !== G.state().role) fail(`${tag} 다른 포지션의 전용 승부처가 나옴: ${mo.id}`); mo.c.forEach((c, k) => { const bd = sc.choices[k].bd; if (!!c.chk.cond !== bd.some(b => /^컨디션/.test(b[0])) || !!c.chk.trust !== bd.some(b => /^감독 신뢰/.test(b[0]))) fail(`${tag} 전용 승부처 ${mo.id} 의 확률 내역이 데이터와 다름`); }); } if (sc.choices.length !== 3) fail(`${tag} 승부처 선택지가 3개가 아님`); }
   if (G.load() !== 'ok' || store[KEY] !== snap) fail(`${tag} 승부처 도중 저장 왕복 후 상태가 달라짐`);
   if (JSON.stringify(G.scene()) !== JSON.stringify(sc)) fail(`${tag} 불러온 뒤 다른 승부처가 나옴`);
   G.resolve(rand() < .5 ? Math.floor(rand() * sc.choices.length) : 'auto');
@@ -109,6 +110,8 @@ const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, tit
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
 const FX = { n: 0, withRival: 0 };
+// 승부처 반복(10단계): 신규 커리어 하나 안에서 같은 상황을 몇 번 다시 보는지
+const REP = { cur: null, careers: 0, own: 0, ownDistinct: 0, all: 0, allDistinct: 0, gapSum: 0, gapN: 0, minGap: 1e9, near: 0, byRole: {} };
 const PS = { review: 0, reviewGood: 0, offers: 0, own: {}, wrongRole: 0 };   // 포지션 검사
 const SV = { n: 0 };    // 규격 검사를 한 장면 수
 const LGC = { n: 0 };   // 은퇴 기록 검사 수
@@ -187,6 +190,7 @@ function checkFans(tag, rep, nick, rivalNicks, streak, first1) {
 const RV = { n: 0, second: 0, first: 0, moved: 0, retired: 0, full: 0, noDebut: 0, games: 0, met: 0, metCareers: 0, finals: 0, finalCareers: 0, h2hChecked: 0, h2hLines: 0, rvSum: 0, rsSum: 0, labels: {}, ev: 0, evCareers: 0, evMax: 0, late: 0, age: [], peak: [], titles: 0, sameOrgEnd: 0 };
 
 function runCareer(i, tag, onEnd) {
+  REP.cur = onEnd ? [] : null;
   const car = { i, turn: 0, evTurns: [], f20: new Set(), seen: new Set(), counted20: false, ids: {}, exp: {}, rvEv: 0, finals: 0, fresh: !!onEnd, streak: 0, fg: 0, fanAt: {}, cele: 0 };
   let guard = 0, lastYear = 0;
   while (!G.state().over) {
@@ -266,6 +270,14 @@ function runCareer(i, tag, onEnd) {
   }
   if (onEnd && car.cele !== st.car.titles.length) fail(`${tag} 우승 화면 ${car.cele}번, 우승 기록 ${st.car.titles.length}개로 서로 다름`);
   if (!onEnd && /^stage[123]-/.test(String(tag))) { FX.n++; if (st.rivals.length) FX.withRival++; if (st.rivals.some(v => v.origin === 'trainee' || v.hist.some(h => /연습생 동기/.test(h.t)))) fail(`${tag} 예전 저장에 연습생 시절 라이벌 기록이 지어내짐`); }
+  if (onEnd && REP.cur && REP.cur.length) {
+    // 이 커리어에서 본 승부처 순서로 반복을 센다. 간격 = 같은 상황이 다시 나오기까지 사이에 낀 승부처 수 + 1
+    const seq = REP.cur, isOwn = id => !!G.D.MOMENTS.find(x => x.id === id).role, own = seq.filter(isOwn), rk = st.role, br = REP.byRole[rk] = REP.byRole[rk] || { own: 0, distinct: 0, careers: 0, gapSum: 0, gapN: 0 };
+    REP.careers++; REP.all += seq.length; REP.allDistinct += new Set(seq).size; REP.own += own.length; REP.ownDistinct += new Set(own).size;
+    br.own += own.length; br.distinct += new Set(own).size; br.careers++;
+    const last = {}; seq.forEach((id, k) => { if (isOwn(id)) { if (last[id] != null) { const gap = k - last[id]; REP.gapSum += gap; REP.gapN++; br.gapSum += gap; br.gapN++; REP.minGap = Math.min(REP.minGap, gap); if (gap <= 8) REP.near++; } } last[id] = k; });
+  }
+  REP.cur = null;
   if (onEnd) {
     // 실제 경기 결과로 따로 센 전적과 저장된 전적이 같아야 한다(빠른 진행은 보고서가 생략돼 제외).
     if (!st.opt.fast) { for (const v of st.rivals) { const e = car.exp[v.id] || { w: 0, l: 0 }; if (e.w !== v.w || e.l !== v.l) fail(`${tag} 라이벌 전적 불일치 ${v.nick}: 경기 기록 ${e.w}승 ${e.l}패, 저장 ${v.w}승 ${v.l}패`); } RV.h2hChecked++; }
@@ -517,6 +529,9 @@ const rate = o => o.n ? (o.ok / o.n * 100).toFixed(1) : '-', mean = o => o.n ? (
 console.log(`승부처 ${MO.n}회 | 표시 확률 평균 → 실제 성공률: ` + ['개인 기량', '판단', '조직력'].map((n, i) => `${n} ${mean(MO.byChoice[i])}% → ${rate(MO.byChoice[i])}% (${MO.byChoice[i].n}회)`).join(' | '));
 if (MO.okSet.n && MO.noSet.n) console.log(`승부처 세트 승률: 성공 뒤 표시 ${f(MO.okSet.exp / MO.okSet.n)}% → 실제 ${f(MO.okSet.w / MO.okSet.n * 100)}% | 실패 뒤 표시 ${f(MO.noSet.exp / MO.noSet.n)}% → 실제 ${f(MO.noSet.w / MO.noSet.n * 100)}%`);
 console.log(`포지션별 승부처: ${ROLES.map(k => { const b = MO.byRole[k]; return b ? `${k} ${b.n}회 · 표시 ${f(b.p / b.n, 1)}% → 성공 ${f(b.ok / b.n * 100, 1)}% · 세트 승률 ${f(b.sw / b.n * 100, 1)}% · 전용 ${f(b.own / b.n * 100, 0)}%` : k + ' 0회'; }).join(' | ')}`);
+{ const pc = (a, b) => (b ? f(a / b * 100, 1) : '-'), own = G.D.MOMENTS.filter(x => x.role), cnt = own.map(x => MO.ids[x.id] || 0), tot = cnt.reduce((a, b) => a + b, 0);
+  console.log(`승부처 반복(신규 커리어 ${REP.careers}개, 승부처를 한 번 이상 본 커리어만): 커리어당 승부처 ${f(REP.all / REP.careers, 1)}회 · 그중 전용 ${f(REP.own / REP.careers, 1)}회, 서로 다른 전용 상황 ${f(REP.ownDistinct / REP.careers, 1)}종 | 전용 상황 중복 노출률 ${pc(REP.own - REP.ownDistinct, REP.own)}% (이미 본 전용 상황을 다시 본 비율) | 같은 전용 상황이 다시 나오기까지 평균 승부처 ${REP.gapN ? f(REP.gapSum / REP.gapN, 1) : '-'}번, 가장 짧게 ${REP.minGap === 1e9 ? '-' : REP.minGap}번, 8번 안에 다시 나온 비율 ${pc(REP.near, REP.gapN)}%`);
+  console.log(`포지션별 전용 상황 반복: ${ROLES.map(k => { const b = REP.byRole[k]; return b ? `${k} 커리어당 ${f(b.own / b.careers, 1)}회·${f(b.distinct / b.careers, 1)}종 · 중복 ${pc(b.own - b.distinct, b.own)}% · 재등장 간격 ${b.gapN ? f(b.gapSum / b.gapN, 1) : '-'}` : k + ' -'; }).join(' | ')} | 전용 상황 ${own.length}종의 출현 비중 ${tot ? f(Math.min(...cnt) / tot * 100, 2) : '-'}%~${tot ? f(Math.max(...cnt) / tot * 100, 2) : '-'}% (고르게 나오면 ${f(100 / own.length, 2)}%)`); }
 console.log(`내가 뛴 시리즈 ${MO.series}회 중 승부처가 나온 시리즈 ${f(MO.seriesWithMom / (MO.series || 1) * 100)}% | 결승 승부처 횟수 분포 0:${MO.perFinal[0]} 1:${MO.perFinal[1]} 2:${MO.perFinal[2]} 3:${MO.perFinal[3]}`);
 console.log(`일반 리그 경기 ${LG.n}회 | 승률 ${f(LG.w / LG.n * 100, 2)}% | 평균 평점 ${f(LG.rs / LG.n, 3)} | 평점 구간(~5, 5~6, 6~7, 7~8, 8~) ${LG.b.map(v => f(v / LG.n * 100, 2) + '%').join(' ')}`);
 console.log('PCT ' + JSON.stringify([1, 3, 8, 16, 28, 42, 58, 74, 90].map(p => [A.scores[Math.floor(N * p / 100)], p])));
@@ -786,6 +801,7 @@ if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim
     t(G.roleReview([{ plays: true, r: 6.5, k: 1, d: 3, a: 2, opp: 'A', win: true }]) === null && G.roleReview([]) === null && G.roleReview([{ plays: false }]) === null && G.roleReview([{ plays: true, r: 4.1, k: 0, d: 7, a: 1, opp: 'B', win: false }], 'sup').good === false, '해설이 없는 달과 부진한 달');
     if (seedArg != null) G.seed(+seedArg + 5); else G.seed(null); }
   const ownAll = G.D.MOMENTS.filter(x => x.role);
+  t(ownAll.length >= 40 && ROLES.every(id => ownAll.filter(x => x.role === id).length >= 8) && ownAll.every(x => ROLES.includes(x.role) && ['any', 'last', 'match', 'elim'].includes(x.sit)) && new Set(ownAll.map(x => x.title)).size === ownAll.length && new Set(ownAll.flatMap(x => x.c.map(c => c.label))).size === ownAll.length * 3 && ROLES.every(id => ['last', 'match', 'elim'].every(st => ownAll.some(x => x.role === id && (x.sit === st || x.sit === 'any')))), '포지션 전용 승부처의 수(포지션당 8종 이상)·제목과 선택지의 중복·상황 구분');
   t(ownAll.length >= 20 && ROLES.every(id => ownAll.filter(x => x.role === id).length >= 4) && ownAll.every(x => x.c.length === 3 && x.c.every(c => c.chk && Array.isArray(c.s) && c.s[0] > 0 && c.s[1] < 0 && c.s[0] <= 10 && c.s[1] >= -8 && c.ok && c.no && c.label)) && new Set(G.D.MOMENTS.map(x => x.id)).size === G.D.MOMENTS.length, '포지션 전용 승부처의 수·구성·상한');
   if (N >= 1000) for (const x of ownAll) if (!PS.own[x.id]) fail('기록 보관: 포지션 전용 승부처 ' + x.id + ' 가 한 번도 나오지 않음');
 
