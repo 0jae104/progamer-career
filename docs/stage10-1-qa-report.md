@@ -34,7 +34,7 @@
 | `npm test` (3,000회, 시드 1) | 종료 코드 0. 단위 검사 555개(v0.10.0의 544개 + 다른 탭 보호 11개) |
 | `npm run test:browser` | 첫 전체 실행: 8개 묶음 중 7개 통과(flow 48, layout 12, records 83, mobile 49, security 22, tabs 22, pwa 21), `positions`는 실패 2건으로 중단. 두 건 모두 검사 스크립트의 문제였고(5절 문제 3) 고친 뒤 `positions`만 세 번 다시 돌려 세 번 모두 122개 통과. 고친 뒤의 전체 실행은 GitHub Actions에서 함 |
 | `npm run test:update` | 종료 코드 0. 확인 41개, 실패 0개 |
-| GitHub Actions(`test.yml`) | CI_RESULT |
+| GitHub Actions(`test.yml`) | 통과. 문법 검사, 시뮬레이션 1,000회, 화면 검사 8개 묶음 379개(flow 48, layout 12, records 83, mobile 49, positions 122, security 22, tabs 22, pwa 21), 갱신 검사 41개. 웹 글꼴을 받는 환경 |
 
 ### 밸런스 회귀
 
