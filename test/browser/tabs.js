@@ -14,11 +14,11 @@ module.exports = async function tabs(browser, url, R) {
   const b = await ctx.newPage(); b.errs = []; b.on('pageerror', e => b.errs.push(String(e.message || e)));
   await b.goto(url); await b.waitForTimeout(200); await b.click('[data-act=continue]');
   R.ok(!(await NOTICE(a)) && !(await NOTICE(b)), 'A: 탭을 두 개 열기만 했는데 안내가 뜸');
-  const at0 = await b.evaluate(() => PG.state().year * 12 + PG.state().m);
   // 탭 A에서 화면으로 진행(약 석 달)
-  for (let i = 0, m = 0; i < 60 && m < 3; i++) { const before = await a.evaluate(() => PG.state().year * 12 + PG.state().m); await step(a); if (await a.evaluate(() => PG.state().year * 12 + PG.state().m) !== before) m++; }
+  let moved = 0;   // 달이 바뀐 횟수. (연도와 달을 더한 값으로 비교하면 시즌이 넘어갈 때 달이 1로 돌아가 거꾸로 보인다)
+  for (let i = 0; i < 60 && moved < 3; i++) { const before = await a.evaluate(() => PG.state().year * 12 + PG.state().m); await step(a); if (await a.evaluate(() => PG.state().year * 12 + PG.state().m) !== before) moved++; }
   const savedA = await CAREER(a);
-  R.ok(await a.evaluate(() => PG.state().year * 12 + PG.state().m) > at0 && !(await NOTICE(a)), 'A: 탭 A가 진행하지 못함');
+  R.ok(moved >= 1 && savedA !== await b.evaluate(() => JSON.stringify(PG.state())) && !(await NOTICE(a)), 'A: 탭 A가 진행하지 못함');
   // 탭 B(오래된 상태): 알림이 뜨고, 눌러도 진행되지 않고, 저장을 덮어쓰지 않는다
   R.ok(await waitFor(b, () => NOTICE(b)), 'A: 다른 탭이 저장을 바꿨는데 오래된 탭에 안내가 뜨지 않음');
   R.ok(await b.evaluate(() => { const s = document.querySelector('.veil .sheet'), bt = s.querySelector('[data-act=reload]'), r = bt.getBoundingClientRect(); return s.getAttribute('role') === 'alertdialog' && document.querySelectorAll('.veil').length === 1 && r.height >= 44 && r.bottom <= innerHeight && r.top >= 0; }), 'A: 안내 창의 버튼이 화면 밖이거나 44px 미만이거나 창이 겹침');

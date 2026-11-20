@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.10.1';
+  const UI_VERSION = '0.10.2';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -47,7 +47,7 @@
         <button class="btn ${sv ? 'ghost' : ''}" data-act="create">${live && U.confirm === 'new' ? '한 번 더 누르면 진행 중인 커리어가 삭제된다' : '새 커리어'}</button>
         <button class="btn line two" data-act="hall">기록실<small>명예의 전당 · 도전 과제 · 백업</small></button>
       </div>
-      ${U.notice ? `<p class="warn">${esc(U.notice)}</p>` : ''}
+      ${verNote()}${U.notice ? `<p class="warn">${esc(U.notice)}</p>` : ''}
       ${G.storageOk() ? '' : '<p class="warn">이 브라우저에서는 저장이 되지 않는다. 사생활 보호 모드를 끄거나 다른 브라우저로 열어야 진행 상황이 남는다.</p>'}
       ${navigator.onLine === false ? '<p class="fine" role="status">오프라인 상태다. 게임과 저장은 그대로 된다. 새 버전 확인과 웹 글꼴은 온라인에서만 된다.</p>' : ''}
       <p class="fine">등장하는 리그·구단·선수·대회는 모두 창작이며 실제와 관계가 없습니다. 진행 상황은 이 기기의 브라우저에 저장되며, 브라우저 데이터를 지우면 함께 사라집니다. v${esc(G.VERSION)}</p>
@@ -136,6 +136,18 @@
       <p>이 게임이 다른 탭이나 창에서도 열려 있고, 그쪽에서 저장이 바뀌었다. 여기서 계속하면 그쪽 진행이 지워질 수 있어 이 탭은 멈춰 두었다.</p>
       <p class="dim">저장 데이터는 그대로다. 아래 버튼을 누르면 가장 최근에 저장된 상태를 불러온다. 게임은 한 번에 탭 하나에서만 진행하는 것이 안전하다.</p>
       <button class="btn" data-act="reload">최근 저장 불러오기</button></section></div>`;
+  }
+  // 이 탭이 열려 있는 동안 다른 탭이 새 버전을 받아 서비스 워커가 바뀌었을 때: 이 탭은 예전 코드로 돌고 있다.
+  // 저장은 그대로이므로 막지는 않고, 새로 고침만 권한다(누르기 전까지 게임은 계속된다).
+  function verNote() {
+    return U.newVer ? `<p class="warn" role="status" id="vernote">새 버전(v${esc(U.newVer)})이 올라왔다. 이 탭은 아직 예전 버전(v${esc(G.VERSION)})이다. 진행 상황은 저장되어 있으니 새로 고치면 이어서 할 수 있다. <button class="btn ghost" data-act="reload">새로 고침</button></p>` : '';
+  }
+  function checkVersion() {
+    if (U.newVer || typeof fetch !== 'function') return;
+    fetch('sw.js', { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).then(t => {
+      const m = /VERSION = '([0-9][0-9.]{0,15})'/.exec(t || '');
+      if (m && m[1] !== G.VERSION && !U.newVer) { U.newVer = m[1]; render(); }
+    }).catch(() => {});
   }
   function checkStale() {
     if (U.stale || !G.stale()) return U.stale;
@@ -460,7 +472,7 @@
     if (S.over && sc) return vRetire(sc);
     const mi = G.month(), tabs = [['home', '홈'], ['stats', '능력'], ['league', '리그'], ['shop', '투자'], ['record', '기록']];
     const body = S.org ? { home: tHome, stats: tStats, league: tLeague, shop: tShop, record: tRecord }[U.tab](S) : '';
-    const warn = G.saveFailed() ? '<p class="warn" role="alert">방금 진행한 내용을 저장하지 못했다. 브라우저 저장 공간이 가득 찼거나 저장이 막혀 있다. 지금 창을 닫으면 마지막으로 저장된 시점으로 돌아간다. 기록 탭 → 백업 관리에서 백업 파일을 내려받아 두면 안전하다.</p>' : U.notice ? `<p class="warn">${esc(U.notice)}</p>` : '';
+    const warn = verNote() + (G.saveFailed() ? '<p class="warn" role="alert">방금 진행한 내용을 저장하지 못했다. 브라우저 저장 공간이 가득 찼거나 저장이 막혀 있다. 지금 창을 닫으면 마지막으로 저장된 시점으로 돌아간다. 기록 탭 → 백업 관리에서 백업 파일을 내려받아 두면 안전하다.</p>' : U.notice ? `<p class="warn">${esc(U.notice)}</p>` : '');
     return `<div class="stagebg" ${sc ? 'inert aria-hidden="true"' : ''}>${S.org ? header(S) : ''}<main class="content">${warn}${body}</main>
       ${S.org ? `<footer class="foot"><nav class="tabs" role="tablist">${tabs.map(t => `<button role="tab" data-act="tab" data-id="${esc(t[0])}" aria-selected="${U.tab === t[0]}">${esc(t[1])}</button>`).join('')}</nav>
       <button class="btn cta" data-act="next" ${sc ? 'disabled' : ''}>${esc(mi.m)}월 진행<small>${esc(mi.label)} · ${D.PLANS.find(p => p.id === S.plan).name}</small></button></footer>` : ''}</div>
@@ -532,6 +544,7 @@
   window.addEventListener('storage', e => { if (e.key === null || e.key === 'pg_career_v1') checkStale(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStale(); });
   window.addEventListener('pageshow', () => checkStale());
+  try { if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('controllerchange', checkVersion); } catch (e) {}
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
   const TAP_GUARD = new Set(['next', 'ok', 'res', 'auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
@@ -605,7 +618,7 @@
       case 'continue': {
         const r = G.load();
         if (r === 'backup') U.notice = '저장 데이터가 손상되어 이번 시즌 시작 시점으로 되돌렸다.';
-        if (r) { U.view = 'game'; U.tab = 'home'; render(); window.scrollTo(0, 0); } else { U.notice = '저장 데이터를 열 수 없다.'; render(); }
+        if (r) { U.view = 'game'; U.tab = 'home'; render(); window.scrollTo(0, 0); } else { U.notice = '저장 데이터를 열 수 없다. 데이터는 지우지 않았다. 내려받아 둔 백업 파일이 있으면 기록실 → 백업에서 복원할 수 있다.'; render(); }
         return;
       }
       case 'pick': U.C[b.dataset.grp] = id; break;

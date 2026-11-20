@@ -35,10 +35,22 @@ module.exports = async function pwa(browser, _url, R) {
   R.ok(same(await snap(pg), data0), 'B: 오프라인 사용 중 저장 데이터가 달라짐');
   R.note('오프라인', `서버 연결이 끊긴 상태에서 v${s.ver} 실행, 이어하기·카드 생성 가능`);
   // C. 새 버전 배포: 온라인에서 새로 고치면 새 파일을 받고, 예전 보관본은 지워지고, 저장은 그대로
-  srv.down = false; bump(dir, v0, '9.9.1'); await pg.reload(); await pg.waitForTimeout(500); s = await swState(pg);
+  // (0.10.2) 갱신 전에 탭을 하나 더 열어 둔다: 다른 탭이 새 버전을 받으면 이 탭에 새로 고침 안내가 떠야 한다
+  srv.down = false;
+  const left = await ctx.newPage(); left.errs = []; left.on('pageerror', e => left.errs.push(String(e.message || e)));
+  await left.goto(srv.url); await left.waitForTimeout(300);   // 타이틀에 둔다(진행하면 저장이 바뀌어 아래의 '저장 불변' 확인과 섞인다)
+  R.ok(await left.evaluate(() => !document.querySelector('#vernote')), 'C: 갱신이 없는데 새 버전 안내가 뜸');
+  bump(dir, v0, '9.9.1'); await pg.reload(); await pg.waitForTimeout(500); s = await swState(pg);
   R.ok(consistent(s, '9.9.1'), `C: 새 버전이 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
   R.ok(await waitFor(pg, async () => same((await swState(pg)).caches, ['pg-career-9.9.1'])), `C: 예전 보관본이 지워지지 않음 ${JSON.stringify((await swState(pg)).caches)}`);
   R.ok(same(await snap(pg), data0), 'C: 버전 갱신 뒤 저장 데이터가 달라짐');
+  R.ok(await waitFor(left, () => left.evaluate(v => { const n = document.querySelector('#vernote'); return !!n && n.textContent.includes('9.9.1') && n.textContent.includes(v) && !!n.querySelector('[data-act=reload]'); }, v0)), 'C: 열어 둔 탭에 새 버전 안내가 뜨지 않음');
+  R.ok(await pg.evaluate(() => !document.querySelector('#vernote')), 'C: 이미 새 버전인 탭에 새 버전 안내가 뜸');
+  R.ok(await left.evaluate(() => { const b = document.querySelector('#vernote [data-act=reload]').getBoundingClientRect(); const v = document.querySelector('.veil'); return b.height >= 44 && document.documentElement.scrollWidth <= innerWidth && !(v && v.textContent.includes('새 버전')); }) && same(await snap(left), data0), 'C: 새 버전 안내가 화면을 막거나 넘치거나 저장을 바꿈');
+  await Promise.all([left.waitForNavigation(), left.click('#vernote [data-act=reload]')]); await left.waitForTimeout(400);
+  R.ok(consistent(await swState(left), '9.9.1') && await left.evaluate(() => !document.querySelector('#vernote')) && same(await snap(left), data0) && !left.errs.length, `C: 열어 둔 탭을 새로 고친 뒤 ${JSON.stringify(await swState(left))} ${left.errs}`);
+  await left.close();
+  R.note('열어 둔 탭', '다른 탭이 새 버전을 받자 예전 버전 탭에 "새 버전이 올라왔다" 안내와 새로 고침 버튼이 뜸(게임은 막지 않음), 누르면 새 버전으로 열리고 저장은 그대로');
   await pg.click('[data-act=continue]'); R.ok(await pg.evaluate(() => PG.state().nick === 'Keep2' && PG.hall().length === 1 && PG.achInfo().runs === 1), 'C: 갱신 뒤 커리어·명예의 전당·도전 과제');
   srv.down = true; await pg.reload(); await pg.waitForTimeout(400); s = await swState(pg); R.ok(consistent(s, '9.9.1'), `C: 갱신 뒤 오프라인 실행 ${JSON.stringify(s)}`); srv.down = false;
   R.note('버전 갱신', `v${v0} → v9.9.1(흉내): 새 파일 한 벌로 열림, 보관본 ${JSON.stringify((await swState(pg)).caches)}, 저장 여섯 키 불변`);
