@@ -75,7 +75,7 @@
 |---|---|---|
 | `npm run test:browser` (8개 묶음) | 첫 전체 실행: 8개 묶음 중 7개 통과, `tabs`는 22개 중 1개 실패(검사 스크립트의 문제, 6절 B-6). 고친 뒤 `tabs`만 7번 다시 돌려 모두 22 / 22. GitHub Actions의 첫 실행에서는 `records`가 1개 실패(역시 검사 스크립트의 문제, B-7). 고친 뒤 `records`만 12번 다시 돌려 모두 통과. 두 건을 고친 뒤의 전체 실행은 GitHub Actions에서 함 | `browser.txt`(첫 전체 실행), `browser-tabs-rerun.txt`·`browser-records-rerun.txt`(고친 뒤) |
 | `npm run test:update` | 종료 코드 0. 확인 44개, 실패 0개 | `update-chain.txt` |
-| GitHub Actions(`test.yml`) | CI_PENDING | PR의 Actions 탭 |
+| GitHub Actions(`test.yml`) | 첫 실행 실패(`records` 1개, B-7) → 고친 뒤 통과: 문법 검사, 시뮬레이션 1,000회, 화면 검사 8개 묶음 389개(flow 48, layout 12, records 86, mobile 51, positions 122, security 22, tabs 22, pwa 26), 갱신 검사 44개. 웹 글꼴을 받는 환경 | PR의 Actions 탭 |
 
 | 묶음 | 본 것 | 결과 |
 |---|---|---|
