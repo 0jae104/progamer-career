@@ -189,8 +189,12 @@
     const c = U.card; if (!c) return;
     c.state = 'busy'; c.msg = '';
     const wait = ms => new Promise(res => setTimeout(res, ms));
-    // 글꼴을 기다리되 오래 걸리면 기기의 기본 한글 글꼴로 그린다.
-    const fonts = document.fonts && document.fonts.load ? Promise.race([Promise.all(CARD.fonts.map(f => document.fonts.load(f, '가A1').catch(() => 0))), wait(2500)]) : Promise.resolve();
+    // 글꼴을 기다리되 4초 안에 오지 않으면 기기의 기본 한글 글꼴로 그린다.
+    // 웹 글꼴은 글자 묶음별로 나뉘어 있어서, 카드에 실제로 들어갈 글자를 모두 넘겨야 필요한 묶음이 다 받아진다.
+    // (일부만 받아진 채 그리면 같은 기록인데 처음 만든 카드와 나중에 만든 카드의 글자 모양이 달라진다.)
+    let need = '가A1';
+    try { const x0 = document.createElement('canvas').getContext('2d'); need = [...new Set(CARD.plan(c.rec, (t, f) => { x0.font = f; return x0.measureText(t).width; }).filter(o => o.t === 'text').map(o => o.s).join(''))].join(''); } catch (e) {}
+    const fonts = document.fonts && document.fonts.load ? Promise.race([Promise.all(CARD.fonts.map(f => document.fonts.load(f, need).catch(() => 0))), wait(4000)]) : Promise.resolve();
     fonts.then(() => new Promise((res, rej) => {
       const cv = document.createElement('canvas');
       CARD.draw(cv, c.rec, { avatar: (x, ox, oy, px, seed) => sprite(x, ox, oy, px, seed) });
