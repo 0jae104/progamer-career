@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.10.0';
+  const UI_VERSION = '0.10.1';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -129,6 +129,19 @@
       <table class="cmp"><caption class="srhide">두 선수의 은퇴 기록 비교</caption><tr><th scope="col">항목</th><th scope="col">${esc(a.nick)}</th><th scope="col">${esc(b.nick)}</th></tr>
         ${rows.map(([k, f]) => `<tr><th scope="row">${esc(k)}</th><td>${f(a)}</td><td>${f(b)}</td></tr>`).join('')}</table>
       <button class="btn line" data-act="back">목록으로</button></section>`;
+  }
+  // 다른 탭(또는 예전 버전의 탭)이 저장을 바꿨을 때: 이 탭의 오래된 상태로 덮어쓰지 않도록 멈추고 새로 고침을 안내한다.
+  function vStale() {
+    return `<div class="veil"><section class="sheet bad" role="alertdialog" aria-modal="true" aria-label="다른 탭에서 진행됨" tabindex="-1"><h2>다른 탭에서 진행됐다</h2>
+      <p>이 게임이 다른 탭이나 창에서도 열려 있고, 그쪽에서 저장이 바뀌었다. 여기서 계속하면 그쪽 진행이 지워질 수 있어 이 탭은 멈춰 두었다.</p>
+      <p class="dim">저장 데이터는 그대로다. 아래 버튼을 누르면 가장 최근에 저장된 상태를 불러온다. 게임은 한 번에 탭 하나에서만 진행하는 것이 안전하다.</p>
+      <button class="btn" data-act="reload">최근 저장 불러오기</button></section></div>`;
+  }
+  function checkStale() {
+    if (U.stale || !G.stale()) return U.stale;
+    U.stale = true; render();
+    const s = app.querySelector('.veil .sheet'); if (s) s.focus();
+    return true;
   }
   function vDialog() {
     const r = G.hallGet(U.dlg.id); if (!r) return '';
@@ -472,6 +485,7 @@
     const prevScene = U.sceneKey;
     if (U.view === 'card' && !U.card) U.view = 'hall';
     app.innerHTML = U.view === 'title' ? vTitle() : U.view === 'create' ? vCreate() : U.view === 'hall' ? vVault() : U.view === 'rec' ? vRec() : U.view === 'compare' ? vCompare() : U.view === 'card' ? vCard() : vGame(S);
+    if (U.stale) { app.querySelectorAll('.veil').forEach(v => v.remove()); app.insertAdjacentHTML('beforeend', vStale()); }
     drawAvatars();
     const sheet = app.querySelector('.sheet'), sc = U.view === 'game' && S ? G.scene() : null;
     U.sceneKey = sheet ? (sc ? [sc.type, sc.title || '', sc.sub || '', sc.ev || '', sc.mid || '', sc.set || ''].join('|') : 'dlg') : '';
@@ -514,12 +528,18 @@
   }
   function go(v) { U.view = v; U.confirm = ''; U.dlg = null; if (v !== 'game' && v !== 'title' && v !== 'create' && !U.focusNext) U.focusNext = '.page h2'; render(); window.scrollTo(0, 0); }
 
+  // 다른 탭이 저장을 바꾸면 바로 알린다. storage 이벤트는 다른 탭에서 쓴 경우에만 온다. 놓쳤을 때를 위해 탭으로 돌아올 때와 누를 때도 확인한다.
+  window.addEventListener('storage', e => { if (e.key === null || e.key === 'pg_career_v1') checkStale(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStale(); });
+  window.addEventListener('pageshow', () => checkStale());
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
   const TAP_GUARD = new Set(['next', 'ok', 'res', 'auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
+    if (a === 'reload') { window.location.reload(); return; }
+    if (checkStale()) return;
     // 두 번 눌림 방지: 진행·선택·확정 버튼은 직전 입력 뒤 잠깐 동안 다시 받지 않는다.
     // 화면이 바뀌면서 같은 자리에 다른 버튼이 오면, 연달아 누른 두 번째 입력이 엉뚱한 선택이 되기 때문이다.
     if (TAP_GUARD.has(a)) { const now = Date.now(), ms = window.__pgTapGuard != null ? window.__pgTapGuard : 320; if (now - (U.lastTap || 0) < ms) return; U.lastTap = now; }

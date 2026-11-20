@@ -22,7 +22,8 @@ module.exports = async function positions(browser, url, R) {
     // B. 포지션마다: 전용 승부처 화면, 월간 보고의 해설, 계약 제안 설명, 능력 탭의 가이드와 라이벌 구분
     for (const id of w === 390 ? Object.keys(NAMES) : ['sup', 'gun']) {
       const got = await pg.evaluate(role => {
-        localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); const out = {};
+        localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); PG._seen();   // 검사가 저장소를 직접 비웠다: 다른 탭이 지운 것으로 보지 않게 맞춘다
+        const out = {};
         for (let k = 0; k < 60 && !(out.moment && out.offers && out.home); k++) {
           PG.newGame({ nick: '가나다라마바사아자차', region: ['kr', 'cn', 'eu', 'na'][k % 4], role, trait: 'brain' });
           for (let n = 0; n < 20000 && !PG.state().over; n++) {
@@ -38,7 +39,8 @@ module.exports = async function positions(browser, url, R) {
       R.ok(got.moment && got.offers && got.home, `${w} ${id}: 검사용 상황을 만들지 못함`);
       const put = s => pg.evaluate(x => { localStorage.setItem('pg_career_v1', x); }, s);
       await put(got.moment); await reopen(pg);
-      const mo = await pg.evaluate(() => ({ n: document.querySelectorAll('.sheet .choice').length, cond: document.querySelector('.sheet').textContent.includes('컨디션'), pct: document.querySelectorAll('.sheet .choice .pill').length, role: PG.D.MOMENTS.find(x => x.id === PG.scene().mid).role, label: document.querySelector('.sheet').getAttribute('aria-label') }));
+      const mo = await pg.evaluate(() => ({ n: document.querySelectorAll('.sheet .choice').length, cond: document.querySelector('.sheet').textContent.includes('컨디션') === PG.D.MOMENTS.find(x => x.id === PG.scene().mid).c.some(c => !!c.chk.cond),   // 컨디션이 걸린 상황에서만 보여야 한다(0.10.0의 sup_swap 은 컨디션이 없다)
+         pct: document.querySelectorAll('.sheet .choice .pill').length, role: PG.D.MOMENTS.find(x => x.id === PG.scene().mid).role, label: document.querySelector('.sheet').getAttribute('aria-label') }));
       R.ok(mo.n === 3 && mo.cond && mo.pct === 3 && mo.role === id && !!mo.label, `${w} ${id}: 전용 승부처 화면 구성 ${JSON.stringify(mo)}`); await m('승부처 ' + id);
       await pg.locator('.sheet .choice').first().click(); await pg.waitForTimeout(80); await m('승부처 결과 ' + id);
       const before = await pg.evaluate(() => JSON.stringify([PG.scene().ok, PG.scene().x, PG.scene().y, PG.state().money]));

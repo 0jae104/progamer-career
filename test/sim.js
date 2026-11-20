@@ -17,9 +17,15 @@
 //   7) 라이벌: 고유 ID 유지, 능력치·구단·관계 범위, 실제 경기 결과와 맞대결 전적 일치, 불러오기 반복 시 전적 불변, 손상된 라이벌 데이터 복구
 // 집계(밸런스 지표. 목표 범위는 js/data.js 의 D.BAL.target, 없으면 표시만 한다)
 const fs = require('fs'), path = require('path');
-const store = {};
-globalThis.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
-const G = require('../js/engine.js');
+// 저장소 흉내. 검사가 store[키] 로 직접 바꾼 값은 "이 탭이 본 값"으로 맞춘다(0.10.1의 다른 탭 보호가 검사 준비 과정을 막지 않게).
+// 다른 탭이 쓴 상황은 otherTab() 으로 따로 흉내 낸다(맨 아래 "다른 탭 보호" 검사).
+const rawStore = {};
+let G = null;
+const sync = () => { if (G) G._seen(); };
+const store = new Proxy(rawStore, { set(o, k, v) { o[k] = v; sync(); return true; }, deleteProperty(o, k) { delete o[k]; sync(); return true; } });
+const otherTab = (k, v) => { if (v == null) delete rawStore[k]; else rawStore[k] = v; };
+globalThis.localStorage = { getItem: k => (k in rawStore ? rawStore[k] : null), setItem: (k, v) => { rawStore[k] = String(v); }, removeItem: k => { delete rawStore[k]; } };
+G = require('../js/engine.js');
 const args = process.argv.slice(2);
 const N = +(args.find(a => /^\d+$/.test(a)) || 500);
 const seedArg = (args.find(a => a.startsWith('--seed=')) || '').split('=')[1];
@@ -725,6 +731,23 @@ if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim
   t(G.state().over && G.achInfo().failed && !(ACHK in store) && !G.saveFailed() && !!G.hallGet(G.state().cid), '도전 과제 쓰기 실패가 다른 저장을 망가뜨림');
   G.load(); t(!G.achInfo().failed && G.achInfo().runs === 1, '쓰기 실패 뒤 다시 열면 도전 과제가 기록되어야 함');
   localStorage.setItem = realSet;
+
+  // 10-1) 다른 탭 보호(0.10.1): 다른 탭이 커리어 저장을 바꾼 뒤에는 이 탭의 오래된 상태로 덮어쓰지 않는다
+  { const snap = Object.assign({}, rawStore), sLeg = () => rawStore[LEG], put = o => { for (const k in rawStore) delete rawStore[k]; Object.assign(rawStore, o); G._seen(); };
+    start('TabA', 2); for (let i = 0; i < 5; i++) G.autoStep();
+    const mine = rawStore[KEY]; t(!G.stale() && !!mine, '다른 탭 보호: 평소에 멈춤');
+    const o = JSON.parse(mine); o.money += 777; const theirs = JSON.stringify(o), leg0 = sLeg();
+    otherTab(KEY, theirs);                                   // 다른 탭이 더 진행해 저장했다
+    t(G.stale(), '다른 탭 보호: 바뀐 저장을 알아채지 못함');
+    G.autoStep(); G.save(); t(rawStore[KEY] === theirs, '다른 탭 보호: 오래된 상태로 덮어씀(진행)');
+    G.wipe(); t(rawStore[KEY] === theirs, '다른 탭 보호: 오래된 탭이 저장을 지움');
+    G.newGame({ nick: 'TabB', region: 'kr', role: 'core', trait: 'brain' }); G.save(); t(rawStore[KEY] === theirs && G.stale(), '다른 탭 보호: 오래된 탭의 새 커리어가 덮어씀');
+    t(sLeg() === leg0, '다른 탭 보호: 멈춘 동안 기록 보관소가 바뀜');
+    t(G.load() === 'ok' && !G.stale() && G.state().money === o.money, '다른 탭 보호: 새로 불러오면 최근 저장이 열려야 함');
+    G.autoStep(); t(rawStore[KEY] !== theirs && !G.stale() && !G.saveFailed(), '다른 탭 보호: 불러온 뒤에는 다시 저장되어야 함');
+    otherTab(KEY, null);                                     // 다른 탭이 커리어를 지웠다
+    t(G.stale(), '다른 탭 보호: 지워진 저장을 알아채지 못함'); G.autoStep(); t(!(KEY in rawStore), '다른 탭 보호: 지운 저장을 되살림');
+    put(snap); G.load(); t(!G.stale(), '다른 탭 보호: 검사 뒤 정리'); }
 
   // 11) 기록 기능은 게임 난수를 쓰지 않는다
   G.seed(909); const r0 = G.rand(); G.seed(909);

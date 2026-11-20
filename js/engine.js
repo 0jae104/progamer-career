@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.10.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.10.1';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -15,6 +15,11 @@
     ok() { try { if (!root.localStorage) return false; root.localStorage.setItem('pg_probe', '1'); root.localStorage.removeItem('pg_probe'); return true; } catch (e) { return false; } },
   };
   let saveFailed = false;
+  // 다른 탭 보호: 이 탭이 마지막으로 읽거나 쓴 커리어 저장의 원문. 저장소의 값이 이것과 다르면 다른 탭(또는 예전 버전의 탭)이 그 사이에 썼다는 뜻이다.
+  // 그때는 이 탭의 오래된 상태로 덮어쓰지 않는다(화면이 새로 고침을 안내한다). 경기 계산·난수와는 무관하다.
+  let seenRaw = store.get(KEY), conflict = false;
+  const seen = () => { if (!box) { seenRaw = store.get(KEY); conflict = false; } };
+  const stale = () => !box && (conflict || store.get(KEY) !== seenRaw);
   // 기록 보관(커리어 저장과 별개로 기기에 쌓인다)
   //   HALL  pg_hall_v1   : 예전 형식의 명예의 전당(상위 30명). 그대로 유지한다.
   //   LEG   pg_legacy_v1 : 은퇴한 커리어의 상세 기록. 기록마다 ID와 은퇴 시각이 있다.
@@ -124,6 +129,7 @@
   /* ---------- 시작 ---------- */
   function newGame(o) {
     const r = D.ROLES.find(x => x.id === o.role);
+    if (stale()) { conflict = true; return; }
     store.del(BAK);
     S = {
       v: 1, cid: 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36), nick: (String(o.nick || '').replace(/[<>&"'`]/g, '').trim() || 'Player').slice(0, 12), home: o.region, role: o.role, trait: o.trait,
@@ -1042,6 +1048,7 @@
     if (!ok) for (const [k, v] of before) { if (v == null) store.del(k); else store.set(k, v); }
     legRaw = achRaw = null; legObj = achObj = null;
     if (ok) { S = null; saveFailed = false; legFail = achFail = addFail = false; }
+    seen();
     return ok;
   }
 
@@ -1517,10 +1524,12 @@
      저장 형식을 바꿀 때는 migrate() 에 기본값을 추가해 예전 저장도 열리게 한다. */
   function save() {
     if (!S) return;
+    if (stale()) { conflict = true; return; }   // 다른 탭이 먼저 썼다: 덮어쓰지 않는다
     const json = JSON.stringify(S);
     store.set(KEY, json);
     if (backupNext) { backupNext = false; store.set(BAK, json); }
     saveFailed = store.get(KEY) !== json;
+    if (!box) seenRaw = store.get(KEY);
     achCheck();
   }
   function migrate(s) {
@@ -1571,6 +1580,7 @@
   function read(key) { try { return migrate(JSON.parse(store.get(key) || 'null')); } catch (e) { return null; } }
   // 반환: 'ok' 정상, 'backup' 손상되어 시즌 시작 시점 사본으로 복구, '' 불러올 것이 없음
   function load() {
+    seen();
     let s = read(KEY), from = 'ok';
     if (!s) {
       const raw = store.get(KEY);
@@ -1676,7 +1686,11 @@
     exportData, importCheck, importApply, BACKUP_MAX, validScene,
     // 은퇴 화면의 기록(보관소에 쓰지 못했어도 카드는 만들 수 있게)
     endRec: () => (S && fin(S) ? recFromScene(fin(S), S) : null),
-    wipe() { store.del(KEY); store.del(BAK); S = null; },
+    wipe() { if (stale()) { conflict = true; return; } store.del(KEY); store.del(BAK); S = null; seen(); },
+    // 다른 탭이 커리어 저장을 바꿨는가(그렇다면 이 탭은 저장하지 않는다. 새로 고치면 풀린다)
+    stale,
+    // 검사용: 저장소를 직접 바꾼 뒤 그 값을 이 탭이 본 것으로 맞춘다(게임 화면은 쓰지 않는다)
+    _seen: seen,
   };
   (root.PG_VER = root.PG_VER || {}).engine = VERSION;
   root.PG = Game;
