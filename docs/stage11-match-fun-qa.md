@@ -27,7 +27,7 @@
 | 기준선 불변 검사(엔진만으로 400 커리어, v0.10.2와 비교) | 12345 | 400 | 해시 일치 | `baseline.txt` |
 | `npm run test:browser` (9개 묶음) | - | - | 첫 전체 실행: 9개 묶음 중 7개 통과, `mobile`과 `positions`는 실패(둘 다 검사 스크립트가 새 관전 단계를 몰라서. 5절 T-3). 고친 뒤 두 묶음을 두 번 다시 돌려 모두 통과. 고친 뒤의 전체 실행은 GitHub Actions에서 함 | `browser.txt`(첫 실행), `browser-mobile-positions-rerun.txt`(고친 뒤) |
 | `npm run test:update` | - | - | 종료 코드 0. 확인 47개, 실패 0개 | `update-chain.txt` |
-| GitHub Actions(`test.yml`) | - | - | CI_PENDING | PR의 Actions 탭 |
+| GitHub Actions(`test.yml`) | - | - | 통과(첫 실행): 문법 검사, 시뮬레이션 1,000회, 전략 검사(시리즈 19,200회), 화면 검사 9개 묶음 442개(flow 48, layout 12, records 86, mobile 51, positions 122, security 24, match 51, tabs 22, pwa 26), 갱신 검사 47개. 웹 글꼴을 받는 환경 | PR의 Actions 탭 |
 
 ## 2. 자동 검사
 
