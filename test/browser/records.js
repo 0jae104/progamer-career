@@ -208,6 +208,9 @@ module.exports = async function records(browser, url, R) {
     const { ctx, pg } = await open(browser, url); await pg.click('[data-act=create]'); await pg.fill('#nick', 'Ach'); await pg.click('[data-act=start]');
     await pg.evaluate(() => { let n = 0; while (!PG.state().car.debut && !PG.state().over && n++ < 20000) PG.autoStep(); });
     await pg.reload(); await pg.waitForTimeout(200); await pg.click('[data-act=continue]'); await pg.waitForTimeout(150);
+    // 창이 열려 있는 동안에는 알림을 미룬다(창의 윗부분을 가리지 않게). 창을 닫으면 그때 뜬다.
+    if (await pg.locator('.veil').count()) R.ok(await pg.evaluate(() => !document.getElementById('toast') || !document.getElementById('toast').classList.contains('on')) && await pg.evaluate(() => PG.achFresh().length > 0), 'H: 창이 열려 있는데 알림이 떴거나 알림 대기가 사라짐');
+    for (let i = 0; i < 12 && await pg.locator('.veil').count(); i++) { await pg.evaluate(() => PG.resolve(PG.scene().type === 'offers' ? 'stay' : PG.scene().type === 'stove' ? 'stay' : ['event', 'cards', 'moment', 'pickOrg'].includes(PG.scene().type) ? 0 : undefined)); await pg.evaluate(() => PG_UI.render()); }
     const toast = await pg.evaluate(() => { const t = document.getElementById('toast'); return t ? [t.classList.contains('on'), t.textContent, t.getAttribute('role')] : null; }), got = await pg.evaluate(() => PG.achInfo().n);
     R.ok(got > 0 && toast && toast[0] && toast[1].includes('도전 과제 달성') && toast[2] === 'status', `H: 달성 알림 ${toast}`);
     await pg.reload(); await pg.waitForTimeout(200); await pg.click('[data-act=continue]'); await pg.waitForTimeout(100);

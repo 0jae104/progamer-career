@@ -54,6 +54,8 @@ function reporter(name) {
 async function open(browser, url, o) {
   o = o || {};
   const ctx = await browser.newContext({ viewport: { width: o.w || 390, height: o.h || 844 }, acceptDownloads: true, reducedMotion: o.reduced ? 'reduce' : 'no-preference', ignoreHTTPSErrors: true, serviceWorkers: o.sw ? 'allow' : 'block' });
+  // 화면의 두 번 눌림 방지(0.32초)는 자동 진행을 느리게 하므로 기본으로 끈다. 그 기능 자체를 볼 때만 o.guard 로 켠다.
+  if (!o.guard) await ctx.addInitScript('window.__pgTapGuard = 0;');
   if (o.init) await ctx.addInitScript(o.init);
   const pg = await ctx.newPage(); pg.errs = [];
   pg.on('pageerror', e => pg.errs.push(String(e.message || e)));
@@ -118,4 +120,42 @@ function auditor(pg) {
   m.clean = () => agg.over === 0 && agg.doc === 0 && !Object.keys(agg.small).length && !Object.keys(agg.tiny).length && !Object.keys(agg.clip).length;
   return m;
 }
-module.exports = { ROOT, serve, copySite, tmpDir, launch, reporter, open, step, start, career, snap, KEYS, fixtures, auditor, RUNTIME };
+// 장면 종류마다 그 장면에서 멈춘 저장을 하나씩 모은다(+ 장면이 없는 홈 상태, 평가전이 있는 월간 보고). role 을 주면 그 포지션으로만 만든다.
+const collectSaves = (pg, role) => pg.evaluate(role => {
+  const out = {}, want = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'moment', 'mresult', 'retire'];
+  for (let k = 0; k < 60 && Object.keys(out).length < want.length + 2; k++) {
+    PG.newGame({ nick: '가나다라마바사아자차', region: ['kr', 'cn', 'eu', 'na'][k % 4], role: role || ['van', 'rov', 'core', 'gun', 'sup'][k % 5], trait: ['genius', 'grinder', 'brain'][k % 3] });
+    for (let n = 0; n < 20000; n++) {
+      const sc = PG.scene(), s = PG.state();
+      if (sc && !out[sc.type] && (sc.type !== 'month' || (sc.matches.length >= 4 && (sc.fans || []).length && sc.matches.some(m => m.label))) && (sc.type !== 'info' || sc.cele) && (sc.type !== 'offers' || sc.offers.length >= 3) && (sc.type !== 'moment' || PG.D.MOMENTS.find(x => x.id === sc.mid).role)) out[sc.type] = localStorage.getItem('pg_career_v1');
+      if (!sc && !out.home && s.car.g > 60 && s.rivals.length && s.hist.length > 3) out.home = localStorage.getItem('pg_career_v1');
+      if (sc && sc.type === 'month' && sc.eval && !out.monthEval) out.monthEval = localStorage.getItem('pg_career_v1');
+      if (s.over) break; PG.autoStep();
+    }
+  }
+  return out;
+}, role || null);
+// 접근성 점검: 이름 없는 조작 요소, 낮은 명암비(작은 글자 4.5:1, 큰 글자 3:1 미만)
+const A11Y = () => {
+  const out = { noName: [], lowContrast: {} };
+  const vis = e => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+  const name = e => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).join('.') : '');
+  const rgb = c => { const m = c.match(/[\d.]+/g); return m ? m.map(Number) : [0, 0, 0, 0]; };
+  const lum = c => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+  for (const e of document.querySelectorAll('#app button, #app input, #app summary, #app a[href]')) {
+    if (!vis(e) || e.closest('[inert]')) continue;
+    const label = (e.getAttribute('aria-label') || e.textContent || '').trim() || (e.id && document.querySelector(`label[for="${e.id}"]`) ? document.querySelector(`label[for="${e.id}"]`).textContent.trim() : '') || e.getAttribute('placeholder') || '';
+    if (!label) out.noName.push(name(e));
+  }
+  for (const e of document.querySelectorAll('#app *')) {
+    if (!vis(e) || e.closest('[inert]') || e.closest('svg') || e.disabled || e.closest('button[disabled]') || e.classList.contains('srhide')) continue;
+    if (![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+    const cs = getComputedStyle(e), fg = rgb(cs.color); let bg = null, grad = false;
+    for (let p = e; p && !bg; p = p.parentElement) { const ps = getComputedStyle(p), c = rgb(ps.backgroundColor); if (ps.backgroundImage !== 'none') { grad = true; break; } if (c.length < 4 || c[3] > .95) bg = c; else if (c[3] > 0.05) { grad = true; break; } }
+    if (grad) continue; if (!bg) bg = [14, 17, 38];
+    const a = lum(fg), b = lum(bg), ratio = (Math.max(a, b) + .05) / (Math.min(a, b) + .05), px = parseFloat(cs.fontSize), big = px >= 24 || (px >= 18.66 && +cs.fontWeight >= 700);
+    if (ratio < (big ? 3 : 4.5)) out.lowContrast[name(e)] = ratio.toFixed(2);
+  }
+  return out;
+};
+module.exports = { collectSaves, A11Y, ROOT, serve, copySite, tmpDir, launch, reporter, open, step, start, career, snap, KEYS, fixtures, auditor, RUNTIME };

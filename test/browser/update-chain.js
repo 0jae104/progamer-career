@@ -1,10 +1,10 @@
-// 실제 예전 버전에서 올라오는 갱신 검사: v0.6.0 → v0.7.0 → v0.8.0 → 지금 버전
+// 실제 예전 버전에서 올라오는 갱신 검사: v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0 → 지금 버전
 //   node test/browser/update-chain.js
 // 저장소 이력에서 예전 버전을 꺼내 HTTPS(자체 서명 인증서)로 띄운다. 예전 버전은 HTTPS 에서만 서비스 워커를 켜기 때문이다.
 // git 이력(전체 복제)과 openssl 이 필요하다. 없으면 건너뛴다. 배포 서버(GitHub Pages)의 캐시 동작까지 흉내 내지는 않는다.
 const fs = require('fs'), path = require('path'), { execSync } = require('child_process');
 const { ROOT, serve, copySite, tmpDir, launch, reporter, open, RUNTIME } = require('./lib');
-const REV = { '0.6.0': 'c3b5a73', '0.7.0': 'c8da66c', '0.8.0': 'c95209c' };
+const REV = { '0.6.0': 'c3b5a73', '0.7.0': 'c8da66c', '0.8.0': 'c95209c', '0.9.0': '68eb987' };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const put = (dir, from) => { for (const f of RUNTIME) { const d = path.join(dir, f); if (fs.existsSync(path.join(from, f))) { fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(from, f), d); } else if (fs.existsSync(d)) fs.unlinkSync(d); } };
 (async () => {
@@ -43,9 +43,14 @@ const put = (dir, from) => { for (const f of RUNTIME) { const d = path.join(dir,
   R.ok(s.ver === '0.8.0' && s.marks && s.marks.ui === '0.8.0' && !s.mixed && s.title, `v0.7.0 → v0.8.0: 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
   R.ok(await waitFor(pg, async () => same((await state(pg)).caches, ['pg-career-0.8.0'])), 'v0.8.0: 보관본 정리');
   R.ok(same(await pg.evaluate(() => ['pg_career_v1', 'pg_hall_v1', 'pg_legacy_v1', 'pg_ach_v1'].map(k => localStorage.getItem(k))), d7), 'v0.8.0: 갱신만으로 저장이 달라짐');
+  // 2-2) v0.9.0 배포(포지션 이름이 바뀐 버전)
+  put(site, src['0.9.0']); await pg.reload(); await pg.waitForTimeout(600); s = await state(pg);
+  R.ok(s.ver === '0.9.0' && s.marks && s.marks.ui === '0.9.0' && !s.mixed && s.title, `v0.8.0 → v0.9.0: 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
+  R.ok(await waitFor(pg, async () => same((await state(pg)).caches, ['pg-career-0.9.0'])), 'v0.9.0: 보관본 정리');
+  R.ok(same(await pg.evaluate(() => ['pg_career_v1', 'pg_hall_v1', 'pg_legacy_v1', 'pg_ach_v1'].map(k => localStorage.getItem(k))), d7), 'v0.9.0: 갱신만으로 저장이 달라짐');
   // 3) 지금 버전 배포
   put(site, src[now]); await pg.reload(); await pg.waitForTimeout(600); s = await state(pg);
-  R.ok(s.ver === now && s.marks && ['data', 'engine', 'card', 'ui'].every(k => s.marks[k] === now) && !s.mixed && s.title, `v0.8.0 → v${now}: 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
+  R.ok(s.ver === now && s.marks && ['data', 'engine', 'card', 'ui'].every(k => s.marks[k] === now) && !s.mixed && s.title, `v0.9.0 → v${now}: 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
   R.ok(await waitFor(pg, async () => same((await state(pg)).caches, ['pg-career-' + now])), `v${now}: 보관본 정리 ${JSON.stringify((await state(pg)).caches)}`);
   const d8 = await pg.evaluate(() => ['pg_career_v1', 'pg_hall_v1', 'pg_legacy_v1', 'pg_ach_v1'].map(k => localStorage.getItem(k)));
   R.ok(same(d8, d7), `v${now}: 갱신만으로 저장이 달라짐`);
@@ -57,7 +62,7 @@ const put = (dir, from) => { for (const f of RUNTIME) { const d = path.join(dir,
   R.ok(await pg.evaluate(() => PG.state().over && PG.hall().length === 2 && !window.__pgRenderError), `v${now}: v0.6.0에서 시작한 커리어를 은퇴까지 진행`);
   srv.down = true; await pg.reload(); await pg.waitForTimeout(500); s = await state(pg);
   R.ok(s.ver === now && s.title && !s.mixed, `v${now}: 갱신 뒤 오프라인 실행 ${JSON.stringify(s)}`); srv.down = false;
-  R.note('연속 갱신', `v0.6.0 → v0.7.0 → v0.8.0 → v${now}: 매번 새 버전 한 벌로 열림, 예전 보관본 삭제, 커리어·명예의 전당 유지, 오프라인 실행`);
+  R.note('연속 갱신', `v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0 → v${now}: 매번 새 버전 한 벌로 열림, 예전 보관본 삭제, 커리어·명예의 전당 유지, 오프라인 실행`);
   R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
 
   // 4) v0.7.0 사용 중, 갱신 도중 일부 파일을 받지 못한 경우(예전 서비스 워커는 예전 파일을 대신 준다): 섞인 채로 게임이 돌면 안 된다

@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.9.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.10.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -249,7 +249,7 @@
     else { const exact = pool.filter(x => x.sit === sit); if (exact.length && rnd() < .5) pool = exact; }
     if (!pool.length) pool = D.MOMENTS.filter(x => !x.role && x.sit === 'any' && !c.used.includes(x.id));
     const mo = pick(pool), pct = v => Math.round(v * 100);
-    c.used.push(mo.id); S.recentMom.push(mo.id); if (S.recentMom.length > 6) S.recentMom.shift();
+    c.used.push(mo.id); S.recentMom.push(mo.id); while (S.recentMom.length > B.momentMemory) S.recentMom.shift();
     return {
       type: 'moment', mid: mo.id, tour: t.name, label: m.label, bo: m.bo, set: c.x + c.y + 1, me: tName(t, t.me), opp: tName(t, opp), x: c.x, y: c.y, sit,
       rival: t.kind === 'nations' ? '' : rivalsAlive().filter(r => r.org === opp && r.squad === (t.kind === 'playoff' ? t.tier : 'first') && !r.out).map(r => r.nick).join(', '),
@@ -610,7 +610,7 @@
     if (moved) { S.trust = of.squad === 'first' ? 35 : 45; S.monthsInOrg = 0; S.car.moves++; if (!S.car.orgs.includes(of.org)) S.car.orgs.push(of.org); }
     if (of.squad === 'first' && !S.car.debut) { S.car.debut = S.age; S.car.via = 'offer'; }
     log(`${of.name}와(과) ${of.years}년 계약. ${SQUAD[of.squad]}, 연봉 ${fmtMoney(of.salary)}.`, 'good');
-    if (moved && of.squad === 'first') log(`[뉴스] ${S.nick}, ${of.name}행 — ${of.years}년 계약`, 'news');
+    if (moved && of.squad === 'first') log(`[뉴스] ${role().name} ${S.nick}, ${of.name}행 — ${of.years}년 계약`, 'news');
   }
 
   function offseason() {
@@ -684,7 +684,7 @@
       type: 'retire', reason, nick: S.nick, role: role().name, roleId: S.role, age: S.age, years: S.hist.length,
       g: c.g, w: c.w, avg: c.g ? c.rs / c.g : 0, mvp: c.mvp, kda: c.d ? (c.k + c.a) / c.d : 0, peak: Math.floor(c.peak), earn: c.earn,
       titles: c.titles.slice(), awards: c.awards.slice(), orgs: c.orgs.map(id => D.ORG[id].name),
-      news: c.g ? `${S.nick}, ${S.age}세에 은퇴 — 1군 ${c.g}경기${c.titles.filter(t => t.tier !== 'second').length ? `, 우승 ${c.titles.filter(t => t.tier !== 'second').length}회` : ''}` : `${S.nick}, 1군 무대를 밟지 못하고 ${S.age}세에 은퇴`,
+      news: c.g ? `${role().name} ${S.nick}, ${S.age}세에 은퇴 — 1군 ${c.g}경기${c.titles.filter(t => t.tier !== 'second').length ? `, 우승 ${c.titles.filter(t => t.tier !== 'second').length}회` : ''}` : `${S.nick}, 1군 무대를 밟지 못하고 ${S.age}세에 은퇴`,
       rivals: S.rivals.map(r => Object.assign(rivalView(r), { epilogue: rivalEpilogue(r), hist: r.hist.slice(0, 1).concat(r.hist.slice(1).slice(-4)) })),
     }, ev);
     sc.rid = S.cid; sc.at = Date.now();
