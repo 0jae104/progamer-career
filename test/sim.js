@@ -12,6 +12,7 @@
 //   8) 팬 반응: 분기별 단위 검사, 사실과 어긋나는 문장 0건, 출전 10경기 안 같은 문장 0건, 경기 없는 달에는 반응 없음
 //      (같은 문장 판정: 아이디·구단 이름·숫자·문장부호·공백을 지운 뒤 글자가 같으면 같은 문장으로 본다)
 //   9) 처음 안내와 우승 연출: 표시 상태만 바뀌고 난수·결과는 그대로인지, 예전 저장에는 안내가 없는지, 우승 화면 수와 우승 기록 수가 같은지
+//  10) 기록 보관(파일 끝): 명예의 전당 이관·중복 방지·삭제·용량, 도전 과제 판정, 커리어 카드 내용, 백업 내보내기·가져오기·거부·되돌리기, 저장 실패
 //   7) 라이벌: 고유 ID 유지, 능력치·구단·관계 범위, 실제 경기 결과와 맞대결 전적 일치, 불러오기 반복 시 전적 불변, 손상된 라이벌 데이터 복구
 // 집계(밸런스 지표. 목표 범위는 js/data.js 의 D.BAL.target, 없으면 표시만 한다)
 const fs = require('fs'), path = require('path');
@@ -105,6 +106,7 @@ const A = { scores: [], grades: {}, retireAge: [], debutAge: [], noDebut: 0, tit
 const byTrait = {}, byRole = {}, ageOvr = {}, endWhy = {};
 const LG = { n: 0, w: 0, rs: 0, b: [0, 0, 0, 0, 0] };
 const FX = { n: 0, withRival: 0 };
+const LGC = { n: 0 };   // 은퇴 기록 검사 수
 const CE = { n: 0, tut: 0 };   // 우승 화면 수, 처음 안내 검사 수
 /* ---- 팬 반응 검사 ---- */
 const FN = { months: 0, lines: 0, byCount: [0, 0, 0, 0], keys: {}, voices: {}, none: 0, benchMonths: 0, repeatChecked: 0, minGap: 1e9 };
@@ -224,6 +226,14 @@ function runCareer(i, tag, onEnd) {
   const r = G.scene(); if (r.type !== 'retire') fail(`${tag} 은퇴 장면이 아님`);
   const st = G.state();
   if ((r.rivals || []).length !== st.rivals.length) fail(`${tag} 은퇴 화면의 라이벌 수가 다름`);
+  {
+    // 은퇴 기록: 은퇴하는 순간 보관소에 한 건, 은퇴 화면과 같은 값으로 들어가 있어야 한다. 다시 불러와도 늘지 않는다.
+    const rid = r.rid, n0 = G.hall().length, runs0 = G.achInfo().runs, rec = G.hallGet(rid);
+    if (!rid || rid !== st.cid || !rec) fail(`${tag} 은퇴 기록이 보관소에 없음`);
+    if (rec.nick !== r.nick || rec.score !== r.score || rec.grade !== r.grade || rec.g !== r.g || rec.titles.length !== r.titles.length || rec.awards.length !== r.awards.length || rec.big !== r.titles.filter(t => t.tier !== 'second').length) fail(`${tag} 보관소의 기록이 은퇴 화면과 다름`);
+    if (G.load() !== 'ok' || G.hall().length !== n0 || G.achInfo().runs !== runs0 || G.hall().filter(x => x.id === rid).length !== 1) fail(`${tag} 은퇴 화면을 다시 불러오자 기록이 늘어남`);
+    LGC.n++;
+  }
   if (onEnd && car.cele !== st.car.titles.length) fail(`${tag} 우승 화면 ${car.cele}번, 우승 기록 ${st.car.titles.length}개로 서로 다름`);
   if (!onEnd && /^stage[123]-/.test(String(tag))) { FX.n++; if (st.rivals.length) FX.withRival++; if (st.rivals.some(v => v.origin === 'trainee' || v.hist.some(h => /연습생 동기/.test(h.t)))) fail(`${tag} 예전 저장에 연습생 시절 라이벌 기록이 지어내짐`); }
   if (onEnd) {
@@ -479,3 +489,197 @@ for (const b of MO.byChoice) {
   if (gap > lim) fail(`승부처 표시 확률과 실제 성공률 차이 ${gap.toFixed(2)}%p (허용 ${lim.toFixed(2)}%p)`);
 }
 if (EV.chk) { const gap = Math.abs(EV.pSum / EV.chk - EV.ok / EV.chk * 100), lim = Math.max(2, 4 * Math.sqrt(.25 / EV.chk) * 100); if (gap > lim) fail(`이벤트 표시 확률과 실제 성공률 차이 ${gap.toFixed(2)}%p`); }
+
+/* ---- 기록 보관: 명예의 전당, 도전 과제, 커리어 카드, 백업 (7단계) ----
+   앞의 집계가 끝난 뒤에 돌린다. 그래야 같은 시드에서 앞부분의 출력이 이전 버전과 그대로 같다. */
+{
+  const CARD = require('../js/card.js');
+  const HALL = 'pg_hall_v1', LEG = 'pg_legacy_v1', ACHK = 'pg_ach_v1', TUT = 'pg_tut_v1', KEYS = [KEY, BAK, HALL, LEG, ACHK, TUT];
+  const R = { n: 0 }, t = (c, msg) => { R.n++; if (!c) fail('기록 보관: ' + msg); };
+  const clear = () => { for (const k in store) delete store[k]; };
+  const snap = () => JSON.stringify(KEYS.map(k => (k in store ? store[k] : null)));
+  const finish = () => { let g = 0; while (!G.state().over) { G.autoStep(); if (++g > 20000) fail('기록 보관: 커리어가 끝나지 않음'); } return G.scene(); };
+  const start = (nick, i) => G.newGame({ nick, region: REGIONS[i % 4], role: ROLES[i % 5], trait: TRAITS[i % 3] });
+  if (seedArg != null) G.seed(+seedArg + 70007);
+
+  // 1) 예전 명예의 전당 30명 → 보관소. 원본은 그대로, 없는 값은 만들지 않는다. 손상된 줄은 건너뛴다.
+  clear();
+  const oldHall = Array.from({ length: 30 }, (_, i) => ({ nick: 'Old' + i, role: '코어', score: 95 - i * 3, grade: 'A', ep: '리그의 간판', peak: 90 - i, titles: i % 4, years: 8 + i % 5 }));
+  store[HALL] = JSON.stringify(oldHall);
+  let h = G.hall();
+  t(h.length === 30 && store[HALL] === JSON.stringify(oldHall), '예전 30명 이관 또는 원본 보존');
+  t(new Set(h.map(r => r.id)).size === 30 && h.every(r => r.id && r.src === 'hall1' && r.at === null && !('g' in r) && !('titles' in r) && !('age' in r) && !('earn' in r)), '이관한 기록에 ID가 없거나 없는 값이 채워짐');
+  t(h.every((r, i) => r.nick === oldHall[i].nick && r.score === oldHall[i].score && r.peak === oldHall[i].peak && r.big === oldHall[i].titles && r.years === oldHall[i].years), '이관한 값이 원본과 다름');
+  const legOnce = store[LEG]; G.hall(); G.hall('titles'); G.hall('recent'); t(store[LEG] === legOnce && G.hall().length === 30, '다시 읽자 이관이 반복됨');
+  t(G.hall('titles')[0].big === 3 && G.hall('recent').length === 30 && G.hall()[0].score === 95, '정렬');
+  t(G.achInfo().n === 0 && G.achInfo().runs === 0, '상세가 없는 예전 기록으로 도전 과제가 달성됨');
+  clear(); store[HALL] = JSON.stringify([null, 5, { nick: 7 }, { nick: 'Ok', score: 'x' }, oldHall[0], { nick: '<b>X</b>', role: '코어', score: 10 }]);
+  h = G.hall(); t(h.length === 2 && h[1].nick === 'bX/b' && !('peak' in h[1]), '손상된 예전 항목 처리');
+  clear(); store[HALL] = '{not json'; t(G.hall().length === 0, '깨진 예전 명예의 전당');
+  // 보관소가 깨져 있으면 원본을 따로 두고 예전 키에서 다시 만든다
+  clear(); store[HALL] = JSON.stringify(oldHall); store[LEG] = '{broken';
+  t(G.hall().length === 30 && store[LEG + '_bad'] === '{broken', '깨진 보관소 복구');
+
+  // 2) 새 은퇴가 더해져도 예전 키는 예전 방식(상위 30명)대로, 보관소에는 전부
+  clear(); store[HALL] = JSON.stringify(oldHall);
+  const expect = new Set(); let runs = 0; const recs = [];
+  const P = {   // 도전 과제 판정을 테스트 쪽에서 따로 계산한다
+    debut: s => s.car.debut > 0, win1: s => s.car.w > 0, mvp1: s => s.car.mvp > 0, g100: s => s.car.g >= 100,
+    t_second: s => s.car.titles.some(x => x.tier === 'second'), t_dom: s => s.car.titles.some(x => x.tier === 'dom'), t_mid: s => s.car.titles.some(x => x.tier === 'mid'),
+    t_nations: s => s.car.titles.some(x => x.tier === 'nations'), t_world: s => s.car.titles.some(x => x.tier === 'world'),
+    rookie: s => s.car.awards.some(a => a.name === '신인상'), poy: s => s.car.awards.some(a => a.name === '올해의 선수'),
+    rv_win: s => s.rivals.some(v => v.w > 0), rv_10: s => s.rivals.some(v => v.w >= 10),
+    fin1: () => runs >= 1, fin3: () => runs >= 3, fin10: () => runs >= 10,
+    no_title: (s, e) => s.car.g > 0 && !s.car.titles.some(x => x.tier !== 'second'), no_debut: s => !s.car.debut && s.car.g === 0,
+    grade_a: (s, e) => ['A', 'S', 'S+'].includes(e.grade), grade_s: (s, e) => ['S', 'S+'].includes(e.grade), age30: s => s.age >= 30,
+  };
+  t(G.D.ACH.length === Object.keys(P).length && G.D.ACH.every(a => P[a.id]), '도전 과제 목록과 판정식의 수가 다름');
+  for (let i = 0; i < 40; i++) {
+    start('Leg' + i, i); const cid = G.state().cid;
+    // 진행 중에도 저장·불러오기를 되풀이한다(달성이 두 번 기록되지 않아야 한다)
+    for (let k = 0; k < 30 && !G.state().over; k++) G.autoStep();
+    const mid = store[ACHK]; G.load(); G.load(); t((store[ACHK] || null) === (mid || null), '불러오기만으로 도전 과제 상태가 바뀜');
+    const e = finish(), s = G.state(); runs++;
+    for (const id in P) if (P[id](s, e)) expect.add(id);
+    recs.push(G.hallGet(cid));
+    t(e.rid === cid && G.hall().filter(r => r.id === cid).length === 1, '은퇴 기록 한 건');
+    for (let k = 0; k < 3; k++) { G.load(); G.save(); }
+    t(G.hall().length === 30 + i + 1 && G.achInfo().runs === runs, '불러오기 반복 뒤 기록 수 ' + G.hall().length + ' / 완주 ' + G.achInfo().runs);
+  }
+  const a1 = JSON.parse(store[ACHK]), gotIds = Object.keys(a1.got).sort();
+  t(JSON.stringify(gotIds) === JSON.stringify([...expect].sort()), `도전 과제 달성 목록이 실제 기록과 다름: ${gotIds} / ${[...expect].sort()}`);
+  t(a1.fresh.length === gotIds.length && new Set(a1.fresh).size === a1.fresh.length && a1.runs.n === 40 && new Set(a1.runs.ids).size === 40, '달성 알림 또는 완주 수 중복');
+  t(Object.values(a1.got).every(g => g.at > 0 && g.nick && g.rid && g.y >= 1), '달성 시점 정보 누락');
+  G.achSeen(); t(G.achFresh().length === 0 && Object.keys(JSON.parse(store[ACHK]).got).length === gotIds.length, '알림 확인 처리');
+  const list = G.achList(); t(list.length === G.D.ACH.length && list.filter(x => x.got).length === gotIds.length && list.every(x => x.got || !x.prog || (x.prog[0] >= 0 && x.prog[0] <= x.prog[1])), '도전 과제 목록');
+  const hallOld = JSON.parse(store[HALL]);
+  t(hallOld.length === 30 && hallOld.every((x, i) => i === 0 || hallOld[i - 1].score >= x.score) && hallOld.every(x => !('id' in x)), '예전 키의 형식이 달라짐');
+  t(G.hall().length === 70 && G.hall().filter(r => r.src === 'play').length === 40 && recs.every(r => r && r.at > 0 && r.ver === G.VERSION), '보관소 기록 수 또는 시각·버전');
+
+  // 3) 커리어 카드: 기록에 있는 값만, 같은 기록은 같은 내용, 긴 이름은 줄임
+  const measure = (str, font) => Array.from(str).reduce((w, c) => w + (c.charCodeAt(0) > 255 ? 1 : .6), 0) * +/(\d+)px/.exec(font)[1];
+  let cardOps = 0;
+  for (const r of G.hall()) {
+    const ops = CARD.plan(r, measure), tx = ops.filter(o => o.t === 'text'), by = k => tx.filter(o => o.k === k).map(o => o.s);
+    cardOps += tx.length;
+    t(JSON.stringify(ops) === JSON.stringify(CARD.plan(JSON.parse(JSON.stringify(r)), measure)), '같은 기록의 카드 내용이 다름');
+    t(!tx.some(o => /undefined|NaN|null|\[object/.test(o.s)), '카드에 빈 값이 글자로 찍힘');
+    t(by('nick')[0] === r.nick && by('score')[0] === r.score + '점' && by('grade')[0] === (r.grade || '-'), '카드의 이름·점수·등급');
+    for (const o of tx) { const w = measure(o.s, o.font), L = o.align === 'right' ? o.x - w : o.align === 'center' ? o.x - w / 2 : o.x; if (L < 20 || L + w > CARD.W - 20) fail('기록 보관: 카드 글자가 바깥으로 나감 ' + o.s); }
+    if (r.src === 'play') {
+      const facts = new Set(r.titles.map(x => `${x.y}년차 ${x.name}`).concat(r.awards.map(x => `${x.y}년차 ${x.name}`)));
+      t(by('item').every(x => facts.has(x) || facts.has(x.replace(/…$/, '')) || [...facts].some(f => x.endsWith('…') && f.startsWith(x.slice(0, -1)))), '카드에 기록에 없는 트로피가 있음');
+      const want = [String(r.g), r.g > 0 ? Math.round(r.w / r.g * 100) + '%' : null, r.g > 0 ? (Math.round(r.avg * 10) / 10).toFixed(1) : null, String(r.peak), String(r.mvp), r.big + '회'].filter(x => x != null);
+      t(JSON.stringify(by('stat')) === JSON.stringify(want) && by('none').length === 6 - want.length, '카드의 수치가 기록과 다름');
+      t(r.titles.length + r.awards.length ? by('item').length > 0 : by('note')[0] === '트로피 없이 커리어를 마쳤다', '트로피 표시');
+    } else t(by('none').length === 6 - ('peak' in r ? 1 : 0) - ('big' in r ? 1 : 0) && by('stat').length === 6 - by('none').length && by('item').length === 0 && by('pct').length === 0 && by('orgs').length === 0 && /예전 버전 기록/.test(by('note')[0]), '요약만 있는 기록의 카드에 없는 값이 들어감');
+  }
+  const longRec = Object.assign({}, recs[0], { nick: '가나다라마바사아자차카타', orgs: Array.from({ length: 12 }, (_, i) => '아주 긴 이름의 구단 ' + i) });
+  const lo = CARD.plan(longRec, measure).filter(o => o.t === 'text');
+  t(lo.find(o => o.k === 'nick').s.length <= 12 && (lo.find(o => o.k === 'orgs') || { s: '…' }).s.endsWith('…'), '긴 이름·긴 팀 목록 줄임');
+  t(CARD.fit(measure, 'W'.repeat(40), px => px + 'px x', 300, 100, 50).s.endsWith('…'), '줄임표');
+
+  // 4) 삭제, 되돌리기, 일부러 지운 기록은 은퇴 저장을 다시 열어도 돌아오지 않음
+  const lastId = G.state().cid, n0 = G.hall().length;
+  t(G.hallDel(lastId) && G.hall().length === n0 - 1 && G.hallTrash().some(r => r.id === lastId) && !G.hallDel('nope'), '삭제');
+  G.load(); t(G.hall().length === n0 - 1, '지운 기록이 불러오기로 되살아남');
+  t(G.hallUndo(lastId) && G.hall().length === n0 && G.hallTrash().length === 0 && !G.hallUndo(lastId), '되돌리기');
+  t(Object.keys(JSON.parse(store[ACHK]).got).length === gotIds.length, '기록 삭제가 도전 과제에 영향을 줌');
+
+  // 5) 예전 버전에서 은퇴한 저장(ID·시각 없음): 예전 키의 요약 한 줄이 상세 한 건으로 바뀌고, 두 건이 되지 않는다
+  { const s = JSON.parse(store[KEY]), sum = { nick: s.nick, role: s.q[0].role, score: s.q[0].score, grade: s.q[0].grade, ep: s.q[0].ep, peak: s.q[0].peak, titles: s.q[0].titles.filter(x => x.tier !== 'second').length, years: s.q[0].years };
+    delete s.cid; delete s.q[0].rid; delete s.q[0].at; clear(); store[KEY] = JSON.stringify(s); store[HALL] = JSON.stringify([sum, oldHall[3]]);
+    t(G.load() === 'ok' && G.hall().length === 2 && G.hall().filter(r => r.src === 'play').length === 1 && G.hallGet(G.state().cid).at === null, '예전 은퇴 저장의 기록 합치기');
+    const cid = G.state().cid; G.load(); G.load(); t(G.state().cid === cid && G.hall().length === 2 && G.achInfo().runs === 1, '예전 은퇴 저장을 다시 열자 기록이 늘어남'); }
+
+  // 6) 가득 찬 보관소(200명): 새 기록은 들어가고 나머지 가운데 점수가 가장 낮은 기록이 빠진다
+  clear(); store[LEG] = JSON.stringify({ v: 1, hall1: true, recs: Array.from({ length: 200 }, (_, i) => ({ id: 'f' + i, src: 'hall1', at: null, nick: 'F' + i, role: '코어', score: 1 + (i % 90), grade: 'C', ep: '' })), trash: [], gone: [] });
+  start('Full', 1); finish();
+  t(G.hall().length === 200 && !!G.hallGet(G.state().cid) && !G.hallGet('f0') && !!G.hallGet('f1') && !G.hallInfo().failed, '가득 찬 보관소');
+
+  // 7) 백업: 내보내기 → 빈 기기에서 가져오기 → 그대로인지, 이어서 은퇴까지
+  clear(); store[HALL] = JSON.stringify(oldHall.slice(0, 5));
+  start('Back1', 2); finish(); start('Back2', 3); for (let k = 0; k < 120; k++) G.autoStep();
+  t(!G.state().over && !!store[BAK], '백업 검사 준비');
+  const before = snap(), file = JSON.stringify(G.exportData()), obj = JSON.parse(file);
+  t(obj.format === 'progamer-career-backup' && obj.version === 1 && obj.app === G.VERSION && !isNaN(Date.parse(obj.exportedAt)) && JSON.stringify(Object.keys(obj.payload).sort()) === JSON.stringify(['achievements', 'career', 'careerBackup', 'hall', 'legacy', 'tutorialDone']), '백업 파일 형식');
+  t(snap() === before, '내보내기가 데이터를 바꿈');
+  clear(); let chk = G.importCheck(file);
+  t(chk.ok && chk.preview.career.nick === 'Back2' && !chk.preview.career.over && chk.preview.hall === 6 && chk.preview.ach === Object.keys(obj.payload.achievements.got).length && chk.preview.exportedAt > 0, '가져오기 미리보기');
+  t(Object.keys(store).length === 0, '확인 단계에서 데이터가 쓰임');
+  t(G.importApply(chk.data) === true && G.state() === null, '복원');
+  // 키 순서와 무관하게 내용을 비교한다(도전 과제는 복원할 때 목록 순서로 다시 정리된다)
+  const canon = v => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = canon(v[k]); return o; }, {}) : v);
+  const parse = sn => canon(JSON.parse(sn).map(x => (x && x[0] === '{' || x && x[0] === '[' ? JSON.parse(x) : x)));
+  t(JSON.parse(before)[0] === store[KEY] && JSON.parse(before)[1] === store[BAK] && JSON.stringify(parse(before)) === JSON.stringify(parse(snap())), '복원한 데이터가 내보낸 데이터와 다름');
+  t(G.load() === 'ok' && G.state().nick === 'Back2' && G.hall().length === 6 && G.achInfo().runs === 1, '복원 뒤 불러오기');
+  runCareer(-1, '복원한 커리어'); t(G.hall().length === 7 && G.achInfo().runs === 2, '복원한 커리어의 은퇴 기록');
+  // 예전 저장 22종: 열기 → 내보내기 → 빈 기기에서 가져오기 → 은퇴까지
+  let fxBack = 0;
+  for (const f of fxNames) {
+    clear(); store[KEY] = fs.readFileSync(path.join(fx, f + '.json'), 'utf8');
+    if (G.load() !== 'ok') fail('기록 보관: 예전 저장 ' + f + ' 을(를) 열지 못함');
+    const k0 = store[KEY], nick = G.state().nick, year = G.state().year, turns = G.state().stat.turns, out = JSON.stringify(G.exportData());
+    clear(); const c = G.importCheck(out);
+    if (!c.ok || !G.importApply(c.data) || store[KEY] !== k0 || G.load() !== 'ok' || G.state().nick !== nick || G.state().year !== year || G.state().stat.turns !== turns) fail('기록 보관: 예전 저장 ' + f + ' 의 백업·복원이 원본과 다름' + (c.ok ? '' : ' (' + c.err + ')'));
+    runCareer(-1, f + ' 복원'); fxBack++;
+  }
+
+  // 8) 잘못된 파일은 모두 거부되고 기기의 데이터는 그대로다
+  clear(); store[HALL] = JSON.stringify(oldHall.slice(0, 3)); start('Keep', 4); for (let k = 0; k < 60; k++) G.autoStep(); G.hall();
+  const keep = snap(), good = JSON.parse(file), mod = fn => { const x = JSON.parse(file); fn(x); return JSON.stringify(x); };
+  const bad = {
+    '문자열 아님': 5, '빈 문자열': '', '깨진 JSON': file.slice(0, 300), '배열': '[1]', 'null': 'null', '다른 형식': '{"a":1}',
+    '다른 format': mod(x => { x.format = 'other'; }), '새 버전': mod(x => { x.version = 2; }), '버전 0': mod(x => { x.version = 0; }), '버전 문자열': mod(x => { x.version = '1'; }), '버전 소수': mod(x => { x.version = 1.5; }),
+    'payload 없음': mod(x => { delete x.payload; }), 'payload 배열': mod(x => { x.payload = []; }),
+    '커리어 문자열': mod(x => { x.payload.career = 'x'; }), '저장 버전 다름': mod(x => { x.payload.career.v = 2; }), '능력치 문자열': mod(x => { x.payload.career.stats.mech = '50'; }), '능력치 범위': mod(x => { x.payload.career.stats.mech = 400; }),
+    '한계 누락': mod(x => { delete x.payload.career.caps; }), '나이 범위': mod(x => { x.payload.career.age = 99; }), '연차 소수': mod(x => { x.payload.career.year = 2.5; }), '없는 구단': mod(x => { x.payload.career.org = 'zz'; }),
+    '없는 포지션': mod(x => { x.payload.career.role = 'zz'; }), '없는 국적': mod(x => { x.payload.career.home = 'zz'; }), '이름 숫자': mod(x => { x.payload.career.nick = 5; }), '이름 너무 김': mod(x => { x.payload.career.nick = 'a'.repeat(50); }),
+    '자금 문자열': mod(x => { x.payload.career.money = '1e9'; }), '없는 장면': mod(x => { x.payload.career.q = [{ type: 'hack' }]; }), '장면 너무 많음': mod(x => { x.payload.career.q = Array.from({ length: 60 }, () => ({ type: 'info' })); }),
+    '우승 등급 손상': mod(x => { x.payload.career.car.titles = [{ y: 1, name: 'x', tier: 'galaxy' }]; }), '통산 음수': mod(x => { x.payload.career.car.g = -5; }), '거쳐 간 구단 손상': mod(x => { x.payload.career.car.orgs = ['zz']; }),
+    '계약 누락': mod(x => { delete x.payload.career.contract; }), '시즌 사본 손상': mod(x => { x.payload.careerBackup = { v: 1 }; }), '은퇴 표시와 장면 불일치': mod(x => { x.payload.career.over = true; }),
+    '전당 객체': mod(x => { x.payload.hall = {}; }), '전당 31명': mod(x => { x.payload.hall = oldHall.concat([oldHall[0]]); }), '전당 항목 손상': mod(x => { x.payload.hall = [{ nick: 1 }]; }),
+    '보관소 버전': mod(x => { x.payload.legacy.v = 2; }), '보관소 기록 손상': mod(x => { x.payload.legacy.recs = [{ score: 'a' }]; }), '보관소 201명': mod(x => { x.payload.legacy.recs = Array.from({ length: 201 }, (_, i) => ({ id: 'z' + i, nick: 'Z', score: 1 })); }),
+    '도전 과제 버전': mod(x => { x.payload.achievements.v = 9; }), '도전 과제 문자열': mod(x => { x.payload.achievements = 'all'; }),
+    '3MB 초과': mod(x => { x.payload.pad = 'x'.repeat(G.BACKUP_MAX + 1); }), '너무 깊음': mod(x => { let o = x.payload.career.flags; for (let i = 0; i < 40; i++) o = o.d = {}; }), '항목 너무 많음': mod(x => { x.payload.career.flags.big = Array.from({ length: 450000 }, () => 1); }),
+  };
+  let rejected = 0;
+  for (const name in bad) { const c = G.importCheck(bad[name]); if (c.ok || !c.err || c.data) fail('기록 보관: 잘못된 백업 "' + name + '" 이 거부되지 않음'); if (snap() !== keep) fail('기록 보관: 거부된 백업 "' + name + '" 이 데이터를 바꿈'); rejected++; }
+  t(G.importApply(null) === false && G.importApply('x') === false && snap() === keep, '빈 복원 요청');
+  // 꺾쇠는 무해한 글자로 바뀌고, 모르는 도전 과제와 여분의 값은 버려진다
+  const evil = '<img src=x onerror=alert(1)>';
+  chk = G.importCheck(mod(x => { x.payload.career.log = [{ y: 1, m: 2, t: evil, tone: 'gold' }]; x.payload.legacy.recs[0].ep = evil; x.payload.legacy.recs[0].hack = evil; x.payload.achievements.got.debut = { at: 5, nick: evil }; x.payload.achievements.got.cheat = { at: 5 }; x.payload.hall[0].ep = evil; x.payload.evil = evil; x.payload.career.__proto__x = 1; }));
+  t(chk.ok && !/[<>]/.test(JSON.stringify(chk.data)) && !('cheat' in chk.data.ach.got) && !('hack' in chk.data.legacy.recs[0]), '꺾쇠·여분 값 정리');
+  t(snap() === keep, '검사만으로 데이터가 바뀜');
+  // 형식이 맞는 백업의 내용을 조금 바꿔도(다른 선수 이름) 그대로 복원된다 = 전체 복원
+  chk = G.importCheck(mod(x => { x.payload.career.nick = 'Other'; x.payload.careerBackup = null; x.payload.achievements = null; x.payload.tutorialDone = true; }));
+  t(chk.ok && G.importApply(chk.data) && JSON.parse(store[KEY]).nick === 'Other' && !(BAK in store) && !(ACHK in store) && store[TUT] === '1' && G.load() === 'ok' && G.state().nick === 'Other', '전체 복원은 기기의 값을 파일 내용으로 바꾼다');
+
+  // 9) 복원 도중 쓰기 실패: 모든 키가 원래 값으로 돌아온다
+  const realSet = localStorage.setItem; let block = '';
+  localStorage.setItem = (k, v) => { if (k === block) throw new Error('QuotaExceededError'); realSet(k, v); };
+  for (const key of [KEY, BAK, HALL, LEG, ACHK]) {
+    clear(); store[HALL] = JSON.stringify(oldHall.slice(0, 2)); start('Roll', 5); for (let k = 0; k < 50; k++) G.autoStep(); G.hall();
+    const b4 = snap(); chk = G.importCheck(file); block = key; const res = G.importApply(chk.data); block = '';
+    t(res === false && snap() === b4 && G.state() && G.state().nick === 'Roll' && G.load() === 'ok', key + ' 쓰기 실패 뒤 되돌리기');
+  }
+  // 10) 보관소·도전 과제만 쓰지 못할 때: 은퇴는 정상, 커리어 저장도 정상, 실패가 표시된다
+  clear(); start('Quota', 6); for (let k = 0; k < 40; k++) G.autoStep();
+  block = LEG; const endSc = finish(); block = '';
+  t(G.state().over && endSc.type === 'retire' && G.hallInfo().failed && !G.hallGet(G.state().cid) && !G.saveFailed() && JSON.parse(store[KEY]).over && !!G.endRec() && G.endRec().nick === 'Quota', '보관소 쓰기 실패가 은퇴나 커리어 저장을 망가뜨림');
+  t(G.load() === 'ok' && !!G.hallGet(G.state().cid) && !G.hallInfo().failed && G.hall().length === 1, '쓰기 실패 뒤 다시 열면 기록이 들어가야 함');
+  clear(); start('Quota2', 7); block = ACHK; finish(); block = '';
+  t(G.state().over && G.achInfo().failed && !(ACHK in store) && !G.saveFailed() && !!G.hallGet(G.state().cid), '도전 과제 쓰기 실패가 다른 저장을 망가뜨림');
+  G.load(); t(!G.achInfo().failed && G.achInfo().runs === 1, '쓰기 실패 뒤 다시 열면 도전 과제가 기록되어야 함');
+  localStorage.setItem = realSet;
+
+  // 11) 기록 기능은 게임 난수를 쓰지 않는다
+  G.seed(909); const r0 = G.rand(); G.seed(909);
+  G.hall(); G.hall('titles'); G.hallInfo(); G.achList(); G.achInfo(); G.achSeen(); G.endRec(); G.importCheck(file); JSON.stringify(G.exportData()); CARD.plan(G.hall()[0], measure); G.hallDel(G.hall()[0].id); G.hallUndo(G.hallTrash()[0].id); G.save(); G.load();
+  t(G.rand() === r0, '기록 기능이 난수를 소비함');
+  t(G.state().nick !== '<b>' && (() => { G.newGame({ nick: '<b>"x\'&', region: 'kr', role: 'core', trait: 'brain' }); return G.state().nick === 'bx'; })(), '새 선수 아이디의 특수문자 정리');
+
+  console.log('— 기록 보관(7단계) —');
+  console.log(`은퇴 기록 검사 ${LGC.n}회(은퇴마다 보관소에 한 건, 은퇴 화면과 같은 값, 다시 불러와도 늘지 않음) | 단위 검사 ${R.n}개 통과: 예전 명예의 전당 30명 이관·원본 보존, 커리어 40개의 도전 과제 ${gotIds.length}종이 실제 기록과 일치, 카드 글자 ${cardOps}개 대조`);
+  console.log(`백업: 내보내기→빈 기기 복원 일치(커리어 저장은 글자 단위로 동일) 후 은퇴까지 진행 | 예전 저장 ${fxBack}종 백업·복원 후 완주 | 잘못된 파일 ${rejected}종 모두 거부·데이터 불변 | 쓰기 실패 5개 위치에서 되돌리기 | 보관소·도전 과제 쓰기 실패 시 커리어 저장 정상 | 난수 미사용`);
+}
