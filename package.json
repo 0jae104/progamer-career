@@ -1,6 +1,6 @@
 {
   "name": "progamer-career",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "프로게이머 키우기 — 개발용 검사 도구 설정. 게임 자체는 설치·빌드 없이 index.html 로 실행된다.",
   "scripts": {

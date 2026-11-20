@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.8.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.9.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -113,6 +113,7 @@
     for (const k in chk) {
       if (k === 'base') continue;
       if (k === 'trust') { const v = Math.round((S.trust - 50) * .3 * chk[k]); p += v; bd.push(['감독 신뢰 ' + Math.round(S.trust), v]); }
+      else if (k === 'cond') { const v = Math.round((S.cond - 60) * .25 * chk[k]); p += v; bd.push(['컨디션 ' + Math.round(S.cond), v]); }   // 포지션 전용 승부처의 과감한 선택에만 쓰인다
       else { const v = Math.round((S.stats[k] - 50) * .6 * chk[k]); p += v; bd.push([statName(k) + ' ' + Math.floor(S.stats[k]), v]); }
     }
     if (has('nerve')) { p += 8; bd.push(['강심장', 8]); }
@@ -210,7 +211,7 @@
     if (!m.plays) { addTrust(.2); return; }
     const y = S.yr, c = S.car;
     y.g++; y.rs += m.r; if (m.win) y.w++;
-    m.mvp = m.win && m.r >= 8 && rnd() < .5;
+    m.mvp = m.win && m.r >= (B.mvpAt[S.role] || 8) && rnd() < .5;
     if (m.mvp) y.mvp++;
     if (first) {
       y.g1++; y.rs1 += m.r; c.g++; c.rs += m.r; if (m.win) c.w++;
@@ -240,10 +241,13 @@
   }
   function momentScene(t, m, c, need, T, O, opp) {
     const sit = c.x === need - 1 && c.y === need - 1 ? 'last' : c.x === need - 1 ? 'match' : 'elim';
-    let pool = D.MOMENTS.filter(x => !c.used.includes(x.id) && !S.recentMom.includes(x.id) && (x.sit === 'any' || x.sit === sit));
-    const exact = pool.filter(x => x.sit === sit);
-    if (exact.length && rnd() < .5) pool = exact;
-    if (!pool.length) pool = D.MOMENTS.filter(x => x.sit === 'any' && !c.used.includes(x.id));
+    // 후보: 이 시리즈와 최근에 나오지 않은 상황 가운데 지금 상황(sit)에 맞는 것. 내 포지션 전용 상황이 있으면 B.roleMoment 확률로 그쪽에서 고른다.
+    const fit = D.MOMENTS.filter(x => !c.used.includes(x.id) && !S.recentMom.includes(x.id) && (x.sit === 'any' || x.sit === sit) && (!x.role || x.role === S.role));
+    const own = fit.filter(x => x.role);
+    let pool = fit.filter(x => !x.role);
+    if (own.length && (!pool.length || rnd() < B.roleMoment)) pool = own;
+    else { const exact = pool.filter(x => x.sit === sit); if (exact.length && rnd() < .5) pool = exact; }
+    if (!pool.length) pool = D.MOMENTS.filter(x => !x.role && x.sit === 'any' && !c.used.includes(x.id));
     const mo = pick(pool), pct = v => Math.round(v * 100);
     c.used.push(mo.id); S.recentMom.push(mo.id); if (S.recentMom.length > 6) S.recentMom.shift();
     return {
@@ -540,7 +544,7 @@
     for (const s of D.STATS) { const d = S.stats[s.id] - before[s.id]; if (Math.abs(d) >= .05) rep.growth.push([s.name, Math.round(d * 10) / 10]); }
     rivalsMonth(mi, rep);
     // 팬 반응: 이 달 경기 기록에서만 만든다(난수 없음).
-    const fr = fanReact(rep.matches, { nick: S.nick, tier: (sim.sq || S.squad) === 'second' ? 2 : 1, key: `${S.nick}|${S.year}|${S.m}`, debut: sim.c0 === 0 && S.car.g > 0, fan: S.fan });
+    const fr = fanReact(rep.matches, { nick: S.nick, tier: (sim.sq || S.squad) === 'second' ? 2 : 1, key: `${S.nick}|${S.year}|${S.m}`, debut: sim.c0 === 0 && S.car.g > 0, fan: S.fan, role: S.role });
     S.fan = fr.fan; if (fr.lines.length) rep.fans = fr.lines;
     S.car.peak = Math.max(S.car.peak, ovr()); S.monthsInOrg++;
     rep.ovr = Math.floor(ovr());
@@ -677,7 +681,7 @@
     const ev = evaluate(), c = S.car;
     S.over = true; S.pendingNewYear = false; S.pendingSim = false;
     const sc = Object.assign({
-      type: 'retire', reason, nick: S.nick, role: role().name, age: S.age, years: S.hist.length,
+      type: 'retire', reason, nick: S.nick, role: role().name, roleId: S.role, age: S.age, years: S.hist.length,
       g: c.g, w: c.w, avg: c.g ? c.rs / c.g : 0, mvp: c.mvp, kda: c.d ? (c.k + c.a) / c.d : 0, peak: Math.floor(c.peak), earn: c.earn,
       titles: c.titles.slice(), awards: c.awards.slice(), orgs: c.orgs.map(id => D.ORG[id].name),
       news: c.g ? `${S.nick}, ${S.age}세에 은퇴 — 1군 ${c.g}경기${c.titles.filter(t => t.tier !== 'second').length ? `, 우승 ${c.titles.filter(t => t.tier !== 'second').length}회` : ''}` : `${S.nick}, 1군 무대를 밟지 못하고 ${S.age}세에 은퇴`,
@@ -1219,7 +1223,7 @@
       id: r.id, nick: r.nick, role: D.ROLES.find(x => x.id === r.role).name, style: r.style, age: r.age, ovr: Math.floor(r.ovr), org: D.ORG[r.org].name, color: D.ORG[r.org].color,
       squad: SQUAD[r.squad], retired: !!r.retired, same,
       status: r.retired ? `은퇴 (${r.retired.age}세)` : r.out ? `부상 (${r.out}개월)` : r.slump ? '부진' : same ? '같은 팀' : '활동 중',
-      rv: Math.round(r.rv), rs: Math.round(r.rs), label: relLabel(r), w: r.w, l: r.l, news: r.news, titles: r.titles, hist: r.hist.slice(-6).reverse(), origin: r.origin,
+      sameRole: r.role === S.role, rv: Math.round(r.rv), rs: Math.round(r.rs), label: relLabel(r), w: r.w, l: r.l, news: r.news, titles: r.titles, hist: r.hist.slice(-6).reverse(), origin: r.origin,
     };
   }
   // 은퇴 화면의 회고 한 줄. 실제 전적과 관계에서만 문장을 만든다.
@@ -1246,7 +1250,7 @@
     fan.g += played.length;
     const w = played.filter(m => m.win).length, l = played.length - w, avg = played.reduce((a, m) => a + m.r, 0) / played.length;
     const add = (k, p, m, extra) => facts.push(Object.assign({ k, p, w, l, avg: avg.toFixed(1), L: l > 0 },
-      m ? { opp: m.opp, r: m.r.toFixed(1), rn: m.r, score: m.score, label: m.label } : {}, extra || {}));
+      m ? { opp: m.opp, r: m.r.toFixed(1), rn: m.r, score: m.score, label: m.label, kl: m.k, de: m.d, as: m.a, ka: m.k + m.a } : {}, extra || {}));
     const last = f => played.filter(f).pop();
     const fin = last(m => m.label === '결승'); if (fin) add(fin.win ? 'final_w' : 'final_l', 100, fin);
     if (ctx.debut) add('debut', 95, played[0]);
@@ -1254,7 +1258,7 @@
     if (rvm) { const v = rvm.rv[0]; add(rvm.win ? 'rv_w' : 'rv_l', 90, rvm, { rival: v.nick, rr: v.r.toFixed(1), gt: rvm.r > v.r, lt: rvm.r < v.r, hw: v.w, hl: v.l, behind: v.l > v.w }); }
     const po = last(m => m.label && m.label !== '결승'); if (po) add(po.win ? 'po_w' : 'po_l', 80, po);
     const mv = played.filter(m => m.mvp).sort((a, b) => b.r - a.r)[0]; if (mv) add('mvp', 75, mv);
-    const cm = last(m => m.moms && m.moms.length); if (cm) add(cm.moms[cm.moms.length - 1].ok ? 'clutch_ok' : 'clutch_no', 70, cm);
+    const cm = last(m => m.moms && m.moms.length); if (cm) add(cm.moms[cm.moms.length - 1].ok ? 'clutch_ok' : 'clutch_no', 70, cm, { mt: cm.moms[cm.moms.length - 1].title });
     if (fan.st >= 3) add('streak_w', 68, null, { n: fan.st }); else if (fan.st <= -3) add('streak_l', 68, null, { n: -fan.st });
     const cl = played.filter(m => !m.win && m.r >= 7.5).sort((a, b) => b.r - a.r)[0]; if (cl) add('carry_l', 65, cl);
     const pw = played.filter(m => m.win && m.r <= 5.4).sort((a, b) => a.r - b.r)[0]; if (pw) add('pass_w', 60, pw);
@@ -1265,10 +1269,10 @@
   // 문장 틀에 값을 채운다. 필요한 값이 하나라도 없으면 null(그 문장은 쓰지 않는다).
   function fanFill(t, f, nick) {
     let ok = true;
-    const out = t.replace(/\{(\w+)\}/g, (_, k) => { const v = k === 'nick' ? nick : f[k]; if (v == null || v === '') ok = false; return v; });
+    const out = t.replace(/\{(\w+)\}/g, (_, k) => { const v = k === 'nick' ? nick : f[k]; if (v == null || v === '' || (typeof v === 'number' && !Number.isFinite(v))) ok = false; return v; });
     return ok ? out : null;
   }
-  const fanCond = (tp, f, tier) => (!tp.tier || tp.tier === tier) && (!tp.if || (tp.if === 'r6' ? f.rn >= 6 : tp.if === 'r6-' ? f.rn < 6 : !!f[tp.if]));
+  const fanCond = (tp, f, tier, role) => (!tp.role || tp.role === role) && (!tp.tier || tp.tier === tier) && (!tp.if || (tp.if === 'r6' ? f.rn >= 6 : tp.if === 'r6-' ? f.rn < 6 : !!f[tp.if]));
   // matches: 그 달의 경기 기록. ctx: { nick, tier(1 또는 2), key(문장 선택용 문자열), debut(이 달에 1군 첫 출전), fan(S.fan) }
   // 반환: { lines: [{ k, id, v, t }], fan: 갱신된 상태 }. 상태를 직접 바꾸지 않는 순수 함수다.
   function fanReact(matches, ctx) {
@@ -1279,7 +1283,7 @@
       const cand = [];
       D.FAN[f.k].forEach((tp, i) => {
         const id = f.k + '#' + i;
-        if (!fanCond(tp, f, ctx.tier) || fan.seen.some(e => e[0] === id) || (newVoice && lines.some(x => x.v === tp.v))) return;
+        if (!tp.t || !fanCond(tp, f, ctx.tier, ctx.role) || fan.seen.some(e => e[0] === id) || (newVoice && lines.some(x => x.v === tp.v))) return;
         const t = fanFill(tp.t, f, ctx.nick); if (t) cand.push({ k: f.k, id, v: tp.v, t });
       });
       if (!cand.length) return false;
@@ -1292,6 +1296,49 @@
     // 두 줄이 안 되면 같은 사실에서 다른 문장을 하나 더 찾는다. 그래도 없으면 줄 수를 줄인다(반복보다 생략).
     for (const f of facts) { if (lines.length >= 2) break; take(f, true) || take(f, false); }
     return { lines, fan };
+  }
+
+  /* ---------- 포지션: 표시 이름, 경기 해설, 계약 제안 설명 (0.9.0) ----------
+     모두 이미 있는 기록을 읽어 문장으로 바꾸는 조회 함수다. 상태를 바꾸지 않고 난수도 쓰지 않는다. */
+  // 포지션 이름을 화면에 보여 줄 때 쓴다. id 를 알면 지금 이름, 모르면 예전 이름(선봉·유격·코어·사수·지원)을 지금 이름으로 바꾼다.
+  // 저장된 값은 건드리지 않는다. 모르는 글자는 그대로, 비어 있으면 '미상'.
+  function roleLabel(name, id) {
+    const r = D.ROLES.find(x => x.id === id) || D.ROLES.find(x => x.name === name) || D.ROLES.find(x => x.id === D.ROLE_OLD[name]);
+    return r ? r.name : (typeof name === 'string' && name ? name : '미상');
+  }
+  // 월간 보고의 "이번 달 활약" 한 줄. 그 달 출전 경기 가운데 평점이 가장 높은 경기(없으면 가장 낮은 경기)의 실제 킬·데스·어시스트·평점만으로 만든다.
+  // 포지션마다 앞에 내세우는 숫자가 다르다: 탑 데스·관여, 정글 관여, 미드 킬·평점, 원딜 킬·데스, 서폿 어시스트.
+  function roleReview(matches, roleId) {
+    const played = (matches || []).filter(m => m && m.plays && Number.isFinite(m.r)); if (!played.length) return null;
+    const best = played.reduce((a, m) => (m.r > a.r ? m : a)), worst = played.reduce((a, m) => (m.r < a.r ? m : a));
+    const good = best.r >= 7.5, m = good ? best : worst.r <= 4.8 ? worst : null; if (!m) return null;
+    const id = roleId || (S && S.role), pos = roleLabel('', id), ka = m.k + m.a, r = m.r.toFixed(1);
+    const head = { van: `데스 ${m.d} · 관여 ${ka}`, rov: `킬 관여 ${ka}`, core: `${m.k}킬 · 평점 ${r}`, gun: `${m.k}킬 ${m.d}데스`, sup: `어시스트 ${m.a}` }[id] || `평점 ${r}`;
+    let text;
+    if (!good) text = `${m.opp}전 평점 ${r}. ${m.d}번 쓰러졌고 킬과 어시스트를 합쳐 ${ka}번 관여했다.`;
+    else text = `${m.opp}전 ` + ({
+      van: m.d <= 2 ? `${m.d}번밖에 쓰러지지 않았다. 탑이 버텨 준 경기다.` : `킬과 어시스트를 합쳐 ${ka}번 관여했다. 탑이 싸움마다 있었다.`,
+      rov: `킬과 어시스트를 합쳐 ${ka}번. 정글의 값은 관여 횟수에서 나온다.`,
+      core: `${m.k}킬에 평점 ${r}. 미드가 중심을 잡은 경기다.`,
+      gun: m.d <= 2 ? `${m.k}킬을 하는 동안 ${m.d}번만 쓰러졌다. 원딜은 살아 있어야 때린다.` : `${m.k}킬. 쓰러지면서도 화력은 냈다.`,
+      sup: `킬은 ${m.k}개여도 어시스트가 ${m.a}개다. 서폿의 평점 ${r}은 여기서 나온다.`,
+    }[id] || `평점 ${r}.`);
+    return { pos, good, opp: m.opp, r: m.r, k: m.k, d: m.d, a: m.a, head, text, mvp: !!m.mvp };
+  }
+  // 계약 제안 하나에 대한 설명. 구단 전력·리그 순위·내 OVR과의 차이·이적 뒤 감독 신뢰·같은 구단의 라이벌·연봉 차이.
+  function offerInfo(of) {
+    if (!S || !of || !D.ORG[of.org] || !Number.isFinite(S.orgStr[of.org])) return null;
+    const g = D.ORG[of.org], str = Math.round(S.orgStr[g.id]), o = Math.floor(ovr()), here = g.id === S.org;
+    const peers = D.ORGS.filter(x => x.region === g.region).sort((a, b) => S.orgStr[b.id] - S.orgStr[a.id]);
+    let honor = '';
+    for (const sp of ['summer', 'spring']) { const d = S.dom && S.dom[sp] && S.dom[sp][g.region]; if (!honor && d) honor = d.champ === g.id ? `올해 ${SPLIT[sp]} 우승 팀` : d.runner === g.id ? `올해 ${SPLIT[sp]} 준우승 팀` : ''; }
+    const trust = here ? Math.round(S.trust) : of.squad === 'first' ? 35 : 45, line = of.squad === 'first' ? 45 : 30;
+    return {
+      lg: D.REGION[g.region].lgName, abroad: g.region !== S.home, home: D.REGION[S.home].name, str, rank: peers.findIndex(x => x.id === g.id) + 1, teams: peers.length, honor,
+      ovr: o, diff: o - str, squad: of.squad, here, trust, line, starter: trust >= line, need1: Math.ceil(S.orgStr[g.id] - B.toFirstGap),
+      rivals: rivalsAlive().filter(r => r.org === g.id).map(r => ({ nick: r.nick, squad: SQUAD[r.squad], role: roleLabel('', r.role), same: r.role === S.role })),
+      pay: of.salary - S.contract.salary,
+    };
   }
 
   /* ---------- 처음 안내와 우승 연출의 표시 상태 ----------
@@ -1609,6 +1656,7 @@
     metrics: () => S ? Object.assign({}, S.stat) : null,
     fanReact, FAN_GAP, tutTip, tutNext, tutSkip, tutReplay, celePlayed,
     rivals: () => S ? S.rivals.map(rivalView) : [],
+    roleLabel, roleReview, offerInfo,
     rivalFixtures: () => (S && S.org ? rivalFixtures().map(r => ({ nick: r.nick, org: D.ORG[r.org].name, w: r.w, l: r.l })) : []),
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },
     hasSave() { return !!(read(KEY) || read(BAK)); },

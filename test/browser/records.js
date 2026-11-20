@@ -93,6 +93,7 @@ module.exports = async function records(browser, url, R) {
     const leg = JSON.parse(await pg.evaluate(() => localStorage.getItem('pg_legacy_v1')));
     R.ok(leg.v === 1 && leg.recs.length === 30 && new Set(leg.recs.map(r => r.id)).size === 30 && leg.recs.every(r => r.src === 'hall1' && r.at === null && !('g' in r) && !('titles' in r)), 'D: 옮긴 기록에 없는 값이 채워졌거나 ID가 겹침');
     await pg.reload(); await pg.waitForTimeout(200); await pg.click('[data-act=hall]'); R.ok(await pg.locator('.hmain').count() === 30, 'D: 다시 열자 수가 달라짐');
+    R.ok((await pg.locator('.hmain').first().innerText()).includes('미드') && !(await pg.innerText('.hlist')).includes('코어') && leg.recs.every(r => r.role === '코어'), 'D: 예전 포지션 이름(코어)이 화면에서는 미드로 보이고 저장은 그대로여야 함');
     await pg.click('[data-act=sort][data-id=titles]'); R.ok((await pg.locator('.hmain').first().innerText()).includes('우승 3'), 'D: 우승순 정렬이 아님');
     await pg.click('[data-act=sort][data-id=recent]'); await pg.click('[data-act=sort][data-id=score]'); R.ok((await pg.locator('.hmain').first().innerText()).includes('가나다라마바사아자차'), 'D: 점수순 정렬이 아님');
     for (const i of [0, 1, 2]) await pg.locator('.hcmp').nth(i).click();

@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.8.0';
+  const UI_VERSION = '0.9.0';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -54,12 +54,22 @@
     </section>`;
   }
   const opt = (grp, id, name, desc) => `<button class="opt" data-act="pick" data-grp="${esc(grp)}" data-id="${esc(id)}" aria-pressed="${U.C[grp] === id}"><b>${esc(name)}</b>${desc ? `<span>${esc(desc)}</span>` : ''}</button>`;
+  // 포지션에서 비중이 큰 능력치 세 개(D.ROLES 의 w 에서 그대로 읽는다)
+  const roleKeys = r => D.STATS.map(st => [st, r.w[st.id]]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  // 그 포지션의 OVR을 가장 빨리 올리는 월간 계획 두 개: 계획의 능력치별 성장량 × 포지션 비중의 합이 큰 순서
+  const rolePlans = r => D.PLANS.map(p => [p, Object.keys(p.g).reduce((a, k) => a + p.g[k] * r.w[k], 0)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]);
+  function roleOpt(r) {
+    const on = U.C.role === r.id;
+    return `<button class="opt role" data-act="pick" data-grp="role" data-id="${esc(r.id)}" aria-pressed="${on}"><b>${esc(r.name)} <small>${esc(r.en)}</small></b><span>${esc(on ? r.easy : r.desc)}</span>${on ? `
+      <span class="rinfo"><em>장점</em>${esc(r.good)}</span><span class="rinfo"><em>주의</em>${esc(r.care)}</span>
+      <span class="rinfo"><em>주요 능력치</em>${roleKeys(r).map(([st, w]) => `${esc(st.name)} ${Math.round(w * 100)}%`).join(' · ')}</span>` : ''}</button>`;
+  }
   function vCreate() {
     return `<section class="page">
       <div><p class="eyebrow">NEW CAREER</p><h2>선수 등록</h2></div>
       <div class="field"><label for="nick">선수 아이디 (최대 10자)</label><input id="nick" maxlength="10" autocomplete="off" placeholder="예: Haneul" value="${esc(U.C.nick)}"></div>
       <div class="field"><span class="lab">국적 — 처음 뛸 리그와 대표팀이 정해진다</span><div class="opts c2">${D.REGIONS.map(r => opt('region', r.id, r.name, r.lgName)).join('')}</div></div>
-      <div class="field"><span class="lab">포지션</span><div class="opts">${D.ROLES.map(r => opt('role', r.id, r.name, r.desc)).join('')}</div></div>
+      <div class="field"><span class="lab">포지션 — 고른 자리의 장점과 주의점이 아래에 펼쳐진다</span><div class="opts">${D.ROLES.map(roleOpt).join('')}</div></div>
       <div class="field"><span class="lab">성향</span><div class="opts">${D.TRAITS.map(t => opt('trait', t.id, t.name, t.desc)).join('')}</div></div>
       <button class="btn" data-act="start">입단 테스트 보러 가기</button>
       <button class="btn line" data-act="title">돌아가기</button>
@@ -86,7 +96,7 @@
       ${trash ? `<div class="warn undo" role="status"><span>${esc(trash.nick)}의 기록을 지웠다.</span><button data-act="undo" data-id="${esc(trash.id)}">되돌리기</button></div>` : ''}
       ${h.length ? `<p class="dim small">${esc(h.length)}명 보관 중 (최대 ${esc(info.max)}명. 가득 차면 점수가 가장 낮은 기록부터 빠진다)</p>
         ${seg('sort', U.sort, [['score', '점수순'], ['titles', '우승순'], ['recent', '최근 은퇴순']])}
-        <ol class="hlist">${h.map((r, i) => `<li><button class="hmain" data-act="rec" data-id="${esc(r.id)}"><span class="rk">${i + 1}</span><span class="who"><b>${esc(r.nick)}</b><small>${esc(r.role)} · ${esc(r.grade || '-')} ${esc(r.ep)}</small></span><span class="pt"><b>${esc(r.score)}</b><small>우승 ${typeof r.big === 'number' ? r.big : '-'}</small></span></button><button class="hcmp" data-act="cmp" data-id="${esc(r.id)}" aria-pressed="${U.cmp.includes(r.id)}" aria-label="${esc(r.nick)} 비교에 담기">비교</button></li>`).join('')}</ol>
+        <ol class="hlist">${h.map((r, i) => `<li><button class="hmain" data-act="rec" data-id="${esc(r.id)}"><span class="rk">${i + 1}</span><span class="who"><b>${esc(r.nick)}</b><small>${esc(G.roleLabel(r.role, r.roleId))} · ${esc(r.grade || '-')} ${esc(r.ep)}</small></span><span class="pt"><b>${esc(r.score)}</b><small>우승 ${typeof r.big === 'number' ? r.big : '-'}</small></span></button><button class="hcmp" data-act="cmp" data-id="${esc(r.id)}" aria-pressed="${U.cmp.includes(r.id)}" aria-label="${esc(r.nick)} 비교에 담기">비교</button></li>`).join('')}</ol>
         ${U.cmp.length === 2 ? '<button class="btn" data-act="compare">고른 두 선수 비교하기</button>' : U.cmp.length === 1 ? '<p class="dim small">한 명을 더 고르면 비교할 수 있다.</p>' : ''}`
         : '<p class="dim">아직 은퇴한 선수가 없다. 첫 커리어를 끝까지 살아 보자.</p>'}`;
   }
@@ -95,7 +105,7 @@
     const r = G.hallGet(U.rec); if (!r) return vVault();
     const full = r.src === 'play';
     return `<section class="page vault" ${U.dlg ? 'inert aria-hidden="true"' : ''}>
-      <div><p class="eyebrow">HALL OF FAME</p><h2 class="wrap">${esc(r.nick)}</h2><p class="dim">${[esc(r.role), typeof r.age === 'number' ? `${esc(r.age)}세 은퇴` : '', typeof r.years === 'number' ? `${esc(r.years)}시즌` : ''].filter(Boolean).join(' · ')}</p></div>
+      <div><p class="eyebrow">HALL OF FAME</p><h2 class="wrap">${esc(r.nick)}</h2><p class="dim">${[esc(G.roleLabel(r.role, r.roleId)), typeof r.age === 'number' ? `${esc(r.age)}세 은퇴` : '', typeof r.years === 'number' ? `${esc(r.years)}시즌` : ''].filter(Boolean).join(' · ')}</p></div>
       <div class="grade"><b>${esc(r.grade || '-')}</b><div><h2>${esc(r.ep) || '-'}</h2><p>커리어 점수 ${esc(r.score)}점${typeof r.pct === 'number' ? ` · 자동 시뮬레이션 커리어 대비 상위 ${esc(r.pct)}%` : ''}</p></div></div>
       ${full ? '' : '<p class="warn">예전 버전의 명예의 전당에서 옮긴 기록이다. 그때 저장된 요약만 남아 있어 나머지는 "기록 없음"으로 보인다.</p>'}
       <div class="kv"><div><span>1군 경기</span><b>${val(r.g)}</b></div><div><span>승률</span><b>${r.g > 0 ? val(r.w, w => Math.round(w / r.g * 100) + '%') : none}</b></div><div><span>평균 평점</span><b>${r.g > 0 ? val(r.avg, f1) : none}</b></div>
@@ -112,7 +122,7 @@
   }
   function vCompare() {
     const a = G.hallGet(U.cmp[0]), b = G.hallGet(U.cmp[1]); if (!a || !b) return vVault();
-    const rows = [['포지션', r => esc(r.role) || none], ['등급', r => esc(r.grade) || none], ['별칭', r => esc(r.ep) || none], ['커리어 점수', r => val(r.score)], ['은퇴 나이', r => val(r.age, v => v + '세')], ['시즌', r => val(r.years)],
+    const rows = [['포지션', r => esc(G.roleLabel(r.role, r.roleId))], ['등급', r => esc(r.grade) || none], ['별칭', r => esc(r.ep) || none], ['커리어 점수', r => val(r.score)], ['은퇴 나이', r => val(r.age, v => v + '세')], ['시즌', r => val(r.years)],
       ['1군 경기', r => val(r.g)], ['승률', r => (r.g > 0 ? val(r.w, w => Math.round(w / r.g * 100) + '%') : none)], ['평균 평점', r => (r.g > 0 ? val(r.avg, f1) : none)], ['최고 OVR', r => val(r.peak)], ['경기 MVP', r => val(r.mvp)],
       ['1군 우승', r => val(r.big, v => v + '회')], ['월드 우승', r => (r.src === 'play' ? r.titles.filter(t => t.tier === 'world').length + '회' : none)], ['개인상', r => (r.src === 'play' ? r.awards.length + '개' : none)], ['통산 수입', r => val(r.earn, money)], ['은퇴한 날', r => (r.at ? day(r.at) : none)]];
     return `<section class="page vault"><div><p class="eyebrow">COMPARE</p><h2>기록 비교</h2></div>
@@ -182,6 +192,8 @@
   }
   function openCard(rec, from) {
     if (U.card && U.card.url) URL.revokeObjectURL(U.card.url);
+    // 카드에는 지금 쓰는 포지션 이름을 넣는다(예전 기록의 '코어'는 '미드'로 보인다). 기록 자체는 바꾸지 않고 그릴 때 쓰는 사본만 바꾼다.
+    rec = Object.assign({}, rec, { role: G.roleLabel(rec.role, rec.roleId) });
     U.card = { rec, from, state: 'busy', msg: '', url: '', blob: null, file: null };
     go('card'); makeCard();
   }
@@ -253,6 +265,9 @@
     const perks = D.CARDS.filter(c => c.perk && S.perks.includes(c.perk));
     return `<div><p class="sec">능력치 <span class="chip">오른쪽 글자는 잠재력</span></p>
       ${D.STATS.map(s => `<div class="stat"><span class="nm">${esc(s.name)}</span><div class="bar"><i style="width:${Math.floor(S.stats[s.id])}%"></i></div><span class="v">${Math.floor(S.stats[s.id])}</span><span class="pot ${G.pot(s.id)}">${G.pot(s.id)}</span><small>${esc(s.tip)} · 포지션 비중 ${Math.round(G.role().w[s.id] * 100)}%</small></div>`).join('')}</div>
+      ${(() => { const r = G.role(); return `<div class="card guide"><b>${esc(r.name)} 가이드</b><br><span class="dim">${esc(r.easy)}</span>
+        <ul class="oinfo"><li>OVR에 크게 들어가는 능력치: ${roleKeys(r).map(([st, w]) => `${esc(st.name)} ${Math.round(w * 100)}% (지금 ${Math.floor(S.stats[st.id])})`).join(' · ')}</li>
+        <li>이 포지션의 OVR을 빨리 올리는 계획: ${rolePlans(r).map(p => esc(p.name)).join(', ')}</li><li>주의: ${esc(r.care)}</li></ul></div>`; })()}
       ${rivalCards()}
       <div><p class="sec">특성</p>${perks.length ? `<div class="stack">${perks.map(c => `<div class="card"><b>${esc(c.name)}</b><br><span class="dim">${esc(c.desc)}</span></div>`).join('')}</div>` : '<p class="dim">시즌이 끝날 때마다 성장 카드를 한 장 고른다.</p>'}</div>
       <div class="card"><b>${D.TRAITS.find(t => t.id === S.trait).name}</b><br><span class="dim">${D.TRAITS.find(t => t.id === S.trait).desc}</span></div>`;
@@ -261,9 +276,10 @@
   function rivalCard(r, extra) {
     return `<div class="rival ${r.retired ? 'gone' : ''}" style="--team:${esc(r.color)}">
       <div class="rhead"><canvas class="av" data-seed="${esc(r.nick)}" data-color="${esc(r.color)}"></canvas>
-        <div class="grow"><b>${esc(r.nick)}</b><span>${esc(r.role)} · ${esc(r.style)} · ${esc(r.age)}세</span><span>${esc(r.org)} ${esc(r.squad)} · ${esc(r.status)}</span></div>
+        <div class="grow"><b>${esc(r.nick)}</b><span>${esc(G.roleLabel(r.role))} · ${esc(r.style)} · ${esc(r.age)}세</span><span>${esc(r.org)} ${esc(r.squad)} · ${esc(r.status)}</span></div>
         <div class="rovr"><b>${esc(r.ovr)}</b><span>OVR</span></div></div>
       <div class="rmid"><div class="h2h"><span>상대 전적</span><b>${esc(r.w)}승 ${esc(r.l)}패</b></div>${relBar('경쟁심', r.rv)}${relBar('존중', r.rs)}</div>
+      ${r.sameRole === true ? '<p class="rkind same"><b>같은 포지션</b>같은 팀이 되면 한 자리를 두고 다투는 상대다.</p>' : r.sameRole === false ? '<p class="rkind"><b>다른 포지션</b>자리는 겹치지 않는다. 경기에서 상대 팀으로 만난다.</p>' : ''}
       <p class="rnews"><span class="chip">${esc(r.label)}</span>${r.titles ? `<span class="chip gold">우승 ${esc(r.titles)}회</span>` : ''} ${esc(r.news)}</p>
       ${extra || ''}
       ${r.hist.length ? `<details><summary>함께한 기록</summary><ul class="log">${r.hist.map(h => `<li><time>${esc(h.y)}년차 ${esc(h.m)}월</time><span>${esc(h.t)}</span></li>`).join('')}</ul></details>` : ''}</div>`;
@@ -310,6 +326,23 @@
   const matchList = ms => ms.length ? `<ul class="matches">${ms.map(m => `<li><span class="opp">${m.label ? `<small>${esc(m.label)}</small>` : ''}vs ${esc(m.opp)}</span><span class="res ${m.win ? 'W' : 'L'}">${m.score ? esc(m.score) + ' ' : ''}${m.win ? '승' : '패'}</span>${m.plays ? `<span class="rt">${f1(m.r)}</span><span class="kda">${esc(m.k)}/${esc(m.d)}/${esc(m.a)}${m.mvp ? '<span class="mvp">MVP</span>' : ''}</span>` : '<span class="rt dim">-</span><span class="kda">벤치</span>'}${(m.rv || []).map(v => `<small class="mom rvl">라이벌전 · ${esc(v.nick)} 평점 ${f1(v.r)}</small>`).join('')}${(m.moms || []).map(o => `<small class="mom ${o.ok ? 'ok' : 'no'}">승부처 · ${esc(o.title)} — ${esc(o.label)} · ${o.ok ? '성공' : '실패'}${o.auto ? ' (자동)' : ''}</small>`).join('')}</li>`).join('')}</ul>` : '';
   const board = (sc, x, y) => `<div class="board"><div class="side"><span>${esc(sc.me)}</span><b>${esc(x)}</b></div><i>:</i><div class="side opp"><b>${esc(y)}</b><span>${esc(sc.opp)}</span></div></div>`;
   const SIT = { last: '마지막 세트', match: '매치 포인트', elim: '탈락 위기' };
+  // 월간 보고의 포지션 해설 한 줄. 그 달 경기의 실제 킬·데스·어시스트·평점에서만 나온다(G.roleReview).
+  function roleLine(matches) {
+    const v = G.roleReview(matches); if (!v) return '';
+    return `<p class="act ${v.good ? 'up' : 'down'}"><b>${esc(v.pos)} 해설</b><span class="chip ${v.good ? 'up' : 'down'}">${esc(v.head)}</span>${esc(v.text)}</p>`;
+  }
+  // 계약 제안에 붙는 구단 설명
+  function offerLines(o) {
+    const v = G.offerInfo(o); if (!v) return '';
+    const sign = n => (n > 0 ? '+' : '') + n, L = [];
+    L.push(`${esc(v.lg)} · 전력 ${esc(v.str)} (리그 ${esc(v.teams)}팀 중 ${esc(v.rank)}위)${v.honor ? ` · ${esc(v.honor)}` : ''}`);
+    if (v.squad === 'first') L.push(`내 OVR ${esc(v.ovr)}, 팀 전력보다 ${esc(sign(v.diff))}. ${v.diff >= 2 ? '내가 뛰면 팀이 강해진다.' : v.diff >= -3 ? '팀 평균과 비슷하다.' : '팀 평균에 못 미친다. 내가 뛰면 팀 전력이 조금 내려간다.'}`);
+    else if (v.squad === 'second') L.push(`2군 계약. 1군 콜업 심사 기준은 OVR ${esc(v.need1)} (지금 ${esc(v.ovr)}).`);
+    L.push(v.here ? `지금 팀이다. 감독 신뢰는 ${esc(v.trust)} 그대로(${v.starter ? '주전' : '벤치'}).` : `옮기면 감독 신뢰 ${esc(v.trust)}에서 시작한다. ${v.starter ? '바로 주전으로 뛴다.' : `주전 기준 ${esc(v.line)}에 닿기 전까지는 벤치다.`}`);
+    for (const r of v.rivals) L.push(`이 팀 소속 라이벌: ${esc(r.nick)}(${esc(r.role)}, ${esc(r.squad)}). ${r.same ? '같은 포지션이라 자리를 두고 다툰다.' : '포지션이 달라 동료가 된다.'}`);
+    if (!v.here) L.push(`지금 연봉보다 ${money(Math.abs(v.pay))} ${v.pay >= 0 ? '많다' : '적다'}.${v.abroad ? ` 다른 나라 리그다. 국가대표는 그대로 ${esc(v.home)}.` : ''}`);
+    return `<ul class="oinfo">${L.map(x => `<li>${x}</li>`).join('')}</ul>`;
+  }
   function retireBtn() { return `<button class="btn line" data-act="retire">${U.confirm === 'retire' ? '한 번 더 누르면 은퇴한다. 되돌릴 수 없다' : '은퇴한다'}</button>`; }
 
   function vScene(sc, S) {
@@ -339,7 +372,7 @@
         h = `${sc.checked ? `<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${esc(sc.p)}%</span>` : ''}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>
           <div class="chips">${sc.lines.map(l => `<span class="chip ${/[-]\d|하락/.test(l) ? 'down' : 'up'}">${esc(l)}</span>`).join('')}</div>${okBtn()}`; break;
       case 'month':
-        h = `<p class="eyebrow">${esc(sc.title)} · ${esc(sc.plan)}</p><h2>${esc(sc.sub)}</h2>${tip('report', sc)}${matchList(sc.matches)}
+        h = `<p class="eyebrow">${esc(sc.title)} · ${esc(sc.plan)}</p><h2>${esc(sc.sub)}</h2>${tip('report', sc)}${matchList(sc.matches)}${roleLine(sc.matches)}
           ${sc.eval ? `<div class="kv"><div><span>월말 평가전 평점</span><b>${f1(sc.eval.r)}</b></div><div><span>연습생 순위</span><b>12명 중 ${esc(sc.eval.rank)}위</b></div><div><span>코치 평가</span><b>${sc.eval.d == null ? '-' : (sc.eval.d > 0 ? '+' : '') + esc(sc.eval.d)}</b></div></div>` : ''}
           ${sc.fans && sc.fans.length ? `<div class="fans"><p class="sec">팬 반응</p>${sc.fans.map(x => `<p><span class="chip v${esc(x.v)}">${D.FAN_VOICE[x.v]}</span>${esc(x.t)}</p>`).join('')}</div>` : ''}
           ${sc.eval && sc.eval.rivals ? `<p class="fine">동기 순위 · ${sc.eval.rivals.map(v => `${esc(v.nick)} ${esc(v.rank)}위 (평점 ${f1(v.r)})`).join(' · ')}</p>` : ''}
@@ -364,6 +397,7 @@
       case 'offers':
         h = `<p class="eyebrow">CONTRACT</p><h2>계약 제안</h2><p>${esc(sc.msg)}</p>
           ${sc.offers.map((o, i) => `<div class="offer"><div class="row"><div class="grow"><b>${esc(o.name)}</b> <span class="dim">${esc(o.region)}${o.renew ? ' · 재계약' : ''}</span><br><span class="dim">${G.SQUAD[o.squad]} · ${esc(o.years)}년 · 연봉</span> <b>${money(o.salary)}</b></div></div>
+            ${offerLines(o)}
             <div class="btns"><button class="btn" data-act="accept" data-i="${esc(i)}">계약</button><button class="btn ghost" data-act="nego" data-i="${esc(i)}" ${o.p == null ? 'disabled' : ''}>${o.p == null ? '협상 불가' : `15% 인상 요구 ${esc(o.p)}%`}</button></div></div>`).join('')}
           ${sc.canStay ? '<button class="btn ghost" data-act="stay">잔류한다</button>' : ''}${S.age >= 20 ? retireBtn() : ''}
           <p class="fine">인상 요구가 실패하면 제안이 철회될 수 있다.</p>`; break;
@@ -454,7 +488,7 @@
     G.achSeen();
     const names = ids.map(id => (D.ACH.find(a => a.id === id) || {}).name).filter(Boolean); if (!names.length) return;
     if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'toast'; toastEl.setAttribute('role', 'status'); toastEl.setAttribute('aria-live', 'polite'); document.body.appendChild(toastEl); toastEl.addEventListener('click', () => toastEl.classList.remove('on')); }
-    toastEl.textContent = '도전 과제 달성 — ' + names.join(', ');
+    toastEl.textContent = '도전 과제 달성 — ' + names.slice(0, 3).join(', ') + (names.length > 3 ? ` 외 ${names.length - 3}개` : '');
     toastEl.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('on'), 5000);
   }
   function readImport(file) {
