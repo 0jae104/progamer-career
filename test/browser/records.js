@@ -132,7 +132,7 @@ module.exports = async function records(browser, url, R) {
   // F. 백업: 내려받기 → 새 브라우저에서 미리보기·취소·복원 → 일치. 잘못된 파일은 거부
   {
     let { ctx, pg } = await open(browser, url, { init: SEED_HALL });
-    await career(pg, 'First'); await pg.click('[data-act=again]'); await pg.fill('#nick', 'Second'); await pg.click('[data-act=start]');
+    await career(pg, 'First'); await pg.click('[data-act=again]'); await pg.fill('#nick', 'Second'); await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]');
     await pg.evaluate(() => { for (let i = 0; i < 150 && !PG.state().over; i++) PG.autoStep(); });
     await pg.reload(); await pg.waitForTimeout(200); const src = await snap(pg);
     await openBackup(pg);
@@ -205,7 +205,7 @@ module.exports = async function records(browser, url, R) {
   }
   // H. 도전 과제 알림과 목록
   {
-    const { ctx, pg } = await open(browser, url); await pg.click('[data-act=create]'); await pg.fill('#nick', 'Ach'); await pg.click('[data-act=start]');
+    const { ctx, pg } = await open(browser, url); await pg.click('[data-act=create]'); await pg.fill('#nick', 'Ach'); await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]');
     await pg.evaluate(() => { let n = 0; while (!PG.state().car.debut && !PG.state().over && n++ < 20000) PG.autoStep(); });
     // 새로 고치지 않고 그 자리에서 다시 그린다. (새로 고치면 타이틀 화면에서 알림이 먼저 떠 버려, 아래의 '창이 열려 있는 동안 미룬다'를 볼 수 없다.
     //  예전에는 새로 고친 뒤 확인했는데, 이어하기 직후 창이 열려 있는 경우에만 실패하는 불안정한 확인이었다.)

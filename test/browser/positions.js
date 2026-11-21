@@ -7,7 +7,7 @@ module.exports = async function positions(browser, url, R) {
   for (const [w, h] of [[320, 568], [390, 844], [768, 1024], [1280, 800]]) {
     const { ctx, pg } = await open(browser, url, { w, h }), m = auditor(pg);
     // A. 선수 등록: 다섯 포지션의 이름·영문 표기, 고르면 장점·주의·주요 능력치가 펼쳐진다
-    await pg.click('[data-act=create]');
+    await pg.click('[data-act=create]'); await pg.click('[data-act=cstep]');   // 0.11.2: 포지션은 등록의 두 번째 화면
     for (const id of Object.keys(NAMES)) {
       const b = pg.locator(`[data-act=pick][data-grp=role][data-id=${id}]`); await b.click();
       const t = await b.innerText();
@@ -57,10 +57,13 @@ module.exports = async function positions(browser, url, R) {
       await put(got.offers); await reopen(pg);
       const of = await pg.evaluate(() => [...document.querySelectorAll('.sheet .offer')].map(o => o.querySelector('.oinfo') ? o.querySelector('.oinfo').textContent : ''));
       R.ok(of.length >= 2 && of.every(t => /전력 \d+ \(리그 \d+팀 중 \d+위\)/.test(t) && /감독 신뢰/.test(t)) && of.some(t => /지금 연봉보다|지금 팀이다/.test(t)), `${w} ${id}: 계약 제안 설명이 빠짐 ${of.join(' / ').slice(0, 200)}`); await m('계약 제안 ' + id);
-      await put(got.home); await reopen(pg); await pg.click('[data-act=tab][data-id=career]');
-      const st = await pg.evaluate(() => ({ guide: (document.querySelector('.guide') || {}).textContent || '', kinds: [...document.querySelectorAll('.rkind')].map(e => e.textContent), rivals: document.querySelectorAll('.rival').length, head: document.querySelector('.lower .who span').textContent }));
+      await put(got.home); await reopen(pg); await pg.click('[data-act=tab][data-id=player]');
+      const st = await pg.evaluate(() => ({ guide: (document.querySelector('.guide') || {}).textContent || '', head: document.querySelector('.lower .who span').textContent }));
+      await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await m('선수 탭 ' + id);
+      await pg.click('[data-act=tab][data-id=league]');   // 0.11.2: 라이벌은 리그 탭
+      Object.assign(st, await pg.evaluate(() => ({ kinds: [...document.querySelectorAll('.rkind')].map(e => e.textContent), rivals: document.querySelectorAll('.rival').length })));
       R.ok(st.guide.includes(NAMES[id][0] + ' 가이드') && /OVR을 빨리 올리는 계획/.test(st.guide) && st.kinds.length === st.rivals && st.head.includes(NAMES[id][0]), `${w} ${id}: 능력 탭의 포지션 가이드 또는 라이벌 구분 ${JSON.stringify(st).slice(0, 240)}`);
-      await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await m('능력 탭 ' + id);
+      await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await m('리그 탭 ' + id);
     }
     // C. 예전 포지션 이름으로 저장된 기록: 화면과 카드에서는 지금 이름, 저장은 그대로
     await pg.evaluate(() => { localStorage.clear(); localStorage.setItem('pg_hall_v1', JSON.stringify(['선봉', '유격', '코어', '사수', '지원'].map((role, i) => ({ nick: 'Old' + i, role, score: 80 - i, grade: 'A', ep: '리그의 간판', peak: 85, titles: 2, years: 10 })))); });

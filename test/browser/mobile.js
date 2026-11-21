@@ -38,15 +38,15 @@ module.exports = async function mobile(browser, url, R) {
     const load = async s => { await pg.evaluate(x => { localStorage.setItem('pg_tut_v1', '1'); localStorage.setItem('pg_career_v1', x); }, s); await pg.reload(); await pg.waitForTimeout(150); await pg.click('[data-act=continue]'); await pg.waitForTimeout(120); };
     await pg.evaluate(hall => { localStorage.setItem('pg_hall_v1', hall); }, JSON.stringify(OLD_HALL)); await pg.reload(); await pg.waitForTimeout(150);
     await look('타이틀');
-    await pg.click('[data-act=create]'); await pg.fill('#nick', '가나다라마바사아자차');
+    await pg.click('[data-act=create]'); await pg.fill('#nick', '가나다라마바사아자차'); await look('선수 등록 1/2'); await pg.click('[data-act=cstep]');   // 0.11.2: 두 걸음
     for (const id of ['van', 'rov', 'core', 'gun', 'sup']) { await pg.click(`[data-grp=role][data-id=${id}]`); await look('선수 등록 ' + id); }
     for (const k of kinds) {
       await load(saves[k]); await look('장면 ' + k);
       // 0.11.0: 승부처와 경기 결과는 관전으로 시작할 수 있다. 관전 화면을 본 뒤 건너뛰어 선택·결과 화면도 본다
       if (await pg.evaluate(() => { const b = document.querySelector('[data-act=wskip]'); if (b) b.click(); return !!b; })) { await pg.waitForTimeout(80); await look('장면 ' + k + ' (관전 뒤)'); }
     }
-    const goTab = async t => { if (t === 'shop') { await pg.click('[data-act=tab][data-id=home]'); if (await pg.evaluate(() => !document.querySelector('#autop'))) await pg.click('[data-act=moneyopen]'); } else if (t === 'plan') { await pg.click('[data-act=tab][data-id=home]'); if (await pg.evaluate(() => !document.querySelector('.planlist'))) await pg.click('[data-act=planopen]'); } else await pg.click(`[data-act=tab][data-id=${t}]`); };
-    await load(saves.home); for (const t of ['home', 'career', 'shop', 'plan', 'record']) { await goTab(t); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + t); }
+    const goTab = async t => { if (t === 'goal') { await pg.click('[data-act=tab][data-id=home]'); if (await pg.evaluate(() => document.querySelector('[data-act=goalopen]').getAttribute('aria-expanded') !== 'true')) await pg.click('[data-act=goalopen]'); } else await pg.click(`[data-act=tab][data-id=${t}]`); };
+    await load(saves.home); for (const t of ['home', 'goal', 'player', 'league', 'money', 'record']) { await goTab(t); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + t); }
     await pg.click('[data-act=tab][data-id=home]');
     R.ok(await pg.evaluate(() => { scrollTo(0, document.documentElement.scrollHeight); const f = document.querySelector('.foot').getBoundingClientRect(), kids = [...document.querySelector('main.content').children].filter(e => e.getBoundingClientRect().height > 0), last = kids[kids.length - 1].getBoundingClientRect(); return last.bottom <= f.top + 20; }), `${tag}: 홈 화면의 마지막 내용이 하단 진행 버튼 뒤에 가려짐`);
     await load(saves.retire); await look('은퇴');
@@ -72,7 +72,7 @@ module.exports = async function mobile(browser, url, R) {
     const { ctx, pg } = await open(browser, url, { w: 360, h: 330 }); await pg.click('[data-act=create]'); await pg.focus('#nick'); await pg.keyboard.type('Haneul');
     const r = await pg.evaluate(REACH);
     R.ok(!r.length && await pg.inputValue('#nick') === 'Haneul', `입력 중 좁은 화면에서 닿지 않는 버튼: ${r.join(' | ')}`);
-    await pg.click('[data-act=start]'); await pg.waitForTimeout(300); R.ok(await pg.locator('.sheet [data-act=res]').count() === 3 && !(await pg.evaluate(REACH)).length, '좁은 화면에서 구단 선택 버튼에 닿지 않음');
+    await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]'); await pg.waitForTimeout(300); R.ok(await pg.locator('.sheet [data-act=res]').count() === 3 && !(await pg.evaluate(REACH)).length, '좁은 화면에서 구단 선택 버튼에 닿지 않음');
     R.note('입력 중 좁은 화면(360x330)', '아이디 입력 뒤 모든 버튼에 스크롤로 닿음'); await ctx.close();
   }
   // 두 번 눌림 방지(실제 설정 그대로)

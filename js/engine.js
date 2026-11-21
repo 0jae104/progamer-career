@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.1';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.2';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -127,12 +127,14 @@
   }
 
   /* ---------- 시작 ---------- */
+  // 외형(0.11.2): 머리 모양·머리 색·피부·표정·소품을 한 글자씩 적은 다섯 자리. 능력치와 판정에는 쓰이지 않는다. 없으면 예전처럼 아이디로 정해진 얼굴이다.
+  const LOOK_MAX = [6, 6, 4, 4, 4], LOOK = v => typeof v === 'string' && v.length === 5 && [...v].every((c, i) => c >= '0' && +c < LOOK_MAX[i]);
   function newGame(o) {
     const r = D.ROLES.find(x => x.id === o.role);
     if (stale()) { conflict = true; return; }
     store.del(BAK);
     S = {
-      v: 1, cid: 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36), nick: (String(o.nick || '').replace(/[<>&"'`]/g, '').trim() || 'Player').slice(0, 12), home: o.region, role: o.role, trait: o.trait,
+      v: 1, cid: 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36), look: LOOK(o.look) ? o.look : undefined, nick: (String(o.nick || '').replace(/[<>&"'`]/g, '').trim() || 'Player').slice(0, 12), home: o.region, role: o.role, trait: o.trait,
       age: 16, year: 1, m: 0, stats: {}, caps: {}, cond: 80, trust: 30, fame: 0, money: 100, wrist: 100,
       org: null, squad: 'trainee', contract: { salary: 600, years: 3 }, plan: 'solo', monthsInOrg: 0,
       perks: [], shop: { gear: 0, coach: 0, care: 0 }, used: {}, buff: null, injury: 0, pity: 0, recentEv: [],
@@ -149,7 +151,7 @@
       const w = r.w[s.id];
       let v = 34 + rnd() * 8 + w * 45, c = B.capBase + talent + rnd() * B.capRand + w * B.capRole;
       if (o.trait === 'genius') { if (s.id === 'mech' || s.id === 'reflex') { v += 4; c += 5; } if (s.id === 'mental') v -= 4; }
-      if (o.trait === 'grinder') { v += 1; c -= 1; }
+      if (o.trait === 'grinder') { v += 1; c += B.grinderCap; }
       if (o.trait === 'brain') { if (s.id === 'sense') { v += 5; c += 6; } if (s.id === 'pool') { v += 3; c += 5; } if (s.id === 'mental') c += 2; }
       S.stats[s.id] = v; S.caps[s.id] = clamp(c, 55, 99);
     }
@@ -630,21 +632,36 @@
     const salary = squad === 'first' ? salaryFor(g, o) : squad === 'second' ? r100(2400 * pay) : 600;
     return { org: g.id, name: g.name, region: D.REGION[g.region].name, squad, salary, years: squad === 'first' ? ri(1, 3) : 2, renew: !!renew, tries: 0 };
   }
+  let offerProbe = null;   // 측정 도구용(test/balance.js): 걸러지기 전 후보와 실제로 보여 준 제안을 넘겨받는다
   function genOffers(withRenew) {
-    const o = ovr(), cand = [], out = [];
+    const o = ovr(), cand = [], out = []; genOffers.note = '';
     const agePen = Math.max(0, S.age - B.ageFrom) * B.ageSlope;
     const scouted = S.flags.scout != null && S.flags.scout >= S.year - 1;       // 스카우터가 지켜본 선수는 경력자처럼 평가받는다
     const need = (S.car.g >= B.provenGames || scouted) ? B.offerGap : B.offerGapUnproven;
+    const abroad = !!S.org && org().region !== S.home, isBack = x => x.squad === 'first' && D.ORG[x.org].region === S.home;
+    const last = S.hist[S.hist.length - 1], proved = abroad && !!last && last.squad === 'first' && last.g >= B.homeGames && last.avg >= B.homeAvg;   // 해외에서 직전 시즌에 성적을 냈는가
+    const homePen = proved ? agePen * B.homeAge : agePen;
     for (const g of D.ORGS) {
       if (g.id === S.org) continue;
       if (g.region !== S.home && !(o >= 76 || S.fame >= 45)) continue;
       const gap = o - S.orgStr[g.id] + gauss() * 3;
-      if (gap >= -need + agePen) cand.push(makeOffer(g, 'first'));
+      if (gap >= -need + (g.region === S.home ? homePen : agePen)) cand.push(makeOffer(g, 'first'));
       else if (S.age <= B.secondOfferAge && gap >= -B.secondOfferGap) cand.push(makeOffer(g, 'second'));
       else if (S.age <= B.traineeOfferAge && gap >= -B.traineeOfferGap) cand.push(makeOffer(g, 'trainee'));
     }
+    const all = offerProbe ? cand.slice() : null;
     cand.sort((a, b) => b.salary - a.salary);
-    out.push(...cand.splice(0, 2)); if (cand.length) out.push(cand.splice(ri(0, cand.length - 1), 1)[0]);
+    out.push(...cand.splice(0, 2));
+    // 해외에서 뛰는 동안: 고국 리그의 1군 제안이 후보에 있는데 연봉 순서에 밀렸다면 남은 한 자리를 그 제안(고국 팀 중 연봉이 가장 높은 것)에 준다
+    const back = B.homeSlot && proved && !out.some(isBack) ? cand.find(isBack) : null;
+    if (back) out.push(cand.splice(cand.indexOf(back), 1)[0]);
+    else if (cand.length) out.push(cand.splice(ri(0, cand.length - 1), 1)[0]);
+    if (abroad) {
+      for (const x of out) if (isBack(x)) x.back = true;
+      // 고국 제안이 없을 때 이유를 한 줄로 남긴다(가장 문턱이 낮은 고국 구단 기준. 구단마다 평가가 조금씩 흔들리므로 어림값이다)
+      if (!out.some(isBack)) { const low = Math.min(...D.ORGS.filter(g => g.region === S.home).map(g => S.orgStr[g.id])); genOffers.note = `${D.REGION[S.home].name} 리그의 1군 제안은 없었다. 문턱이 가장 낮은 팀도 OVR ${Math.ceil(low - need + homePen)} 안팎을 원한다(지금 ${Math.floor(o)}${homePen ? `, 나이 때문에 +${Math.round(homePen)}` : ''}).${proved ? '' : ` 한 시즌 ${B.homeGames}경기 이상, 평균 평점 ${B.homeAvg} 이상이면 고국 팀이 더 눈여겨본다.`}`; }
+    }
+    if (offerProbe) offerProbe(all, out.slice());
     if (withRenew) {
       const base = S.orgStr[S.org];
       const want = S.squad === 'first' ? o >= base - 12 - (S.trust - 50) / 10 + agePen : S.squad === 'second' ? S.age <= B.secondRenewAge : S.age < B.traineeMaxAge;
@@ -665,7 +682,7 @@
       };
     }
     offers.forEach(of => { of.p = of.squad === 'first' ? negoP(of) : null; });
-    return { type: 'offers', offers, canStay, msg: msg || '' };
+    return { type: 'offers', offers, canStay, msg: (msg || '') + (genOffers.note ? ' ' + genOffers.note : '') };
   }
   function joinOrg(of) {
     const moved = of.org !== S.org;
@@ -699,6 +716,8 @@
     if (a > st) fade('reflex', (a - st) * B.fadeReflex[0] + B.fadeReflex[1] + rnd());
     if (a > st + 1) fade('mech', (a - st - 1) * B.fadeMech[0] + B.fadeMech[1] + rnd() * .5);
     if (a > st + B.fadeOtherDelay) for (const k of ['sense', 'team', 'pool', 'mental']) fade(k, B.fadeOther);
+    // 노력형: 시즌을 마칠 때마다 한계가 조금씩 오른다(늦게 피는 길). 이미 지나간 시즌은 다시 계산하지 않는다
+    if (S.trait === 'grinder' && B.grinderCapYear > 0 && S.age <= B.grinderCapAge) for (const k in S.caps) S.caps[k] = Math.min(99, S.caps[k] + B.grinderCapYear);
     S.fame *= .97; S.pendingNewYear = true;
     if (S.age >= 36) { retire('서른여섯. 손이 더는 따라오지 않는다.'); return; }
     after.push({ type: 'cards', cards: rollCards(), reroll: 1 });
@@ -774,7 +793,7 @@
     num('kda', 0, 999); num('earn', 0, 1e12, 1); num('pct', 0, 100, 1); num('debut', 0, 60, 1);
     if (o.src !== 'play') return o;
     for (const [k, list] of [['roleId', D.ROLES], ['home', D.REGIONS], ['trait', D.TRAITS]]) if (list.find(x => x.id === r[k])) o[k] = r[k];
-    o.ver = txt(r.ver, 10); o.reason = txt(r.reason, 120);
+    o.ver = txt(r.ver, 10); o.reason = txt(r.reason, 120); if (LOOK(r.look)) o.look = r.look;
     o.titles = (Array.isArray(r.titles) ? r.titles : []).filter(t => t && Number.isFinite(t.y) && typeof t.name === 'string' && TIERS.includes(t.tier)).slice(0, 80).map(t => ({ y: clamp(Math.round(t.y), 1, 60), name: txt(t.name, 40), tier: t.tier }));
     o.awards = (Array.isArray(r.awards) ? r.awards : []).filter(a => a && Number.isFinite(a.y) && typeof a.name === 'string').slice(0, 80).map(a => ({ y: clamp(Math.round(a.y), 1, 60), name: txt(a.name, 40) }));
     o.orgs = (Array.isArray(r.orgs) ? r.orgs : []).filter(x => typeof x === 'string').slice(0, 30).map(x => txt(x, 30));
@@ -784,7 +803,7 @@
   }
   function recFromScene(sc, st) {
     return cleanRec({
-      id: sc.rid || st.cid, src: 'play', at: sc.at, ver: VERSION, nick: sc.nick, role: sc.role, roleId: st.role, home: st.home, trait: st.trait, age: sc.age, years: sc.years,
+      id: sc.rid || st.cid, src: 'play', at: sc.at, ver: VERSION, look: st.look, nick: sc.nick, role: sc.role, roleId: st.role, home: st.home, trait: st.trait, age: sc.age, years: sc.years,
       score: sc.score, grade: sc.grade, ep: sc.ep, pct: sc.pct, ax: sc.ax, g: sc.g, w: sc.w, avg: sc.avg, mvp: sc.mvp, kda: sc.kda, peak: sc.peak, earn: sc.earn,
       titles: sc.titles, awards: sc.awards, orgs: sc.orgs, reason: sc.reason, big: (sc.titles || []).filter(t => t.tier !== 'second').length, debut: st.car.debut || 0,
       rv: (sc.rivals || []).map(v => ({ nick: v.nick, w: v.w, l: v.l, label: v.label })),
@@ -946,10 +965,10 @@
     season: { year: 'n', age: 'n', org: 's', squad: 'squad', tag: 's', g: 'n', w: 'n', avg: 'n', mvp: 'n', ovr: 'n', salary: 'n', titles: ['s', 0, 30], awards: ['s', 0, 30] },
     cards: { cards: ['card', 1, 6], reroll: 'n' },
     stove: { years: 'n', salary: 'n', canRetire: 'b', scouted: 'b?' },
-    offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n' }, 0, 8] },
+    offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n', back: 'b?' }, 0, 8] },
     tryout: { p: PCTN, text: 's', vet: 'b', retry: 'b' },
     moment: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', mid: 's', sit: 's', set: 'n', bo: 'n', x: 'n', y: 'n', base: 'n', rival: 's?', pips: 's?', tac: 's?', from: 'n?', seen: 'n?', choices: [{ label: 's', p: 'n', up: 'n', down: 'n', bd: 'bd' }, 2, 3] },
-    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b', pips: 's?', tac: 's?', d: 'n?' },
+    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b', pips: 's?', tac: 's?', d: 'n?', auto: 'b?' },
     prematch: { tour: 's', label: 's', bo: 'n', me: 's', opp: 's', meTag: 's', oppTag: 's', meColor: 's', oppColor: 's', base: 'n', cond: 'n', role: 's', rival: 's', h2h: 's', tacs: [{ id: 's', p: 'n' }, 3, 3] },
     match: { tour: 's', label: 's', bo: 'n', me: 's', opp: 's', win: 'b', x: 'n', y: 'n', meTag: 's', oppTag: 's', meColor: 's', oppColor: 's', sets: [{ w: 'b', d: 'n' }, 1, 7], from: 'n', tac: 's',
       r: 'n', k: 'n', d: 'n', a: 'n', mvp: 'b', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8], rival: 's', next: 's', seen: 'n?' },
@@ -1411,7 +1430,7 @@
       lg: D.REGION[g.region].lgName, abroad: g.region !== S.home, home: D.REGION[S.home].name, str, rank: peers.findIndex(x => x.id === g.id) + 1, teams: peers.length, honor,
       ovr: o, diff: o - str, squad: of.squad, here, trust, line, starter: trust >= line, need1: Math.ceil(S.orgStr[g.id] - B.toFirstGap),
       rivals: rivalsAlive().filter(r => r.org === g.id).map(r => ({ nick: r.nick, squad: SQUAD[r.squad], role: roleLabel('', r.role), same: r.role === S.role })),
-      pay: of.salary - S.contract.salary,
+      pay: of.salary - S.contract.salary, back: !!of.back,
     };
   }
 
@@ -1537,6 +1556,7 @@
           type: 'mresult', ok: d.ok, p: sc.choices[i].p, i, title: sc.title, choice: d.label, text: d.text, eff: d.s,
           tour: sc.tour, label: sc.label, set: sc.set, me: sc.me, opp: sc.opp, x: c.x, y: c.y, setWin: g.win, over: c.x >= need || c.y >= need,
         };
+        if (arg === 'auto') S.q[0].auto = true;   // 감독 판단(자동 선택)으로 고른 것임을 결과에 남긴다
         if (c.sets) { c.shown = c.sets.length; if (c.tac !== undefined) { S.q[0].pips = pips(c); S.q[0].tac = c.tac || ''; S.q[0].d = c.sets[c.sets.length - 1].d; } }
 
         break;
@@ -1615,7 +1635,8 @@
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
     def(s, 'grow', 1); def(s, 'evn', {});
-    normAuto(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
+    if (s.look != null && !LOOK(s.look)) delete s.look;   // 외형(0.11.2): 이상하면 버리고 예전 얼굴로
+    normAuto(s); normAp(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
     // 처음 안내: 이 값이 없는 저장은 안내가 생기기 전에 시작한 커리어다. 진행 중에 안내가 끼어들지 않게 끝난 것으로 둔다.
     if (!s.tut || typeof s.tut !== 'object') s.tut = { p: 1, g: 1, r: 1, done: true };
     // 팬 반응 상태: 없거나 깨져 있으면 처음부터(지난 경기를 지어내지 않는다)
@@ -1678,7 +1699,9 @@
     if (it.once) {
       if (S.used[id] || S.money < it.cost[0]) return false;
       S.money -= it.cost[0]; S.used[id] = 1;
-      if (id === 'physio') addWrist(25); else { S.stats.mental = clamp(S.stats.mental + 1, 1, 99); setCond(S.cond + 12); }
+      if (id === 'physio') addWrist(25);
+      else if (it.fx) { for (const k in it.fx) { if (k === 'fame') addFame(it.fx[k]); else if (k === 'cond') setCond(S.cond + it.fx[k]); else if (k in S.stats) S.stats[k] = clamp(Math.max(S.stats[k], Math.min(S.caps[k], S.stats[k] + it.fx[k])), 1, 99); } }
+      else { S.stats.mental = clamp(S.stats.mental + 1, 1, 99); setCond(S.cond + 12); }
     } else {
       const lv = S.shop[id]; if (lv >= it.cost.length || S.money < it.cost[lv]) return false;
       S.money -= it.cost[lv]; S.shop[id]++;
@@ -1711,6 +1734,8 @@
       if (!it.once && lv >= it.cost.length) { why = 'max'; delete A.on[it.id]; }   // 최대 단계: 더 살 것이 없으니 자동 설정을 끈다
       else if (it.once && (S.used[it.id] || (S.man && S.man[it.id] === stamp))) why = 'used';
       else if (it.id === 'physio' && S.wrist > B.auto.physioBelow) why = 'full';      // 손목이 충분하면 돈을 쓰지 않는다
+      else if (it.minCond && S.cond < it.minCond) why = 'tired';                         // 컨디션을 내주는 항목은 지쳤을 때 자동으로 사지 않는다
+      else if (it.fx && Object.keys(it.fx).some(k => k in S.stats) && Object.keys(it.fx).filter(k => k in S.stats).every(k => S.stats[k] >= S.caps[k])) why = 'full';   // 더 오를 곳이 없다
       else if (cap && out.spent + cost > cap) why = 'cap';
       else if (S.money - cost < keep) why = 'low';
       if (!why && !purchase(it)) why = 'low';
@@ -1803,8 +1828,116 @@
   function normRecap(s) {
     const r = s.recap, num = v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e12;
     if (r != null && !(typeof r === 'object' && !Array.isArray(r) && ['y0', 'm0', 'y1', 'm1', 'n', 'w', 'l', 'sal', 'spent', 'skip', 'cond0', 'cond1'].every(k => num(r[k])) && typeof r.stop === 'string' && r.stop.length < 12
-      && Array.isArray(r.g) && r.g.length <= 16 && r.g.every(x => fits(x, 'pair')) && Array.isArray(r.cur) && r.cur.length === 2 && r.cur.every(num) && (r.ev == null || fits(r.ev, SCENE.result)) && fits(r.rv, [{ nick: 's', opp: 's', win: 'b' }, 0, 6, '?']))) delete s.recap;
+      && Array.isArray(r.g) && r.g.length <= 16 && r.g.every(x => fits(x, 'pair')) && Array.isArray(r.cur) && r.cur.length === 2 && r.cur.every(num) && (r.ev == null || fits(r.ev, SCENE.result)) && fits(r.rv, [{ nick: 's', opp: 's', win: 'b' }, 0, 6, '?'])
+      && fits(r.au, [{ k: 's', t: 's', c: 's', r: 's?' }, 0, 8, '?']) && fits(r.mt, [{ t: 's', opp: 's', win: 'b', s: 's' }, 0, 6, '?']) && fits(r.aun, 'n?') && fits(r.ap, 'n?'))) delete s.recap;
     if (s.lastRep != null && !(validScene(s.lastRep) && s.lastRep.type === 'month')) delete s.lastRep;
+  }
+
+  /* ---------- 자동진행(0.11.2) ----------
+     화면의 "자동진행"이 쓴다. 한 번 부르면 한 달만 처리하고 돌아간다(autoMonth). 화면이 이것을 짧은 예약 작업으로 이어 부른다.
+     검사용 autoStep 과 다르다: autoStep 은 계약·이적·테스트까지 스스로 정하지만, 여기서는 아래 표에 "대신 해도 된다"고 적힌 장면만 처리하고
+     나머지는 전부 멈춘다. 표에 없는 새 장면도 멈춘다(모르면 멈춘다).
+     - 엔진을 부르는 순서는 사람이 같은 선택을 직접 누를 때와 같다(setPlan → next → resolve). 난수를 따로 쓰지 않는다(test/autoplay.js).
+     - 대신 고른 것은 S.alog 와 진행 요약(S.recap.au)에 남는다. */
+  const AP_RULE = {
+    month: 'pass',      // 평범한 월간 보고: 요약에 쌓고 넘긴다
+    result: 'pass',     // 사건의 결과: 요약에 쌓고 넘긴다
+    event: 'event',     // 사건 선택: 성향대로 고른다. 생애에 한 번뿐인 사건과 돈이 드는 선택만 남은 경우는 멈춘다
+    prematch: 'series', // 경기 준비: "경기도 맡기기"를 켰고 결승·국제전·라이벌 팀이 아닐 때만 대신 시작한다
+    moment: 'mine',     // 승부처·세트 결과·경기 결과: 자동진행이 방금 시작한 시리즈일 때만 넘긴다
+    mresult: 'mine', match: 'mine',
+    info: 'stop', season: 'stop', cards: 'stop', stove: 'stop', offers: 'stop', tryout: 'stop', pickOrg: 'stop', retire: 'stop',
+  };
+  const AP_STYLE = { safe: 1, even: 1, bold: 1 };
+  let apMine = false, apTrace = null;   // apMine = 자동진행이 시작한 시리즈가 진행 중, apTrace = 검사용 호출 기록
+  const apInfo = () => { const a = (S && S.ap) || {}; return { style: AP_STYLE[a.style] ? a.style : 'even', rest: a.rest !== false, match: a.match === true, seen: a.seen === true, spd: a.spd === 'fast' ? 'fast' : 'norm', back: a.back || '' }; };
+  function setAp(k, v) {
+    if (!S) return;
+    const a = S.ap || (S.ap = {});
+    if (k === 'style' && AP_STYLE[v]) a.style = v; else if (k === 'spd') a.spd = v === 'fast' ? 'fast' : 'norm'; else if (k === 'rest' || k === 'match' || k === 'seen') a[k] = !!v; else return;
+    save();
+  }
+  const apOp = (op, arg, sc) => { if (apTrace) apTrace.push([op, arg === undefined ? null : arg, sc ? sc.type : '', sc && sc.ev ? sc.ev : '']); };
+  function apLog(k, t, c) {
+    const L = S.alog || (S.alog = []); L.unshift({ y: S.year, m: MONTHS[S.m].m, k, t: txt(t, 60), c: txt(c, 80) }); if (L.length > B.ap.log) L.length = B.ap.log;
+    const r = S.recap; if (r) { (r.au || (r.au = [])).push({ k, t: txt(t, 60), c: txt(c, 80) }); if (r.au.length > 8) r.au.shift(); r.aun = (r.aun || 0) + 1; }
+  }
+  // 사건에서 성향대로 고를 선택지(없으면 -1). 돈이 드는 선택지와 고를 수 없는 선택지는 대신 고르지 않는다.
+  function apPickEvent(sc, style) {
+    const ev = D.EVENTS.find(e => e.id === sc.ev); if (!ev || ev.once) return -1;
+    const ok = sc.choices.map((c, i) => i).filter(i => !sc.choices[i].disabled && ev.c[i] && !ev.c[i].need);
+    if (!ok.length) return -1;
+    const sure = ok.filter(i => sc.choices[i].p == null), risk = ok.filter(i => sc.choices[i].p != null).sort((a, b) => sc.choices[b].p - sc.choices[a].p || a - b);
+    const min = style === 'bold' ? B.ap.bold : style === 'even' ? B.ap.even : 101;
+    if (risk.length && sc.choices[risk[0]].p >= min) return risk[0];
+    if (sure.length) return sure[0];
+    // 남은 것이 성향이 꺼리는 도박뿐인데 돈으로 피하는 선택지가 따로 있다면(예: 손목 통증의 병원 검사) 대신 정하지 않는다
+    if (sc.choices.some((c, i) => !c.disabled && ev.c[i] && ev.c[i].need)) return -1;
+    return risk[0];
+  }
+  // 이 장면을 자동진행이 어떻게 다루는가: { pass } 넘김, { arg, note } 대신 고름, { stop } 멈춤
+  function apRule(sc, A) {
+    const rule = Object.prototype.hasOwnProperty.call(AP_RULE, sc.type) ? AP_RULE[sc.type] : 'unknown';
+    if (rule === 'pass') return sc.type === 'month' && !ordinary(sc) ? { stop: 'month' } : { pass: true };
+    if (rule === 'event') {
+      const ev = D.EVENTS.find(e => e.id === sc.ev); if (!ev) return { stop: 'unknown' };
+      if (ev.once) return { stop: 'once' };
+      const i = apPickEvent(sc, A.style); if (i < 0) return { stop: 'money' };
+      return { arg: i, note: ['event', sc.title, sc.choices[i].label + (sc.choices[i].p != null ? ` (${sc.choices[i].p}%)` : '')] };
+    }
+    if (rule === 'series') {
+      const t = S.sim && S.sim.tour, c = t && t.cur;
+      if (!A.match || !t || !c || c.tac !== null) return { stop: 'prematch' };
+      if (sc.label === '결승' || t.kind !== 'playoff' || sc.rival) return { stop: 'bigmatch' };
+      const best = sc.tacs.slice().sort((a, b) => b.p - a.p)[0], id = A.style === 'safe' ? 'steady' : A.style === 'bold' ? 'press' : best.id;
+      return { arg: id, mine: true, note: ['tac', `${sc.tour} ${sc.label} · ${sc.opp}`, D.TACTICS.find(x => x.id === id).name] };
+    }
+    if (rule === 'mine') {
+      if (!apMine) return { stop: sc.type };
+      if (sc.type === 'moment') { const i = bestChoice(sc); return { arg: 'auto', note: ['moment', sc.title, sc.choices[i].label + ` (${sc.choices[i].p}%)`] }; }
+      return { pass: true, end: sc.type === 'match' };
+    }
+    return { stop: rule === 'stop' ? sc.type : 'unknown' };
+  }
+  // 이번 달 할 일: "컨디션이 낮으면 휴식"을 켰을 때만 건드린다. 쉬게 한 뒤에는 원래 하던 일로 되돌린다.
+  function apPlan(A) {
+    if (!A.rest || S.injury > 0) return;
+    const low = S.cond < B.run.cond || S.wrist <= B.run.wrist;
+    if (low && S.plan !== 'rest') { const was = S.plan; S.plan = 'rest'; (S.ap || (S.ap = {})).back = was; apOp('plan', 'rest'); apLog('rest', '컨디션 관리', `휴식 (컨디션 ${Math.round(S.cond)} · 손목 ${Math.round(S.wrist)})`); }
+    else if (!low && A.back && S.plan === 'rest' && S.cond >= B.ap.restBack) { const to = D.PLANS.find(p => p.id === A.back) ? A.back : 'scrim'; S.plan = to; delete S.ap.back; apOp('plan', to); apLog('rest', '컨디션 관리', `${D.PLANS.find(p => p.id === to).name}(으)로 복귀`); }
+  }
+  function autoStart() { if (!S || S.over || stale() || !S.tut.done) return false; S.recap = newRecap(); S.recap.ap = 1; apMine = false; setAp('seen', true); return true; }
+  function autoStop(why) { if (S && S.recap && S.recap.ap && !S.recap.stop) { S.recap.stop = txt(why, 10); apMine = false; if (!stale()) save(); } }
+  function autoMonth() {
+    if (!S) return { k: 0, stop: 'over' };
+    const fin = why => { if (S && S.recap) S.recap.stop = why; apMine = false; if (S && !stale()) save(); return { k, stop: why }; };
+    let k = 0;
+    if (S.over) return fin('over'); if (stale()) return { k: 0, stop: 'tab' }; if (!S.tut.done) return fin('tut');
+    if (!S.recap || !S.recap.ap || S.recap.stop) { S.recap = newRecap(); S.recap.ap = 1; }
+    const A = apInfo();
+    if (!S.q.length) { apPlan(A); const mi = MONTHS[S.m]; S.recap.cur = [S.year, mi.m]; apOp('next'); next(); k = 1; }
+    for (let guard = 0; S && !S.over && S.q.length; guard++) {
+      if (guard >= 80) return fin('unknown');
+      const sc = S.q[0], r = apRule(sc, A);
+      if (r.stop) return fin(r.stop);
+      if (r.note) apLog(r.note[0], r.note[1], r.note[2]);
+      if (r.pass) {
+        if (sc.type === 'month') absorb(sc);
+        else if (sc.type === 'result') { const L = S.recap.au || [], e = L[L.length - 1]; if (e && e.k === 'event' && e.r == null) e.r = (sc.checked ? (sc.ok ? '성공 — ' : '실패 — ') : '') + txt(sc.text, 110); }
+        else if (sc.type === 'match') { (S.recap.mt || (S.recap.mt = [])).push({ t: txt(`${sc.tour} ${sc.label}`, 60), opp: txt(sc.opp, 40), win: !!sc.win, s: `${sc.x}-${sc.y}` }); if (S.recap.mt.length > 6) S.recap.mt.shift(); }
+      }
+      if (r.mine) apMine = true;
+      if (r.end) apMine = false;
+      apOp('res', r.arg, sc); resolve(r.arg);
+    }
+    if (!S || S.over) return fin('over');
+    save();
+    return { k, stop: '' };
+  }
+  function normAp(s) {
+    const a = s.ap;
+    if (a != null) { if (typeof a !== 'object' || Array.isArray(a)) delete s.ap; else s.ap = Object.assign({ style: AP_STYLE[a.style] ? a.style : 'even', rest: a.rest !== false, match: a.match === true, seen: a.seen === true, spd: a.spd === 'fast' ? 'fast' : 'norm' }, typeof a.back === 'string' && D.PLANS.find(p => p.id === a.back) ? { back: a.back } : {}); }
+    if (s.alog != null) { if (!Array.isArray(s.alog)) delete s.alog; else s.alog = s.alog.filter(x => fits(x, { y: 'n', m: 'n', k: 's', t: 's', c: 's' })).slice(0, B.ap.log).map(x => ({ y: x.y, m: x.m, k: txt(x.k, 10), t: txt(x.t, 60), c: txt(x.c, 80) })); }
   }
 
   /* ---------- 경기 체험(0.11.0) ----------
@@ -1893,8 +2026,10 @@
   const Game = {
     D, MONTHS, SQUAD, VERSION, seed, rand: () => rnd(), goal, newGame, load, save, next, resolve, buy, table, fmtMoney, autoStep, evaluate,
     state: () => S, scene: () => S && S.q[0], ovr: () => S ? ovr() : 0, isStarter, org, region, role,
-    setPlan(id) { if (S && D.PLANS.find(p => p.id === id)) { S.plan = id; save(); } },
+    setPlan(id) { if (S && D.PLANS.find(p => p.id === id)) { S.plan = id; if (S.ap) delete S.ap.back; save(); } },   // 직접 고르면 자동 휴식의 "되돌릴 일"은 잊는다
     setFast(v) { S.opt.fast = !!v; save(); },
+    LOOK_MAX, lookOk: LOOK,
+    autoStart, autoMonth, autoStop, setAp, apInfo: () => apInfo(), autoLog: () => (S && S.alog ? S.alog.slice() : []), AP_RULE, _apTrace(a) { apTrace = a; }, _offers(withRenew) { let r = null; offerProbe = (cand, out) => { r = { cand, out }; }; try { genOffers(withRenew); } finally { offerProbe = null; } return r; },
     advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
