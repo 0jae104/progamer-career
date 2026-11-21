@@ -253,4 +253,68 @@ module.exports = async function play(browser, url, R) {
     R.ok(m.clean(), `${w}: 0.11.4 화면 배치 ${m.line()}`); R.note(`0.11.4 ${w}x${h}`, m.line());
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
+
+  // G. 0.11.5: 시즌 목표(결산의 확인 자리), 홈의 한 줄, 라이벌 문장, 경기 결과의 선택 → 영향 → 결과, 구단 소개, 돈을 쓰기 전의 사실
+  const mk5 = await open(browser, url);
+  const S5 = await mk5.pg.evaluate(() => {
+    const find = (want, seeds) => { for (let k = 0; k < (seeds || 40); k++) { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); PG._seen(); PG.seed(900 + k); PG.newGame({ nick: '목표검사', region: 'kr', role: 'core', trait: 'brain' }); let n = 0; while (n++ < 60000 && !PG.state().over) { if (want(PG.state(), PG.scene())) { PG.save(); return localStorage.getItem('pg_career_v1'); } PG.autoStep(); } } return ''; };
+    return {
+      season: find((s, sc) => sc && sc.type === 'season' && s.squad === 'first' && sc.goal && sc.goals && sc.goals.length === 3 && sc.goals.some(g => g.id === 'rival')),
+      season1: find((s, sc) => sc && sc.type === 'season' && s.year === 2 && sc.goal && sc.goals),
+      rvHome: find((s, sc) => !sc && s.squad !== 'trainee' && s.tut.done && s.goal && PG.rivalFixtures().some(f => f.story)),
+      match: find((s, sc) => sc && sc.type === 'match' && sc.moms.length > 0 && sc.story),
+      offers: find((s, sc) => sc && sc.type === 'offers' && s.squad === 'first' && sc.offers.filter(o => o.squad === 'first' && !o.renew).length >= 1),
+      prematch: find((s, sc) => sc && sc.type === 'prematch' && sc.rival && sc.story),
+    };
+  });
+  await mk5.ctx.close();
+  R.ok(Object.values(S5).every(Boolean), `G: 검사용 저장 ${Object.keys(S5).filter(k => !S5[k])}`);
+  const skipWatch = async pg => { await pg.evaluate(() => { const w = document.querySelector('[data-act=wskip]'); if (w) w.click(); }); await pg.waitForTimeout(250); };
+  for (const [w, h] of [[430, 932], [390, 844], [360, 800], [320, 568]]) {
+    const { ctx, pg } = await open(browser, url, { w, h }), m = auditor(pg);
+    // 1) 시즌 결산: 지난 목표의 판정과 이유, 다음 목표 2~3개가 확인 버튼 자리에. 한 번 눌러 넘어가고 고른 것이 저장된다
+    for (const key of ['season', 'season1']) {
+      await load(pg, S5[key]);
+      const v = await pg.evaluate(() => { const sc = PG.scene(), sh = document.querySelector('.veil .sheet'), ev = sh.querySelector('.evres'); return { type: sc.type, goal: sc.goal, n: sc.goals.length, btns: [...sh.querySelectorAll('[data-act=goal]')].map(b => b.querySelector('b').textContent), titles: sc.goals.map(g => g.t), okBtn: !!sh.querySelector('[data-act=ok]'), ev: ev ? ev.textContent : '', cls: ev ? ev.className : '', year: PG.state().year }; });
+      R.ok(v.type === 'season' && v.n >= 2 && v.n <= 3 && JSON.stringify(v.btns) === JSON.stringify(v.titles) && !v.okBtn, `${w} ${key}: 결산의 목표 버튼 ${JSON.stringify(v).slice(0, 300)}`);
+      R.ok(v.ev.includes(v.goal.t) && v.ev.includes(v.goal.why) && v.ev.includes(v.goal.ok === 1 ? '달성' : v.goal.ok === 0 ? '미달성' : '판정 없음') && (v.goal.ok === 1) === /\bok\b/.test(v.cls) && (v.goal.ok === 0) === /\bno\b/.test(v.cls), `${w} ${key}: 지난 목표의 판정 표시 ${v.ev} / ${JSON.stringify(v.goal)}`);
+      await m('시즌 결산 ' + key);
+      const pick = v.n - 1; await pg.click(`.sheet [data-act=goal][data-i="${pick}"]`); await pg.waitForTimeout(150);
+      R.ok(await pg.evaluate(([t, y]) => { const g = PG.state().goal, s = JSON.parse(localStorage.getItem('pg_career_v1')); return !!g && g.t === t && g.y === y && s.goal && s.goal.t === t && (!PG.scene() || PG.scene().type !== 'season'); }, [v.titles[pick], v.year]), `${w} ${key}: 한 번 눌러 목표를 고르고 넘어가지 못함`);
+    }
+    // 2) 홈: 올해 목표가 목표 칸 안의 한 줄로, 라이벌전 줄에 기록된 사실 한 줄. 첫 화면에 다 들어온다. 예전 저장(목표 없음)에는 줄이 없다
+    await load(pg, S5.rvHome);
+    const hm = await pg.evaluate(() => { const g = PG.goalNow(), fx = PG.rivalFixtures(), sg = document.querySelector('.goalbtn .sgoal'), rc = document.querySelector('.rvcard'), foot = document.querySelector('.foot').getBoundingClientRect().top; return { g, sg: sg ? sg.textContent : '', inGoal: !!sg, story: fx[0].story, rc: rc ? rc.textContent : '', over: document.documentElement.scrollHeight - innerHeight, plan: document.querySelector('.plan5').getBoundingClientRect().bottom <= foot + 1, cards: document.querySelectorAll('.content > .goal, .content > .rvcard, .content > div').length }; });
+    R.ok(hm.inGoal && hm.sg.includes(hm.g.t) && (!hm.g.txt || hm.sg.includes(hm.g.txt)) && hm.rc.includes(hm.story) && hm.plan && hm.over <= (w <= 320 ? 80 : 0), `${w}: 홈의 올해 목표·라이벌 줄 ${JSON.stringify(hm).slice(0, 400)}`);
+    await m('홈 목표·라이벌');
+    await load(pg, await pg.evaluate(r => { const o = JSON.parse(r); delete o.goal; delete o.goalLog; for (const x of o.rivals) { delete x.last; delete x.run; delete x.ko; delete x.mate; } return JSON.stringify(o); }, S5.rvHome));
+    R.ok(await pg.evaluate(() => { const sm = document.querySelector('.rvcard small'), fx = PG.rivalFixtures()[0]; return !document.querySelector('.sgoal') && PG.goalNow() === null && (!sm || (fx.w + fx.l === 0 && sm.textContent === '첫 맞대결.')) && !/지난 맞대결|연패|연승|같은 팀이었다|설욕/.test(document.querySelector('.rvcard').textContent); }), `${w}: 예전 저장인데 올해 목표나 기록에 없는 지난 일 문장이 보임`);
+    // 3) 경기 준비: 라이벌의 지난 일 한 줄, 상대 팀 소개는 버튼 아래(승률과 무관하다고 적는다)
+    await load(pg, S5.prematch); await skipWatch(pg);
+    const pm = await pg.evaluate(() => { const sc = PG.scene(), sh = document.querySelector('.veil .sheet'), t = sh.textContent, kick = sh.querySelector('[data-act=kick]').getBoundingClientRect().top + sh.scrollTop, idt = [...sh.querySelectorAll('.fine')].find(e => /팀 분위기 소개/.test(e.textContent)); return { story: t.includes(sc.story), idt: !!idt && idt.textContent.includes(sc.oppIdt) && /승률 계산에는 들어가지 않는다/.test(idt.textContent), below: !!idt && idt.getBoundingClientRect().top + sh.scrollTop > kick }; });
+    R.ok(pm.story && pm.idt && pm.below, `${w}: 경기 준비의 라이벌 문장·상대 소개 ${JSON.stringify(pm)}`);
+    await m('경기 준비');
+    // 4) 경기 결과: 선택 → 영향 → 실제 결과(두 줄 + 단서), 실제 스코어·승패와 같다. 예전의 겹치는 줄은 없다
+    await load(pg, S5.match); await skipWatch(pg);
+    const mt = await pg.evaluate(() => { const sc = PG.scene(), c = document.querySelector('.sheet .cause'), ps = c ? [...c.querySelectorAll('p')].map(p => p.textContent) : [], sh = document.querySelector('.veil .sheet').textContent; return { ps, res: `실제 ${sc.x}:${sc.y} ${sc.win ? '승리' : '패배'}`, moms: sc.moms.map(x => [x.label, x.ok ? '성공' : '실패']), story: sc.story, hasStory: sh.includes(sc.story), dup: /내 전략 —/.test(sh), ok: document.querySelectorAll('.sheet [data-act=ok]').length }; });
+    R.ok(mt.ps.length >= 2 && mt.ps.length <= 4 && mt.ps[0].includes(mt.res) && mt.moms.every(x => mt.ps.join(' ').includes(x[0]) && mt.ps.join(' ').includes(x[1])) && /단정할 수는 없다/.test(mt.ps[mt.ps.length - 1]) && mt.hasStory && !mt.dup && mt.ok === 1, `${w}: 경기 결과의 설명 ${JSON.stringify(mt).slice(0, 500)}`);
+    await m('경기 결과');
+    // 5) 제안 화면: 구단 소개 한 줄과 매력·부담 한 줄(순위·주전 여부와 맞는다)
+    await load(pg, S5.offers);
+    const of = await pg.evaluate(() => { const sc = PG.scene(); return sc.offers.map((o, i) => { const v = PG.offerInfo(o), ul = document.querySelectorAll('.sheet .oinfo')[i], t = ul ? ul.textContent : ''; return { idt: !v.idt || t.includes(v.idt), pitch: v.here || v.squad !== 'first' ? null : [v.rank, v.teams, v.starter, /우승을 다투는 팀/.test(t), /성적은 낮은|성적이 낮은/.test(t), /바로 주전|주전으로 뛴다|주전이다/.test(t), /벤치/.test(t)] }; }); });
+    R.ok(of.every(x => x.idt) && of.filter(x => x.pitch).every(x => { const [rank, teams, starter, top, low, st] = x.pitch; return top === (rank <= 2) && low === (rank >= teams - 2) && (!starter || st); }), `${w}: 제안의 구단 소개·매력과 부담 ${JSON.stringify(of).slice(0, 400)}`);
+    await m('계약 제안');
+    // 6) 리그 탭의 내 구단 소개, 자산 탭에서 돈을 쓰기 전의 사실(이름을 눌렀을 때만)
+    await load(pg, S5.rvHome); await pg.click('[data-act=tab][data-id=league]');
+    R.ok(await pg.evaluate(() => { const e = document.querySelector('.orgidt'); return !!e && e.textContent.includes(PG.org().idt); }), `${w}: 리그 탭에 내 구단 소개가 없음`);
+    await m('리그 구단 소개');
+    await pg.click('[data-act=tab][data-id=money]'); await pg.click('[data-act=shop-info][data-id=fanmeet]');
+    const fm = await pg.evaluate(() => { const sp = PG.spendInfo(), t = document.querySelector('.sdesc').textContent; return { fame: t.includes(`지금 인기 ${sp.fame}`), pay: t.includes(`+${sp.payPct}%`), rows: document.querySelectorAll('.srow').length }; });
+    await pg.click('[data-act=shop-info][data-id=analyst]');
+    const an = await pg.evaluate(() => { const sp = PG.spendInfo(), t = document.querySelector('.sdesc').textContent; return { tour: sp.tour ? /플레이오프나 국제전이 열린다/.test(t) : /토너먼트가 없어/.test(t), starter: sp.starter || /주전이 아니라/.test(t), prep: /분석 자료/.test(t) }; });
+    R.ok(fm.fame && fm.pay && fm.rows === 4 && an.tour && an.starter && an.prep, `${w}: 자산 탭의 사실 안내 ${JSON.stringify([fm, an])}`);
+    await m('자산 설명');
+    R.ok(m.clean(), `${w}: 0.11.5 화면 배치 ${m.line()}`); R.note(`0.11.5 ${w}x${h}`, m.line());
+    R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
+  }
 };

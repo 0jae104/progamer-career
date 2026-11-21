@@ -70,6 +70,7 @@ async function step(pg) {
   else if (t === 'prematch') await pg.click('.sheet [data-act=kick][data-id=none]');
   else if (['pickOrg', 'event', 'cards', 'moment'].includes(t)) { const els = await pg.$$('.sheet [data-act=res]:not([disabled])'); await els[t === 'pickOrg' ? els.length - 1 : 0].click(); }
   else if (t === 'offers') await pg.click('.sheet [data-act=accept]');
+  else if (t === 'season' && await pg.$('.sheet [data-act=goal]')) await pg.click('.sheet [data-act=goal]');   // 0.11.5: 시즌 결산의 확인 자리에 다음 시즌 목표 버튼이 온다
   else if (t === 'stove') await pg.click('.sheet [data-act=stay]');
   else if (t === 'tryout') await pg.click('.sheet [data-act=try]');
   else await pg.click('.sheet [data-act=ok]', { timeout: 15000 }).catch(async e => { throw new Error('step: ' + t + ' → ' + await pg.evaluate(() => JSON.stringify([PG.scene() && PG.scene().type, PG.state().tut, PG_UI.state.view, PG.inDemo(), (document.querySelector('.veil') || document.body).textContent.slice(0, 120)]))); });
