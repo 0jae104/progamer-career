@@ -123,4 +123,4 @@
 
 ## 7. GitHub Actions
 
-(PR을 올린 뒤 결과를 여기에 적습니다.)
+PR #19, 커밋 `2d7d599`: **성공**(2026-11-22). https://github.com/0jae104/progamer-career/actions/runs/44923055988 — sim 1000, tactics, static, pacing, autoplay, extras, story 30, 브라우저 11묶음, 갱신 연쇄. 이 줄을 적은 뒤의 커밋은 문서만 바꿉니다.
