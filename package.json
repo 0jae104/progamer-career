@@ -1,12 +1,15 @@
 {
   "name": "progamer-career",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "private": true,
   "description": "프로게이머 키우기 — 개발용 검사 도구 설정. 게임 자체는 설치·빌드 없이 index.html 로 실행된다.",
   "scripts": {
     "test": "node test/sim.js 3000 --seed=1",
     "test:pacing": "node test/pacing.js 60",
     "test:static": "node test/static.js",
+    "test:autoplay": "node test/autoplay.js 45",
+    "test:extras": "node test/extras.js",
+    "balance": "node test/balance.js",
     "test:tactics": "node test/tactics.js 400 24",
     "test:quick": "node test/sim.js 300 --seed=1",
     "test:browser": "node test/browser/run.js",

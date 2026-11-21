@@ -25,9 +25,10 @@
   D.ROLE_OLD = { '선봉': 'van', '유격': 'rov', '코어': 'core', '사수': 'gun', '지원': 'sup' };
 
   D.TRAITS = [
-    { id: 'genius', name: '천재형', desc: '피지컬·반응속도 한계가 높고 10대 성장이 빠르다. 멘탈은 약하게 시작한다.' },
-    { id: 'grinder', name: '노력형', desc: '모든 성장이 18% 빠르고 컨디션 소모가 적다. 한계는 평범하다.' },
-    { id: 'brain', name: '두뇌형', desc: '판단력·숙련 폭 한계가 높고 노쇠가 늦게 온다.' },
+    // early·late·care = 선수 등록 화면의 세 줄(초반 강점 / 장기 강점 / 주의). pick = 처음 하는 사람에게 권하는 성향
+    { id: 'genius', name: '천재형', desc: '피지컬·반응속도 한계가 높고 10대 성장이 빠르다. 멘탈은 약하게 시작한다.', early: '10대 성장이 가장 빠르다', late: '피지컬·반응속도의 한계가 높다', care: '멘탈이 약하게 시작하고, 반응속도는 나이를 먼저 탄다' },
+    { id: 'grinder', name: '노력형', desc: '모든 성장이 18% 빠르고 컨디션 소모가 적다. 한계는 낮게 시작해 25세까지 시즌마다 조금씩 오른다.', early: '모든 성장이 18% 빠르고 컨디션이 덜 닳는다', late: '한계가 25세까지 시즌마다 조금씩 오른다. 늦게 피는 선수다', care: '시작할 때의 한계가 셋 중 가장 낮다. 시즌을 꾸준히 쌓아야 빛을 본다' },
+    { id: 'brain', name: '두뇌형', desc: '판단력·숙련 폭 한계가 높고 노쇠가 늦게 온다.', early: '판단력·숙련 폭이 높게 시작한다', late: '노쇠가 한 해 늦게 와서 오래 뛴다', care: '손으로 하는 싸움(피지컬·반응속도)은 평범하다', pick: true },
   ];
 
   // 경기 전 전략 3종(0.11.0). 문장은 화면에 그대로 나온다. 수치는 D.BAL.tac.
@@ -55,6 +56,8 @@
     capRole: 22,
     growBase: .4,      // 계획과 상관없이 모든 능력치가 매달 오르는 기본량
     grinderGrow: 1.18, // 노력형의 성장 배율
+    // 노력형의 한계(0.11.2): grinderCap = 시작할 때 모든 한계에 더하는 값, grinderCapYear = 시즌이 끝날 때마다 모든 한계에 더하는 값(grinderCapAge 세가 되는 해까지)
+    grinderCap: -1, grinderCapYear: .3, grinderCapAge: 25,
     ageGrow: [[17, 1.35], [19, 1.15], [21, .85], [23, .55], [25, .3], [99, .15]],   // [이 나이까지, 성장 배율]
     // ── 리그 수준 ──
     orgShift: 5,       // 모든 구단 전력에 더하는 값. 올리면 데뷔·우승이 어려워지고 은퇴가 빨라진다
@@ -77,6 +80,10 @@
     provenGames: 20,      // 1군 경기 수가 이 이상이면 경력자
     ageFrom: 24,          // 이 나이를 넘으면 한 살마다 요구 OVR 이 ageSlope 씩 오른다(제안·재계약 공통)
     ageSlope: 4,
+    // 해외에서 뛰는 선수의 귀국(0.11.2): homeSlot = 고국 리그의 1군 제안이 후보에 들었으면 제안 목록의 한 자리를 그 제안에 준다(연봉 순서에 밀려 안 보이던 문제),
+    //   homeAge = 1군 경력자를 고국 구단이 볼 때 나이로 오르는 요구 OVR 에 곱하는 값(1 = 다른 구단과 같음)
+    //   둘 다 직전 시즌에 homeGames 경기 이상 뛰고 평균 평점이 homeAvg 이상일 때만 적용한다(성적을 낸 선수에게만 길이 열린다)
+    homeSlot: true, homeAge: .75, homeGames: 20, homeAvg: 6.3,
     secondOfferAge: 21, secondOfferGap: 26,   // 2군 제안: 이 나이 이하, OVR 이 (전력 − 값) 이상
     traineeOfferAge: 18, traineeOfferGap: 42,
     tryoutBase: 30, tryoutPerOvr: 2, tryoutOvr: 58, tryoutAgeFrom: 22, tryoutAgeSlope: 9,   // 공개 테스트 합격 확률(%)
@@ -161,6 +168,9 @@
     { id: 'care', name: '식단·수면 관리', desc: '매달 컨디션 +1.5 (단계당)', cost: [250, 700, 1800, 4500, 10000] },
     { id: 'physio', name: '손목 물리치료', desc: '손목 +25. 한 달에 한 번', once: true, cost: [180] },
     { id: 'counsel', name: '심리 상담', desc: '멘탈 +1, 컨디션 +12. 한 달에 한 번', once: true, cost: [220] },
+    // 0.11.2: 돈을 쓰면 다른 것을 내주는 선택 두 가지. 기본은 꺼짐이고, 사지 않으면 판정이 예전과 같다.
+    { id: 'fanmeet', name: '팬 미팅', desc: '인기 +2, 대신 컨디션 −6. 인기는 연봉 제안과 방송 수입을 올린다. 한 달에 한 번', once: true, cost: [250], fx: { fame: 2, cond: -6 }, minCond: 40 },
+    { id: 'analyst', name: '전술 분석가', desc: '판단력 +0.3, 숙련 폭 +0.2(한계까지). 나이가 들어 성장이 느려져도 같은 만큼 오른다. 한 달에 한 번', once: true, cost: [350], fx: { sense: .3, pool: .2 } },
   ];
 
   // r: 0 일반, 1 희귀, 2 영웅, 3 전설
@@ -1209,7 +1219,7 @@
     { id: 'grade_s', name: '전설', desc: 'S등급 이상으로 은퇴한다' },
   ];
 
-  (root.PG_VER = root.PG_VER || {}).data = '0.11.1';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
+  (root.PG_VER = root.PG_VER || {}).data = '0.11.2';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

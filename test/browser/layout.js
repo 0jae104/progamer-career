@@ -4,7 +4,7 @@ module.exports = async function layout(browser, url, R, opt) {
   const steps = (opt && opt.steps) || 250;
   for (const [w, h] of [[320, 568], [390, 844], [768, 1024], [1280, 800]]) {
     const { ctx, pg } = await open(browser, url, { w, h }), m = auditor(pg);
-    await m('타이틀'); await pg.click('[data-act=create]'); await m('선수 등록'); await pg.fill('#nick', '가나다라마바사아자차'); await pg.click('[data-act=start]'); await m('구단 선택'); await step(pg);
+    await m('타이틀'); await pg.click('[data-act=create]'); await m('선수 등록'); await pg.fill('#nick', '가나다라마바사아자차'); await pg.click('[data-act=look][data-i="0"]'); await pg.click('[data-act=lookrand]'); await m('선수 등록(얼굴)'); await pg.click('[data-act=cstep]'); await m('포지션과 성향'); await pg.click('[data-act=start]'); await m('구단 선택'); await step(pg);
     const goTab = async t => { if (t === 'goal') { await pg.click('[data-act=tab][data-id=home]'); if (await pg.evaluate(() => document.querySelector('[data-act=goalopen]').getAttribute('aria-expanded') !== 'true')) await pg.click('[data-act=goalopen]'); } else await pg.click(`[data-act=tab][data-id=${t}]`); };   // 0.11.2: 탭 5개 + 홈의 목표 펼침
     const tabs = async () => { for (const t of ['player', 'league', 'money', 'record', 'goal', 'home']) { await goTab(t); await m('탭 ' + t); } };
     await tabs();

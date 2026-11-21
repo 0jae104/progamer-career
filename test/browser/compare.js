@@ -51,11 +51,17 @@ const VERS = [['v0.11.0', 'e6086bc'], ['v0.11.1', 'a3e1926'], ['v0.11.2', null]]
     }
     await srv.close();
   }
+  // 얼굴을 고르지 않은 예전 저장의 아바타는 v0.11.1과 점 하나까지 같아야 한다
+  const px = [];
+  for (const v of [1, 2]) { const srv = await serve(dirs[v]), { ctx, pg } = await open(browser, srv.url); await pg.evaluate(r => { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); localStorage.setItem('pg_career_v1', r); }, saves.home); await pg.reload(); await pg.waitForTimeout(300); await pg.click('[data-act=continue]'); await pg.waitForTimeout(300); px.push(await pg.evaluate(() => document.querySelector('.lower canvas.av').toDataURL())); await ctx.close(); await srv.close(); }
+  const sameAvatar = px[0] === px[1];
   await browser.close();
+  console.log(`얼굴을 고르지 않은 예전 저장의 아바타: v0.11.1과 ${sameAvatar ? '같음' : '다름'}\n`);
   console.log('화면 비교(헤드리스 크롬 에뮬레이션. 같은 저장: 1군 주전 3월)\n');
   console.log('| 버전 | 폭 | 탭 수 | 홈 길이(화면 몇 장) | 홈 글자 수(전체/첫 화면) | 홈의 누를 수 있는 버튼 | 할 일 바꾸기: 누름 | 그때 필요한 스크롤(px) | 투자 화면: 누름 | 투자가 있는 화면 길이 |');
   console.log('|---|---|---|---|---|---|---|---|---|---|');
   for (const r of rows) console.log(`| ${r.name} | ${r.w} | ${r.tabs} | ${r.pages} | ${r.chars} / ${r.charsFirst} | ${r.buttons} | ${r.planTaps} | ${r.planScroll} | ${r.shopTaps} | ${r.shopPages} |`);
   console.log(`\n그림 ${fs.readdirSync(OUT).filter(f => f.endsWith('.png')).length}장: ${path.relative(ROOT, OUT)}/<버전>-<폭>-<화면>.png`);
   if (rows.some(r => !r.planOk)) { console.log('실패: 할 일을 바꾸지 못한 버전이 있음'); process.exit(1); }
+  if (!sameAvatar) { console.log('실패: 예전 저장의 아바타가 달라짐'); process.exit(1); }
 })().catch(e => { console.error(e); process.exit(1); });

@@ -434,3 +434,14 @@ input.srhide:focus + label.btn { outline: 2px solid var(--cy); outline-offset: 2
 .hstat { display: flex; flex-wrap: wrap; }
 .hs { flex: 1 1 auto; } .hs b { overflow: visible; text-overflow: clip; }
 @media (max-width: 350px), (max-height: 600px) { .content { gap: 10px; padding-top: 8px; padding-bottom: 12px; } .hstat { padding-top: 6px; } .planfx { margin-top: 6px; } .goalbtn { padding-top: 8px; padding-bottom: 8px; min-height: 48px; } .foot { padding-top: 12px; } .ctas .cta small { line-height: 1.25; } }
+
+/* 선수 등록(0.11.2): 얼굴 고르기와 성향 세 줄 */
+.lookrow { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; } .lookrow .btn { flex: 1; }
+canvas.av.big { width: 96px; height: 96px; flex: none; border: 1px solid var(--line); }
+.lookgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.lookgrid button { min-height: 48px; padding: 4px 10px; text-align: left; font-size: 13px; color: var(--dim); background: var(--panel); border: 1px solid var(--line); }
+.lookgrid button b { display: block; font-size: 15px; color: var(--text); }
+.lookgrid button:last-child { grid-column: 1 / -1; }
+.opt.trait b small { font: 700 12px var(--body); color: var(--gold); margin-left: 6px; border: 1px solid var(--gold); padding: 1px 6px; }
+.opt.trait .rinfo { display: block; margin-top: 4px; font-size: 13px; color: #d5d8f5; overflow-wrap: anywhere; }
+.opt.trait .rinfo em { font-style: normal; font-weight: 700; font-size: 12px; color: var(--gold); margin-right: 8px; }

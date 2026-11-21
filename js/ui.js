@@ -1,12 +1,12 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.1';
+  const UI_VERSION = '0.11.2';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
   const G = window.PG, D = G.D, CARD = window.PG_CARD, app = document.getElementById('app');
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const U = { view: 'title', tab: 'home', C: { nick: '', region: 'kr', role: 'core', trait: 'genius' }, confirm: '', notice: '', vt: 'hall', vfrom: 'title', sort: 'score', cmp: [], rec: '', dlg: null, undo: '', vmsg: '', card: null, imp: null };
+  const U = { view: 'title', tab: 'home', C: { nick: '', region: 'kr', role: 'core', trait: (D.TRAITS.find(t => t.pick) || D.TRAITS[0]).id, look: '', step: 1 }, confirm: '', notice: '', vt: 'hall', vfrom: 'title', sort: 'score', cmp: [], rec: '', dlg: null, undo: '', vmsg: '', card: null, imp: null };
   const money = G.fmtMoney, f1 = v => (Math.round(v * 10) / 10).toFixed(1);
 
   /* ---- 도트 아바타 (직접 그린 14×14 스프라이트) ---- */
@@ -18,23 +18,46 @@
     app.querySelectorAll('canvas.av').forEach(cv => {
       const x = cv.getContext('2d');
       cv.width = cv.height = 14; x.clearRect(0, 0, 14, 14); cv.setAttribute('aria-hidden', 'true');
-      sprite(x, 0, 0, 1, cv.dataset.seed || 'x', cv.dataset.color);
+      sprite(x, 0, 0, 1, cv.dataset.seed || 'x', cv.dataset.color, cv.dataset.look);
     });
   }
+  /* 외형(0.11.2): look = 머리 모양·머리 색·피부·표정·소품 다섯 자리. 선수 등록에서 고르고(기본은 무작위) 저장·기록·커리어 카드에 같이 남는다.
+     look 이 없는 예전 저장과 라이벌은 예전 그대로 아이디에서 얼굴이 정해진다(그림이 바뀌지 않는다). 능력치와는 무관하다. */
+  const SKIN2 = ['#f6d3b0', '#e8b88f', '#c98f66', '#8d5a3b'];
+  const LOOKS = [['머리 모양', ['기본', '앞머리', '짧게', '삐죽', '긴 머리', '가르마']], ['머리 색', ['남색', '갈색', '금색', '보라', '분홍', '청록']], ['피부', ['밝게', '보통', '그을림', '짙게']], ['표정', ['담담', '미소', '집중', '윙크']], ['소품', ['없음', '안경', '반창고', '머리띠']]];
+  const randLook = () => LOOKS.map(l => Math.floor(Math.random() * l[1].length)).join('');
+  const shade = (hex, k) => '#' + [1, 3, 5].map(i => Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k))).toString(16).padStart(2, '0')).join('');
   // 도트 아바타 한 장. px: 점 하나의 크기(커리어 카드에서는 크게 그린다)
-  function sprite(x, ox, oy, px, seed, color) {
-    const h = hash(seed);
-    const pal = { h: HAIR[h % HAIR.length], s: SKIN[(h >> 3) % SKIN.length], e: '#0e1126', k: '#62e4ff', m: '#62e4ff', j: color || '#ff4d6d', d: 'rgba(14,17,38,.45)' };
-    const dot = (i, y, w) => x.fillRect(ox + i * px, oy + y * px, (w || 1) * px, px);
-    SPRITE.forEach((row, y) => [...row].forEach((ch, i) => {
+  function sprite(x, ox, oy, px, seed, color, look) {
+    const h = hash(seed), L = G.lookOk(look) ? [...look].map(Number) : null;
+    const pal = { h: L ? HAIR[L[1]] : HAIR[h % HAIR.length], s: L ? SKIN2[L[2]] : SKIN[(h >> 3) % SKIN.length], e: '#0e1126', k: '#62e4ff', m: '#62e4ff', j: color || '#ff4d6d', d: 'rgba(14,17,38,.45)' };
+    const dot = (i, y, w) => x.fillRect(ox + i * px, oy + y * px, (w || 1) * px, px), put = (c, i, y, w) => { x.fillStyle = c; dot(i, y, w); };
+    const rows = SPRITE.slice();
+    if (L && L[0] === 2) { rows[0] = '..............'; rows[1] = '....hhhhhh....'; rows[2] = '...hhhhhhhh...'; rows[3] = '.kkhsssssshkk.'; }
+    if (L && L[0] === 3) rows[0] = '...h.hh.hh.h..';
+    rows.forEach((row, y) => [...row].forEach((ch, i) => {
       if (ch === '.') return;
       if (ch === 'd') { x.fillStyle = pal.j; dot(i, y); }
       x.fillStyle = pal[ch]; dot(i, y);
     }));
-    if ((h >> 5) % 2) { x.fillStyle = pal.h; dot(5, 3, 2); }
+    if (!L) { if ((h >> 5) % 2) put(pal.h, 5, 3, 2); return; }
+    // 머리 모양
+    if (L[0] === 1) put(pal.h, 4, 3, 3);
+    if (L[0] === 4) { put(pal.h, 1, 6); put(pal.h, 12, 6); put(pal.h, 12, 7); put(pal.h, 12, 8); put(pal.h, 1, 7); }
+    if (L[0] === 5) { put(pal.h, 3, 3, 4); put(pal.h, 3, 4, 2); }
+    // 명암: 머리 윗부분의 밝은 점, 턱 아래 그늘
+    if (L[0] !== 2) put(shade(pal.h, 1.45), 5, 1, 2); else put(shade(pal.h, 1.45), 5, 2, 2);
+    put(shade(pal.s, .8), 6, 8, 2);
+    // 표정
+    if (L[3] === 1) put('#b5485a', 6, 7, 2);
+    if (L[3] === 2) { put(shade(pal.h, .7), 4, 4); put(shade(pal.h, .7), 9, 4); put(shade(pal.s, .72), 6, 7, 2); }
+    if (L[3] === 3) { put(shade(pal.s, .62), 9, 5); put('#b5485a', 6, 7, 2); }
+    // 소품
+    if (L[4] === 1) { for (const i of [3, 5, 6, 7, 8, 10]) put('#e8ecff', i, 5); }
+    if (L[4] === 2) put('#f4efe6', 8, 6, 2);
+    if (L[4] === 3) put(pal.j, 2, 2, 10);
   }
 
-  /* ---- 화면 ---- */
   function vTitle() {
     const sv = G.saveInfo(), live = sv && !sv.over;
     return `<section class="title">
@@ -55,6 +78,7 @@
       <p class="fine">등장하는 리그·구단·선수·대회는 모두 창작이며 실제와 관계가 없습니다. 진행 상황은 이 기기의 브라우저에 저장되며, 브라우저 데이터를 지우면 함께 사라집니다. v${esc(G.VERSION)}</p>
     </section>`;
   }
+
   const opt = (grp, id, name, desc) => `<button class="opt" data-act="pick" data-grp="${esc(grp)}" data-id="${esc(id)}" aria-pressed="${U.C[grp] === id}"><b>${esc(name)}</b>${desc ? `<span>${esc(desc)}</span>` : ''}</button>`;
   // 포지션에서 비중이 큰 능력치 세 개(D.ROLES 의 w 에서 그대로 읽는다)
   const roleKeys = r => D.STATS.map(st => [st, r.w[st.id]]).sort((a, b) => b[1] - a[1]).slice(0, 3);
@@ -66,15 +90,31 @@
       <span class="rinfo"><em>장점</em>${esc(r.good)}</span><span class="rinfo"><em>주의</em>${esc(r.care)}</span>
       <span class="rinfo"><em>주요 능력치</em>${roleKeys(r).map(([st, w]) => `${esc(st.name)} ${Math.round(w * 100)}%`).join(' · ')}</span>` : ''}</button>`;
   }
+  // 선수 등록(0.11.2): 두 걸음. ① 누구인가(아이디·얼굴·국적) ② 어떻게 뛰는가(포지션·성향). 얼굴은 무작위로 정해져 있어 그냥 넘어가도 된다.
+  function traitOpt(t) {
+    const on = U.C.trait === t.id;
+    return `<button class="opt trait" data-act="pick" data-grp="trait" data-id="${esc(t.id)}" aria-pressed="${on}"><b>${esc(t.name)}${t.pick ? ' <small>처음이라면</small>' : ''}</b>
+      <span class="rinfo"><em>초반</em>${esc(t.early)}</span><span class="rinfo"><em>장기</em>${esc(t.late)}</span><span class="rinfo"><em>주의</em>${esc(t.care)}</span></button>`;
+  }
   function vCreate() {
-    return `<section class="page">
-      <div><p class="eyebrow">NEW CAREER</p><h2>선수 등록</h2></div>
+    if (!G.lookOk(U.C.look)) U.C.look = randLook();
+    const L = [...U.C.look].map(Number);
+    if (U.C.step !== 2) return `<section class="page">
+      <div><p class="eyebrow">NEW CAREER · 1 / 2</p><h2>선수 등록</h2></div>
       <div class="field"><label for="nick">선수 아이디 (최대 10자)</label><input id="nick" maxlength="10" autocomplete="off" placeholder="예: Haneul" value="${esc(U.C.nick)}"></div>
-      <div class="field"><span class="lab">국적 — 처음 뛸 리그와 대표팀이 정해진다</span><div class="opts c2">${D.REGIONS.map(r => opt('region', r.id, r.name, r.lgName)).join('')}</div></div>
-      <div class="field"><span class="lab">포지션 — 고른 자리의 장점과 주의점이 아래에 펼쳐진다</span><div class="opts">${D.ROLES.map(roleOpt).join('')}</div></div>
-      <div class="field"><span class="lab">성향</span><div class="opts">${D.TRAITS.map(t => opt('trait', t.id, t.name, t.desc)).join('')}</div></div>
-      <button class="btn" data-act="start">입단 테스트 보러 가기</button>
+      <div class="field"><span class="lab">얼굴 — 그냥 두어도 된다. 능력치와는 상관없다</span>
+        <div class="lookrow"><canvas class="av big" data-seed="new" data-color="#ff4d6d" data-look="${esc(U.C.look)}"></canvas><button class="btn line" data-act="lookrand">무작위로 다시</button></div>
+        <div class="lookgrid">${LOOKS.map((l, i) => `<button data-act="look" data-i="${i}" aria-label="${esc(l[0])}: ${esc(l[1][L[i]])}. 누르면 다음으로">${esc(l[0])}<b>${esc(l[1][L[i]])}</b></button>`).join('')}</div></div>
+      <div class="field"><span class="lab">국적 — 처음 뛸 리그와 대표팀이 정해진다. 나중에 다른 나라 리그로 옮겨도 국적은 그대로다</span><div class="opts c2">${D.REGIONS.map(r => opt('region', r.id, r.name, r.lgName)).join('')}</div></div>
+      <button class="btn" data-act="cstep" data-id="2">다음 — 포지션과 성향</button>
       <button class="btn line" data-act="title">돌아가기</button>
+    </section>`;
+    return `<section class="page">
+      <div><p class="eyebrow">NEW CAREER · 2 / 2</p><h2>포지션과 성향</h2></div>
+      <div class="field"><span class="lab">포지션 — 고른 자리의 장점과 주의점이 아래에 펼쳐진다</span><div class="opts">${D.ROLES.map(roleOpt).join('')}</div></div>
+      <div class="field"><span class="lab">성향 — 어떻게 자라는 선수인가. 셋 다 정상에 설 수 있고, 가는 길이 다르다</span><div class="opts">${D.TRAITS.map(traitOpt).join('')}</div></div>
+      <button class="btn" data-act="start">입단 테스트 보러 가기</button>
+      <button class="btn line" data-act="cstep" data-id="1">이전</button>
     </section>`;
   }
   /* ---- 기록실: 명예의 전당 · 도전 과제 · 백업 ---- */
@@ -264,7 +304,7 @@
     const fonts = document.fonts && document.fonts.load ? Promise.race([Promise.all(CARD.fonts.map(f => document.fonts.load(f, need).catch(() => 0))), wait(4000)]) : Promise.resolve();
     fonts.then(() => new Promise((res, rej) => {
       const cv = document.createElement('canvas');
-      CARD.draw(cv, c.rec, { avatar: (x, ox, oy, px, seed) => sprite(x, ox, oy, px, seed) });
+      CARD.draw(cv, c.rec, { avatar: (x, ox, oy, px, seed) => sprite(x, ox, oy, px, seed, undefined, c.rec.look) });
       if (!cv.toBlob) return rej(new Error('toBlob'));
       cv.toBlob(b => (b && b.size > 1000 ? res(b) : rej(new Error('blob'))), 'image/png');
     })).then(blob => {
@@ -282,7 +322,7 @@
   function header(S) {
     const o = G.org(), st = S.squad === 'trainee' ? '연습생' : `${G.SQUAD[S.squad]} ${S.injury ? '부상' : G.isStarter() ? '주전' : '벤치'}`;
     return `<header class="lower" style="--team:${esc(o.color)}">
-      <canvas class="av" data-seed="${esc(S.nick)}" data-color="${esc(o.color)}"></canvas>
+      <canvas class="av" data-seed="${esc(S.nick)}" data-color="${esc(o.color)}" data-look="${esc(S.look || '')}"></canvas>
       <div class="who"><b class="${[...S.nick].length > 6 ? 'long' : ''}">${esc(S.nick)}</b><span>${G.role().name} · ${esc(o.name)} ${esc(st)} · ${esc(S.age)}세</span></div>
       <div class="ovr"><b>${Math.floor(G.ovr())}</b><span>OVR</span></div></header>
       ${U.tab === 'player' ? `<div class="meters">${meter('컨디션', S.cond)}${meter('손목', S.wrist)}${meter(S.squad === 'trainee' ? '코치 평가' : '감독 신뢰', S.trust)}${meter('인기', S.fame, 'gold')}</div>` : hstat(S)}`;
@@ -300,7 +340,7 @@
   };
   const AP_STYLE = { safe: ['안정', '확률 판정이 없는 선택지를 고른다. 없으면 성공 확률이 가장 높은 것.'], even: ['균형', `성공 확률이 ${D.BAL.ap.even}% 이상인 도전이 있으면 하고, 아니면 판정이 없는 선택지.`], bold: ['도전', `성공 확률이 ${D.BAL.ap.bold}% 이상이면 도전한다.`] };
   const AU_KIND = { event: '사건', tac: '경기 전략', moment: '승부처', rest: '할 일' };
-  const AUTO_WHY = { low: '잔고 부족으로 건너뜀', cap: '한 달 상한을 넘어 건너뜀', used: '이번 달에 이미 직접 샀음', max: '이미 최대 단계', full: '손목이 충분해 건너뜀' };
+  const AUTO_WHY = { low: '잔고 부족으로 건너뜀', cap: '한 달 상한을 넘어 건너뜀', used: '이번 달에 이미 직접 샀음', max: '이미 최대 단계', full: '지금은 필요 없어 건너뜀', tired: '컨디션이 낮아 건너뜀' };
   const shopName = id => (D.SHOP.find(x => x.id === id) || {}).name || id;
   function autoLine(a) {
     if (!a || !a.items.length) return '';
@@ -459,6 +499,7 @@
     const v = G.offerInfo(o); if (!v) return '';
     const sign = n => (n > 0 ? '+' : '') + n, L = [];
     L.push(`${esc(v.lg)} · 전력 ${esc(v.str)} (리그 ${esc(v.teams)}팀 중 ${esc(v.rank)}위)${v.honor ? ` · ${esc(v.honor)}` : ''}`);
+    if (v.back) L.push(`<b>${esc(v.home)} 리그 복귀 제안.</b> 해외에서 쌓은 1군 경력을 보고 연락해 왔다.`);
     if (v.squad === 'first') L.push(`내 OVR ${esc(v.ovr)}, 팀 전력보다 ${esc(sign(v.diff))}. ${v.diff >= 2 ? '내가 뛰면 팀이 강해진다.' : v.diff >= -3 ? '팀 평균과 비슷하다.' : '팀 평균에 못 미친다. 내가 뛰면 팀 전력이 조금 내려간다.'}`);
     else if (v.squad === 'second') L.push(`2군 계약. 1군 콜업 심사 기준은 OVR ${esc(v.need1)} (지금 ${esc(v.ovr)}).`);
     L.push(v.here ? `지금 팀이다. 감독 신뢰는 ${esc(v.trust)} 그대로(${v.starter ? '주전' : '벤치'}).` : `옮기면 감독 신뢰 ${esc(v.trust)}에서 시작한다. ${v.starter ? '바로 주전으로 뛴다.' : `주전 기준 ${esc(v.line)}에 닿기 전까지는 벤치다.`}`);
@@ -840,7 +881,7 @@
         U.view = 'game'; U.tab = 'home'; U.confirm = ''; SND.play('tap'); render(); window.scrollTo(0, 0); return;
       }
       case 'demoend': endDemo('체험전을 끝냈다. 이 경기는 기록에 남지 않았다.'); return render();
-      case 'create': return go('create');
+      case 'create': U.C.step = 1; return go('create');
       case 'title': return go('title');
       case 'hall': U.vfrom = U.view === 'game' ? 'game' : 'title'; U.vt = 'hall'; U.imp = null; U.undo = ''; return go('hall');
       case 'vault': U.vfrom = 'game'; U.vt = id; U.imp = null; U.undo = ''; return go('hall');
@@ -900,7 +941,10 @@
         return;
       }
       case 'pick': U.C[b.dataset.grp] = id; break;
-      case 'start': G.newGame({ nick: U.C.nick.trim() || 'Rookie', region: U.C.region, role: U.C.role, trait: U.C.trait }); U.tab = 'home'; return go('game');
+      case 'cstep': U.C.step = id === '2' ? 2 : 1; render(); return window.scrollTo(0, 0);
+      case 'lookrand': U.C.look = randLook(); SND.play('tap'); break;
+      case 'look': { const L = [...U.C.look]; L[i] = String((+L[i] + 1) % LOOKS[i][1].length); U.C.look = L.join(''); break; }
+      case 'start': G.newGame({ nick: U.C.nick.trim() || 'Rookie', region: U.C.region, role: U.C.role, trait: U.C.trait, look: U.C.look }); U.tab = 'home'; U.C.step = 1; U.C.look = ''; return go('game');
       case 'again': G.wipe(); return go('create');
       case 'tab': U.tab = id; U.apOpen = false; render(); return window.scrollTo(0, 0);
       case 'plan': G.setPlan(id); SND.play('tap'); break;

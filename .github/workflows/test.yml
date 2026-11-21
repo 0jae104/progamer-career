@@ -22,5 +22,7 @@ jobs:
       - run: node test/tactics.js 300 16
       - run: node test/static.js
       - run: node test/pacing.js 40
+      - run: node test/autoplay.js 30
+      - run: node test/extras.js
       - run: node test/browser/run.js
       - run: node test/browser/update-chain.js

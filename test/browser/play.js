@@ -124,4 +124,47 @@ module.exports = async function play(browser, url, R) {
     R.ok(t.fast === false && /맡기기 꺼짐/.test(t.txt) && t.snd && t.log >= 1, `D: 기록 탭 ${JSON.stringify(t).slice(0, 160)}`);
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
+
+  // E. 선수 등록(두 걸음)과 얼굴: 기본값만으로 세 번 눌러 시작, 고른 얼굴이 저장·화면에 그대로, 새 투자 항목은 꺼진 채로 보인다
+  for (const [w, h] of [[390, 844], [320, 568]]) {
+    const { ctx, pg } = await open(browser, url, { w, h }), m = auditor(pg);
+    await pg.evaluate(() => localStorage.clear()); await pg.reload(); await pg.waitForTimeout(250);
+    await pg.click('[data-act=create]'); await m('등록 1/2'); const a1 = await pg.evaluate(A11Y);
+    const s1 = await pg.evaluate(() => ({ nick: !!document.getElementById('nick'), looks: document.querySelectorAll('[data-act=look]').length, rand: !!document.querySelector('[data-act=lookrand]'), regions: document.querySelectorAll('[data-grp=region]').length, roles: document.querySelectorAll('[data-grp=role]').length, look: document.querySelector('canvas.av.big').dataset.look, ok: PG.lookOk(document.querySelector('canvas.av.big').dataset.look) }));
+    R.ok(s1.nick && s1.looks === 5 && s1.rand && s1.regions === 4 && s1.roles === 0 && s1.ok, `${w}: 등록 1/2 ${JSON.stringify(s1)}`);
+    await pg.click('[data-act=look][data-i="0"]'); const l1 = await pg.evaluate(() => document.querySelector('canvas.av.big').dataset.look);
+    R.ok(l1 !== s1.look && l1.slice(1) === s1.look.slice(1), `${w}: 머리 모양만 바뀌어야 함 ${s1.look} → ${l1}`);
+    let changed = false; for (let i = 0; i < 6 && !changed; i++) { await pg.click('[data-act=lookrand]'); changed = await pg.evaluate(x => document.querySelector('canvas.av.big').dataset.look !== x, l1); }
+    R.ok(changed, `${w}: 무작위 버튼이 얼굴을 바꾸지 않음`);
+    for (let i = 0; i < 5; i++) await pg.click(`[data-act=look][data-i="${i}"]`);
+    const look = await pg.evaluate(() => document.querySelector('canvas.av.big').dataset.look);
+    const px1 = await pg.evaluate(() => document.querySelector('canvas.av.big').toDataURL());
+    await pg.fill('#nick', '얼굴검사'); await pg.click('[data-act=cstep]'); await m('등록 2/2'); const a2 = await pg.evaluate(A11Y);
+    const s2 = await pg.evaluate(() => ({ roles: document.querySelectorAll('[data-grp=role]').length, traits: [...document.querySelectorAll('[data-grp=trait]')].map(b => [b.dataset.id, b.getAttribute('aria-pressed'), /처음이라면/.test(b.textContent), b.querySelectorAll('.rinfo').length].join(':')).join(' '), nickKept: PG_UI.state.C.nick }));
+    R.ok(s2.roles === 5 && /brain:true:true:3/.test(s2.traits) && /grinder:false:false:3/.test(s2.traits) && /genius:false:false:3/.test(s2.traits) && s2.nickKept === '얼굴검사', `${w}: 등록 2/2 ${JSON.stringify(s2)}`);
+    await pg.click('[data-act=cstep]'); R.ok(await pg.evaluate(l => document.querySelector('canvas.av.big').dataset.look === l && document.getElementById('nick').value === '얼굴검사', look), `${w}: 이전으로 돌아가자 고른 것이 사라짐`);
+    await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]'); await pg.waitForTimeout(200);
+    R.ok(await pg.evaluate(l => PG.state().look === l && PG.state().nick === '얼굴검사' && PG.state().trait === 'brain' && JSON.parse(localStorage.getItem('pg_career_v1')).look === l, look), `${w}: 고른 얼굴이 저장되지 않음`);
+    await pg.click('.sheet [data-act=res]'); await pg.waitForTimeout(150);
+    const hd = await pg.evaluate(() => { const c = document.querySelector('.lower canvas.av'); return { look: c.dataset.look, px: c.toDataURL() }; });
+    R.ok(hd.look === look && hd.px === px1, `${w}: 게임 화면의 얼굴이 고른 것과 다름`);
+    R.ok(m.clean(), `${w}: 등록 화면 배치 ${m.line()}`);
+    R.ok(![...a1.noName, ...a2.noName].length && !Object.keys(Object.assign({}, a1.lowContrast, a2.lowContrast)).length, `${w}: 등록 화면 접근성 ${JSON.stringify([a1.noName, a2.noName, a1.lowContrast, a2.lowContrast])}`);
+    R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
+  }
+  {
+    const { ctx, pg } = await open(browser, url);
+    // 기본값만으로 시작: 타이틀에서 세 번 누름(새 커리어 → 다음 → 입단 테스트)
+    await pg.evaluate(() => localStorage.clear()); await pg.reload(); await pg.waitForTimeout(250);
+    await pg.click('[data-act=create]'); await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]'); await pg.waitForTimeout(150);
+    R.ok(await pg.evaluate(() => !!PG.state() && PG.lookOk(PG.state().look) && PG.scene().type === 'pickOrg'), 'E: 기본값으로 세 번 눌러 시작하지 못함');
+    // 자산 탭: 새 항목 두 개가 꺼진 채로 보이고, 직접 사면 효과가 난다
+    await load(pg, raw, 81); await pg.click('[data-act=tab][data-id=money]');
+    const shop = await pg.evaluate(() => ['fanmeet', 'analyst'].map(id => { const b = document.querySelector(`[data-act=shop-auto][data-id=${id}]`); return b ? b.getAttribute('aria-pressed') : 'none'; }).join(','));
+    const f0 = await pg.evaluate(() => [PG.state().fame, PG.state().cond, PG.state().money]);
+    await pg.click('[data-act=buy][data-id=fanmeet]');
+    const f1 = await pg.evaluate(() => [PG.state().fame, PG.state().cond, PG.state().money, document.querySelector('[data-act=buy][data-id=fanmeet]').disabled]);
+    R.ok(shop === 'false,false' && f1[0] > f0[0] && Math.round(f0[1] - f1[1]) === 6 && f0[2] - f1[2] === 250 && f1[3] === true, `E: 팬 미팅 ${shop} ${JSON.stringify([f0, f1])}`);
+    R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
+  }
 };
