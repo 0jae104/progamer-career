@@ -91,8 +91,9 @@ module.exports = async function mobile(browser, url, R) {
     // 확인을 두 번 연달아 눌러도 다음 창의 버튼이 대신 눌리지 않는다
     await pg.evaluate(s => { localStorage.setItem('pg_career_v1', s); }, saves.event); await pg.reload(); await pg.waitForTimeout(150); await pg.click('[data-act=continue]'); await pg.waitForTimeout(400);
     const before = await pg.evaluate(() => PG.scene().type);
-    await pg.evaluate(() => { document.querySelector('.sheet [data-act=res]:not([disabled])').click(); const nx = document.querySelector('.sheet [data-act=ok]'); if (nx) nx.click(); });
-    R.ok(before === 'event' && await pg.evaluate(() => PG.scene() && PG.scene().type) === 'result', '선택 직후의 두 번째 입력이 다음 창을 넘겨 버림');
+    // 0.11.1: 처음 안내가 끝난 저장에서는 사건의 결과가 창 없이 요약에 나온다. 그 뒤에 뜬 창(있다면)이 두 번째 입력으로 닫히면 안 된다
+    const dbl = await pg.evaluate(() => { document.querySelector('.sheet [data-act=res]:not([disabled])').click(); const sc = PG.scene(), nx = document.querySelector('.sheet [data-act=ok]'); if (nx) nx.click(); return { hadNext: !!sc, same: PG.scene() === sc, type: PG.scene() && PG.scene().type, ev: !!(PG.recap() && PG.recap().ev), tut: PG.state().tut.done }; });
+    R.ok(before === 'event' && dbl.same && (dbl.tut ? dbl.ev && dbl.type !== 'result' : dbl.type === 'result'), `선택 직후의 두 번째 입력이 다음 창을 넘겨 버림 ${JSON.stringify(dbl)}`);
     R.note('두 번 눌림 방지', '진행 버튼을 연달아 눌러도 한 번만 진행, 0.45초 뒤 입력은 정상, 선택 직후의 두 번째 입력은 다음 창에 닿지 않음');
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
