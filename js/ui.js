@@ -368,7 +368,7 @@
   // 진행한 달에 소식 목록(S.log)에 남은 라이벌의 일(콜업·이적·부상·복귀·우승·은퇴·대회 맞대결)을 최대 두 줄 보여 준다. 없으면 아무것도 그리지 않는다.
   function rivalRecap(r) {
     const S = G.state(), rs = G.rivals(), by = n => rs.find(x => x.nick === n);
-    const res = (r.rv || []).map(v => { const x = by(v.nick); return `<p class="rvres ${v.win ? 'w' : 'l'}"><b>라이벌전</b> ${esc(v.nick)}의 ${esc(v.opp)}에 ${v.win ? '승리' : '패배'}${x ? ` · 통산 ${esc(x.w)}승 ${esc(x.l)}패` : ''}</p>`; });
+    const res = (r.rv || []).map(v => { const x = by(v.nick); return `<p class="rvres ${v.win ? 'w' : 'l'}"><b>라이벌전</b> ${esc(v.nick)}의 ${esc(v.opp)}에 ${v.win ? '승리' : '패배'}${x ? ` · 통산 ${esc(x.w)}승 ${esc(x.l)}패` : ''}${v.s ? ` — ${esc(v.s)}` : ''}</p>`; });
     const lo = r.y0 * 100 + r.m0, hi = r.y1 * 100 + r.m1, seen = {};
     const news = !r.n ? [] : S.log.filter(l => { const t = l.y * 100 + l.m; if (t < lo || t > hi || seen[l.msg]) return false; const hit = rs.some(x => l.msg.startsWith(x.nick + ' — ')); if (hit) seen[l.msg] = 1; return hit; }).slice(0, 2);
     if (!res.length && !news.length) return '';
@@ -420,8 +420,9 @@
   // 다음 목표: 한 줄(조건별 현재/필요). 누르면 막대와 설명이 펼쳐진다.
   function goalLine() {
     const g = G.goal(), fx = G.rivalFixtures(), open = U.goalOpen || !!G.tutTip('goal');
-    const rv = fx.length ? `<button class="rvcard" data-act="tab" data-id="league" data-to="rivals" aria-label="이번 달 라이벌전: ${fx.map(f => `${esc(f.nick)}의 ${esc(f.org)}, 통산 ${esc(f.w)}승 ${esc(f.l)}패`).join(', ')}. 라이벌 기록 열기"><span><b>이번 달 라이벌전</b>${fx.map(f => `${esc(f.nick)}의 ${esc(f.org)} · 통산 ${esc(f.w)}승 ${esc(f.l)}패`).join(' / ')}</span><i aria-hidden="true">기록 ›</i></button>` : '';   // 라이벌전이 있는 달에만. 없으면 자리도 두지 않는다
-    return `${rv}<div class="goal slim"><button class="goalbtn" data-act="goalopen" aria-expanded="${open}"><span class="sec">다음 목표 · ${esc(g.title)}</span><span class="gchips">${g.items.map(i => `<i class="${i.ok ? 'ok' : ''}">${esc(i.label)} ${esc(i.cur)}${i.low ? '위' : ''}/${esc(i.need)}${i.low ? '위' : ''}</i>`).join('')}</span></button>
+    const rv = fx.length ? `<button class="rvcard" data-act="tab" data-id="league" data-to="rivals" aria-label="이번 달 라이벌전: ${fx.map(f => `${esc(f.nick)}의 ${esc(f.org)}, 통산 ${esc(f.w)}승 ${esc(f.l)}패`).join(', ')}. 라이벌 기록 열기"><span><b>이번 달 라이벌전</b>${fx.map(f => `${esc(f.nick)}의 ${esc(f.org)} · 통산 ${esc(f.w)}승 ${esc(f.l)}패`).join(' / ')}${fx[0].story ? `<small>${esc(fx[0].story)}</small>` : ''}</span><i aria-hidden="true">기록 ›</i></button>` : '';   // 라이벌전이 있는 달에만. 없으면 자리도 두지 않는다
+    const sg = G.goalNow();   // 올해 목표(0.11.5): 있을 때만 목표 칸 안에 한 줄
+    return `${rv}<div class="goal slim"><button class="goalbtn" data-act="goalopen" aria-expanded="${open}">${sg ? `<span class="sgoal ${sg.done ? 'ok' : ''}"><b>올해 목표</b> ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</span>` : ''}<span class="sec">다음 목표 · ${esc(g.title)}</span><span class="gchips">${g.items.map(i => `<i class="${i.ok ? 'ok' : ''}">${esc(i.label)} ${esc(i.cur)}${i.low ? '위' : ''}/${esc(i.need)}${i.low ? '위' : ''}</i>`).join('')}</span></button>
 ${tip('goal')}
       ${open ? `${g.items.map(i => `<div class="gi ${i.ok ? 'ok' : ''}"><span>${esc(i.label)}</span><div class="bar"><i style="width:${i.low ? (i.ok ? 100 : 40) : Math.max(4, Math.min(100, Math.round(i.cur / i.need * 100)))}%"></i></div><b>${esc(i.cur)}${i.low ? '위' : ''} <em>/ ${esc(i.need)}${i.low ? '위 안' : ''}</em></b></div>`).join('')}<p class="fine">${esc(g.note)}</p>` : ''}</div>`;
   }
@@ -492,7 +493,8 @@ ${tip('goal')}
     const tb = t.length ? `<p class="sec">${esc(r.lgName)}${S.lg.tier === 'second' ? ' 넥스트(2군)' : ''} · ${S.lg.split === 'spring' ? '스프링' : '서머'}</p>
       <table><tr><th>순위</th><th class="l">팀</th><th>승</th><th>패</th></tr>${t.map((x, i) => `<tr class="${x.me ? 'me' : ''} ${i === 3 ? 'cut' : ''}"><td>${i + 1}</td><td class="l"><i class="tagdot" style="background:${esc(x.color)}"></i>${esc(x.name)}</td><td>${esc(x.w)}</td><td>${esc(x.l)}</td></tr>`).join('')}</table>
       <p class="fine">상위 4팀이 플레이오프에 오른다. ${S.lg.tier === 'first' ? '우승·준우승 팀은 국제 대회에 나간다.' : ''}</p>` : '<p class="dim">연습생은 리그에 출전하지 않는다. 능력치가 팀 2군 기준에 닿으면 스플릿이 끝날 때 콜업된다.</p>';
-    return `<div>${tb}</div><div><p class="sec">올해 내 성적</p><div class="kv"><div><span>경기</span><b>${esc(y.g)}</b></div><div><span>승률</span><b>${y.g ? Math.round(y.w / y.g * 100) + '%' : '-'}</b></div><div><span>평균 평점</span><b>${y.g ? f1(y.rs / y.g) : '-'}</b></div></div></div>
+    const me = G.org();
+    return `${me && me.idt ? `<p class="orgidt"><b>${esc(me.name)}</b> — ${esc(me.style)}. ${esc(me.idt)}</p>` : ''}<div>${tb}</div><div><p class="sec">올해 내 성적</p><div class="kv"><div><span>경기</span><b>${esc(y.g)}</b></div><div><span>승률</span><b>${y.g ? Math.round(y.w / y.g * 100) + '%' : '-'}</b></div><div><span>평균 평점</span><b>${y.g ? f1(y.rs / y.g) : '-'}</b></div></div></div>
       <div class="card"><b>올해 일정</b><br><span class="dim">2~4월 스프링 → 5월 미드시즌 컵 → 6~8월 서머 → 9월 네이션스컵(짝수 연차) → 10월 월드 파이널 → 11월 시상식·스토브리그</span></div>`;
   }
   function tRecord(S) {
@@ -500,6 +502,7 @@ ${tip('goal')}
     return `<div><p class="sec">소식</p><ul class="log">${S.log.slice(0, U.logOpen ? 20 : 4).map(l => `<li class="${esc(l.tone)}"><time>${esc(l.y)}년차 ${esc(l.m)}월</time><span>${esc(l.msg)}</span></li>`).join('') || '<li class="dim">아직 소식이 없다.</li>'}</ul>
         ${S.log.length > 4 ? `<button class="more" data-act="logopen" aria-expanded="${!!U.logOpen}">${U.logOpen ? '접기' : '소식 더 보기'}</button>` : ''}</div>
       ${al.length ? `<details class="aulog"><summary>최근 자동 선택 ${esc(al.length)}건</summary><ul class="aulist">${al.map(x => `<li><b>${esc(x.y)}년차 ${esc(x.m)}월 · ${esc(AU_KIND[x.k] || '선택')}</b> ${esc(x.t)} → ${esc(x.c)}</li>`).join('')}</ul></details>` : ''}
+      ${(() => { const gl = G.goalLog(); return gl.length ? `<details class="aulog"><summary>시즌 목표 — ${gl.filter(x => x.ok === 1).length}번 달성 / ${gl.length}번</summary><ul class="aulist">${gl.slice().reverse().map(x => `<li><b>${esc(x.y)}년차</b> ${esc(x.t)} — ${x.ok === 1 ? '달성' : x.ok === 0 ? '미달성' : '판정 없음'}</li>`).join('')}</ul></details>` : ''; })()}
       <div><p class="sec">통산</p><div class="kv"><div><span>1군 경기</span><b>${esc(c.g)}</b></div><div><span>평균 평점</span><b>${c.g ? f1(c.rs / c.g) : '-'}</b></div><div><span>경기 MVP</span><b>${esc(c.mvp)}</b></div></div></div>
       <div><p class="sec">트로피·수상</p>${c.titles.length + c.awards.length ? `<div class="chips">${c.titles.map(t => `<span class="chip gold">${esc(t.y)}년차 ${esc(t.name)}</span>`).join('')}${c.awards.map(a => `<span class="chip">${esc(a.y)}년차 ${esc(a.name)}</span>`).join('')}</div>` : '<p class="dim">아직 비어 있다.</p>'}</div>
       <div><p class="sec">시즌 기록</p>${S.hist.length ? `<div class="scroll-x"><table><tr><th>연차</th><th class="l">팀</th><th>경기</th><th>승</th><th>평점</th><th>OVR</th></tr>${S.hist.map(h => `<tr><td>${esc(h.year)} <span class="dim">${esc(h.age)}세</span></td><td class="l">${esc(h.tag)} ${G.SQUAD[h.squad]}</td><td>${esc(h.g)}</td><td>${esc(h.w)}</td><td>${h.g ? f1(h.avg) : '-'}</td><td>${esc(h.ovr)}</td></tr>`).join('')}</table></div>` : '<p class="dim">첫 시즌을 마치면 기록이 쌓인다.</p>'}</div>
@@ -526,10 +529,21 @@ ${tip('goal')}
     return `<p class="act ${v.good ? 'up' : 'down'}"><b>${esc(v.pos)} 해설</b><span class="chip ${v.good ? 'up' : 'down'}">${esc(v.head)}</span>${esc(v.text)}</p>`;
   }
   // 계약 제안에 붙는 구단 설명
+  // 제안의 매력과 부담 한 줄(0.11.5): 아래 줄들에 이미 있는 사실(리그 순위, 주전 여부, 내 OVR과 팀 전력의 차)을 한 문장으로 묶는다
+  function pitch(v) {
+    const top = v.rank <= 2, low = v.rank >= v.teams - 2;
+    if (top && !v.starter) return '우승을 다투는 팀이지만 벤치에서 시작한다. 트로피에 가깝고 출전은 멀다.';
+    if (top && v.starter) return '우승을 다투는 팀에서 바로 주전이다. 기대도 그만큼 크다.';
+    if (low && v.starter) return v.diff >= 2 ? '성적은 낮은 팀이지만 바로 주전이고, 내가 팀에서 가장 강한 축이 된다.' : '성적은 낮은 팀이지만 바로 주전으로 뛴다. 경기 수를 쌓기 좋다.';
+    if (low) return '성적이 낮은 팀인데 벤치에서 시작한다. 얻을 것이 분명하지 않다.';
+    return v.starter ? '중위권 팀에서 주전으로 뛴다. 플레이오프 문턱을 다투게 된다.' : '중위권 팀의 벤치에서 시작한다. 자리를 따내면 플레이오프를 다툰다.';
+  }
   function offerLines(o) {
     const v = G.offerInfo(o); if (!v) return '';
     const sign = n => (n > 0 ? '+' : '') + n, L = [];
     L.push(`${esc(v.lg)} · 전력 ${esc(v.str)} (리그 ${esc(v.teams)}팀 중 ${esc(v.rank)}위)${v.honor ? ` · ${esc(v.honor)}` : ''}`);
+    if (v.idt) L.push(`<b>${esc(v.style)}.</b> ${esc(v.idt)}`);
+    if (!v.here && v.squad === 'first') L.push(pitch(v));
     if (v.back) L.push(`<b>${esc(v.home)} 리그 복귀 제안.</b> 해외에서 쌓은 1군 경력을 보고 연락해 왔다.`);
     if (v.squad === 'first') L.push(`내 OVR ${esc(v.ovr)}, 팀 전력보다 ${esc(sign(v.diff))}. ${v.diff >= 2 ? '내가 뛰면 팀이 강해진다.' : v.diff >= -3 ? '팀 평균과 비슷하다.' : '팀 평균에 못 미친다. 내가 뛰면 팀 전력이 조금 내려간다.'}`);
     else if (v.squad === 'second') L.push(`2군 계약. 1군 콜업 심사 기준은 OVR ${esc(v.need1)} (지금 ${esc(v.ovr)}).`);
@@ -634,12 +648,21 @@ ${tip('goal')}
     return `${arenaTop(sc)}${arenaHead(sc, '', 0)}
       <p class="stake"><b>${esc(sc.bo)}전 ${esc(need)}선승</b>${sc.label === '결승' ? '이기면 우승이다.' : '지면 이 대회는 여기서 끝난다.'}</p>
       <div class="chips"><span class="chip">${esc(sc.role)} 출전</span><span class="chip ${sc.cond >= 70 ? 'up' : sc.cond < 50 ? 'down' : ''}">컨디션 ${esc(sc.cond)}</span><span class="chip ${sc.base >= 55 ? 'up' : sc.base <= 45 ? 'down' : ''}">전력으로 본 세트 승률 ${esc(sc.base)}%</span></div>
-      ${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. ${esc(sc.h2h)}${sc.h2h ? '.' : ''}</p>` : ''}
+      ${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. ${esc(sc.h2h)}${sc.h2h ? '.' : ''}${sc.story ? ` ${esc(sc.story)}` : ''}</p>` : ''}
       <h2>어떻게 싸울까</h2>
       ${sc.tacs.map(t => { const k = TAC(t.id); if (!k) return ''; const dd = t.p - sc.base; return `<button class="choice tac" data-act="tac" data-id="${esc(t.id)}" aria-pressed="${U.tac === t.id}"><div class="grow"><b>${esc(k.name)}</b><small class="tgood">유리 — ${esc(k.good)}</small><small class="tbad">불리 — ${esc(k.bad)}</small></div><span class="pill ${dd > 0 ? 'hi' : dd < 0 ? 'lo' : ''}">${esc(t.p)}%<small>1세트 ${esc(sgn(dd))}</small></span></button>`; }).join('')}
       <button class="btn" data-act="kick" ${U.tac ? '' : 'disabled'}>${U.tac ? `${esc((TAC(U.tac) || {}).name || '')} — 경기 시작` : '전략을 고르면 시작할 수 있다'}</button>
       <button class="btn line" data-act="kick" data-id="none">전략 없이 시작한다</button>
+      ${sc.oppIdt ? `<p class="fine">상대 팀 ${esc(sc.opp)} — ${esc(sc.oppStyle)}. ${esc(sc.oppIdt)} (팀 분위기 소개다. 승률 계산에는 들어가지 않는다.)</p>` : ''}
       <p class="fine">고른 전략은 이 시리즈의 세트 승률에 실제로 반영된다(세트당 최대 약 ±6%p). 오른쪽 숫자는 1세트 승률이다. 세트 스코어가 바뀌면 효과도 바뀐다.</p>`;
+  }
+  // 경기 결과의 "내 선택 → 그때의 영향 → 실제 결과"(0.11.5). 두 줄 이내. 숫자는 판정 때 실제로 들어간 세트별 보정과 승부처의 표시 확률이다.
+  // 확률을 조금 바꿨을 뿐이므로 "이 선택 때문에 이겼다/졌다"고 쓰지 않는다.
+  function causeLines(sc, k) {
+    const ds = sc.sets.map(x => x.d || 0), sum = Math.round(ds.reduce((a, b) => a + b, 0) / Math.max(1, ds.length) * 10) / 10, res = `실제 ${sc.x}:${sc.y} ${sc.win ? '승리' : '패배'}`;
+    const l1 = k ? `<b>${esc(k.name)}</b>을(를) 골랐다 → 세트 승률 평균 ${esc(sgn(sum))}%p(${ds.map(d => esc(sgn(d))).join(' / ')}) → ${esc(res)}.` : `전략 없이 치렀다 → 세트 승률 보정 없음 → ${esc(res)}.`;
+    const l2 = sc.moms.map(m => `승부처 「${esc(m.title)}」에서 <b>${esc(m.label)}</b>${m.auto ? '(감독 판단)' : ''} → ${m.ok ? '성공' : '실패'}.`).join(' ');
+    return `<div class="cause"><p>${l1}</p>${l2 ? `<p>${l2}</p>` : ''}<p class="fine">선택은 확률을 조금 움직였을 뿐이다. 결과의 원인이라고 단정할 수는 없다.</p></div>`;
   }
   function vMatch(sc) {
     const k = TAC(sc.tac), plus = sc.sets.filter(x => x.d > 0), minus = sc.sets.filter(x => x.d < 0);
@@ -649,13 +672,12 @@ ${tip('goal')}
     return `${arenaTop(sc, '결과')}${arenaHead(sc, wl(sc), sc.sets.length)}
       ${lm ? `<div class="evres ${lm.ok ? 'ok' : 'no'}"><p class="sec">승부처 ${lm.ok ? '성공' : '실패'} · ${esc(lm.p)}% — ${esc(lm.choice)}</p><p>${esc(lm.text)}</p><div class="chips"><span class="chip ${lm.setWin ? 'up' : 'down'}">${esc(lm.set)}세트 ${lm.setWin ? '승리' : '패배'}</span>${lm.d ? `<span class="chip ${lm.d > 0 ? 'up' : 'down'}">전략 ${esc(sgn(lm.d))}%p</span>` : ''}</div></div>` : ''}
       <div class="verdict ${sc.win ? 'w' : 'l'}"><b>${sc.win ? '승리' : '패배'}</b><span>${esc(sc.x)}:${esc(sc.y)} · ${esc(sc.next)}</span></div>
-      <p class="sec">내 전략 — ${esc(k ? k.name : '없음')}</p>
+      ${causeLines(sc, k)}
       <div class="chips">${sc.sets.map((x, i) => `<span class="chip ${x.d > 0 ? 'up' : x.d < 0 ? 'down' : ''}">${i + 1}세트 ${x.w ? '승' : '패'}${k ? ' · ' + esc(sgn(x.d)) + '%p' : ''}</span>`).join('')}</div>
-      <p>${esc(line)}</p>
-      ${sc.moms.map(m => `<p class="fine">승부처 「${esc(m.title)}」 — ${esc(m.label)} · ${m.ok ? '성공' : '실패'}${m.auto ? '(감독 판단)' : ''}</p>`).join('')}
+      ${k ? `<p class="fine">${esc(line)}</p>` : ''}
       <p class="sec">내 활약</p>
       <div class="chips"><span class="chip ${sc.r >= 7 ? 'up' : sc.r < 5.5 ? 'down' : ''}">평점 ${esc(Number(sc.r).toFixed(1))}</span><span class="chip">K/D/A ${esc(sc.k)}/${esc(sc.d)}/${esc(sc.a)}</span>${sc.mvp ? '<span class="chip gold">시리즈 MVP</span>' : ''}</div>
-      ${sc.rival ? `<p class="rvnote">${esc(sc.rival)}.</p>` : ''}
+      ${sc.rival ? `<p class="rvnote">${esc(sc.rival)}.${sc.story ? ` ${esc(sc.story)}` : ''}</p>` : ''}
       ${okBtn(G.inDemo() ? '다음으로' : '다음 일정으로')}
       <p class="fine">${G.inDemo() ? '체험전에서는 여기까지의 기록이 남지 않는다.' : '자세한 성적과 팬 반응은 이어지는 월간 보고에 있다.'}</p>`;
   }
@@ -678,7 +700,7 @@ ${tip('goal')}
     switch (sc.type) {
       case 'pickOrg':
         h = `<p class="eyebrow">TRYOUT PASSED</p><h2>세 구단의 제안</h2><p>입단 테스트를 통과했다. 연습생 계약을 맺을 구단을 고르자.</p>
-          ${sc.offers.map((o, i) => `<button class="choice" data-act="res" data-i="${esc(i)}"><div class="grow"><b>${esc(o.name)}</b><small>${esc(o.note)}</small>${o.need2 ? `<small class="swing">콜업 기준 — 2군 OVR ${esc(o.need2)} · 1군 OVR ${esc(o.need1)} (지금 내 OVR ${Math.floor(G.ovr())})</small>` : ''}</div><span class="pill sure">전력 ${esc(o.str)}</span></button>`).join('')}`; break;
+          ${sc.offers.map((o, i) => `<button class="choice" data-act="res" data-i="${esc(i)}"><div class="grow"><b>${esc(o.name)}</b><small>${esc(o.note)}</small>${D.ORG[o.org] && D.ORG[o.org].idt ? `<small>${esc(D.ORG[o.org].style)} — ${esc(D.ORG[o.org].idt)}</small>` : ''}${o.need2 ? `<small class="swing">콜업 기준 — 2군 OVR ${esc(o.need2)} · 1군 OVR ${esc(o.need1)} (지금 내 OVR ${Math.floor(G.ovr())})</small>` : ''}</div><span class="pill sure">전력 ${esc(o.str)}</span></button>`).join('')}`; break;
       case 'event':
         h = `<p class="eyebrow">선택의 순간</p><h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${esc(i)}" ${c.disabled ? 'disabled' : ''}><div class="grow"><b>${esc(c.label)}</b>${c.bd ? `<small>${c.bd.map(b => `${esc(b[0])} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${esc(b[1])}`).join(' · ')}</small>` : ''}${c.disabled ? '<small>자금이 부족하다</small>' : ''}</div>${pill(c.p)}</button>`).join('')}
@@ -713,7 +735,9 @@ ${tip('goal')}
       case 'season':
         h = `<p class="eyebrow">SEASON ${esc(sc.year)}</p><h2>${esc(sc.year)}년차 결산</h2><p>${esc(sc.org)} ${G.SQUAD[sc.squad]} · ${esc(sc.age)}세 · OVR ${esc(sc.ovr)}</p>
           <div class="kv"><div><span>경기</span><b>${esc(sc.g)}</b></div><div><span>승</span><b>${esc(sc.w)}</b></div><div><span>평균 평점</span><b>${sc.g ? f1(sc.avg) : '-'}</b></div></div>
-          <div class="chips">${sc.titles.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.awards.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.mvp ? `<span class="chip">경기 MVP ${esc(sc.mvp)}회</span>` : ''}${!sc.titles.length && !sc.awards.length ? '<span class="chip">무관</span>' : ''}</div>${okBtn('스토브리그로')}`; break;
+          <div class="chips">${sc.titles.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.awards.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.mvp ? `<span class="chip">경기 MVP ${esc(sc.mvp)}회</span>` : ''}${!sc.titles.length && !sc.awards.length ? '<span class="chip">무관</span>' : ''}</div>
+          ${sc.goal ? `<div class="evres ${sc.goal.ok === 1 ? 'ok' : sc.goal.ok === 0 ? 'no' : ''}"><p class="sec">올해 목표 — ${esc(sc.goal.t)} · ${sc.goal.ok === 1 ? '달성' : sc.goal.ok === 0 ? '미달성' : '판정 없음'}</p><p>${esc(sc.goal.why)}</p></div>` : ''}
+          ${sc.goals && sc.goals.length ? `<p class="sec">다음 시즌의 목표를 하나 고른다</p><p class="fine">기록에 남는 다짐이다. 능력치나 승률은 바뀌지 않는다. 고르면 스토브리그로 넘어간다.</p>${sc.goals.map((g, i) => `<button class="choice" data-act="goal" data-i="${esc(i)}"><div class="grow"><b>${esc(g.t)}</b><small>${esc(g.d)}</small></div></button>`).join('')}` : okBtn('스토브리그로')}`; break;
       case 'cards':
         h = `<p class="eyebrow">OFF-SEASON</p><h2>성장 카드</h2><p>비시즌 동안 무엇을 얻었을까. 한 장을 고른다.</p>
           ${sc.cards.map((id, i) => { const c = D.CARDS.find(x => x.id === id); return `<button class="gcard r${esc(c.r)}" data-act="res" data-i="${esc(i)}"><small>${D.RARITY[c.r]}</small><b>${esc(c.name)}</b><span>${esc(c.desc)}</span></button>`; }).join('')}
@@ -883,7 +907,7 @@ ${tip('goal')}
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
   const DEMO_OK = new Set(['res', 'ok', 'mom-auto', 'tac', 'kick', 'wfast', 'wskip', 'snd', 'demoend', 'reload']);
-  const TAP_GUARD = new Set(['kick', 'demo', 'wskip', 'ap-go', 'ap-start', 'next', 'ok', 'res', 'mom-auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
+  const TAP_GUARD = new Set(['kick', 'demo', 'wskip', 'ap-go', 'ap-start', 'next', 'ok', 'res', 'goal', 'mom-auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
@@ -990,6 +1014,7 @@ ${tip('goal')}
       case 'repopen': U.repOpen = !U.repOpen; break;
       case 'shop-auto': { const it = G.autoInfo().items.find(x => x.id === id); if (it) { G.setAuto(id, !it.on); SND.play('tap'); } break; }
       case 'alim': { const a = G.autoInfo(), list = id === 'keep' ? a.keeps : a.caps, cur = id === 'keep' ? a.keep : a.cap; G.setAutoLimit(id, list[(list.indexOf(cur) + 1) % list.length]); break; }
+      case 'goal': if (t0 !== 'season') return; G.resolve({ goal: i }); break;   // 시즌 결산의 확인 자리에서 다음 시즌 목표를 고른다
       case 'buy': G.buy(id); break;
       case 'shop-info': U.shopInfo = U.shopInfo === id ? '' : id; break;
       case 'shopgrp': U.shopOpen = !U.shopOpen; break;
