@@ -98,6 +98,7 @@ for (let i = 0; i < Math.max(12, N / 3 | 0); i++) {
     if (!r.auto) continue; autoRuns++;
     const ids = r.auto.items.map(x => x.id); if (new Set(ids).size !== ids.length) fail('같은 달에 같은 항목이 두 번 처리됨');
     const sum = r.auto.items.filter(x => !x.why).reduce((p, x) => p + x.cost, 0); if (sum !== r.auto.spent) fail('자동 관리 합계가 항목의 합과 다름');
+    if (sum > 0 && !(r.auto.bal >= 500)) fail(`자동으로 산 뒤의 잔고(${r.auto.bal})가 남겨 둘 돈(500) 아래`);
     spent += sum; for (const x of r.auto.items) { if (x.why) { skipped++; why[x.why] = (why[x.why] || 0) + 1; } else bought++; }
   }
   const up = D.SHOP.filter(x => !x.once).reduce((p, it) => p + (on.s1.shop[it.id] - lv0[it.id]), 0), upMax = on.reps.filter(r => r.auto).length * 3;
@@ -106,7 +107,8 @@ for (let i = 0; i < Math.max(12, N / 3 | 0); i++) {
   if (on.reps.filter(r => r.auto).length < 9) fail(`10개월 중 자동 관리가 실행된 달이 ${on.reps.filter(r => r.auto).length}개`);
   // (다) 돈이 모자람: 사지 않고 이유를 적는다. 남겨 둘 돈 아래로 내려가지 않는다
   const poor = tenMonths(i, { money: 0, fn: () => { G.state().contract.salary = 600; for (const it of D.SHOP) G.setAuto(it.id, true); G.setAutoLimit('keep', 2000); } });
-  for (const r of poor.reps) if (r.auto) for (const x of r.auto.items) { if (!x.why) fail('남겨 둘 돈보다 적은데 자동으로 삼'); why[x.why] = (why[x.why] || 0) + 1; skipped++; }
+  // 잔고 0으로 시작해도 상금·사건 수입으로 돈이 모이면 살 수 있다. 샀다면 "산 직후의 잔고"가 남겨 둘 돈(2000) 이상이어야 한다(예전 검사는 한 건이라도 사면 실패로 봤다: 외부 검수에서 지적)
+  for (const r of poor.reps) if (r.auto) { if (r.auto.items.some(x => !x.why) && !(r.auto.bal >= 2000)) fail(`남겨 둘 돈 아래로 내려가며 자동으로 삼(산 직후 잔고 ${r.auto.bal})`); if (r.auto.bal < 0) fail('잔고가 음수'); for (const x of r.auto.items) { if (x.why) { why[x.why] = (why[x.why] || 0) + 1; skipped++; } else bought++; } }
   if (!poor.reps.some(r => r.auto && r.auto.items.some(x => x.why === 'low'))) fail('잔고 부족으로 건너뛴 기록이 없음');
   // (라) 상한: 한 달 자동 지출이 상한을 넘지 않는다
   const capd = tenMonths(i, { money: 60000, fn: () => { for (const it of D.SHOP) G.setAuto(it.id, true); G.setAutoLimit('cap', 500); G.setAutoLimit('keep', 0); } });
