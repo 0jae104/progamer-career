@@ -276,7 +276,7 @@ v0.11.0에서 가져온 것: 목적지가 분명한 탭(능력치·리그·투�
 | `node test/browser/taps.js 5` | PC 헤드리스 크롬 153 | 확인 12개, 실패 0 |
 | `node test/browser/compare.js` (새로 만듦) | PC 헤드리스 크롬 153 | 그림 24장, 예전 아바타 동일 |
 | `node test/balance.js traits 600` ×6, `offers 300` ×2 | node 22 | 측정(통과·실패 없음) |
-| GitHub Actions | 우분투 러너의 크롬 | CI_RESULT |
+| GitHub Actions(`b7b7267`, 실행 44892434925) | 우분투 러너의 크롬 | 통과(첫 실행에서 통과). sim 1000, tactics, static, pacing 40, autoplay 30, extras, 브라우저 11종, update-chain |
 
 **작업 중에 실패했던 것**(감추지 않고 적습니다)
 
