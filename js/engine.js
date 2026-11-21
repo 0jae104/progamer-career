@@ -1870,7 +1870,10 @@
     const sure = ok.filter(i => sc.choices[i].p == null), risk = ok.filter(i => sc.choices[i].p != null).sort((a, b) => sc.choices[b].p - sc.choices[a].p || a - b);
     const min = style === 'bold' ? B.ap.bold : style === 'even' ? B.ap.even : 101;
     if (risk.length && sc.choices[risk[0]].p >= min) return risk[0];
-    return sure.length ? sure[0] : risk[0];
+    if (sure.length) return sure[0];
+    // 남은 것이 성향이 꺼리는 도박뿐인데 돈으로 피하는 선택지가 따로 있다면(예: 손목 통증의 병원 검사) 대신 정하지 않는다
+    if (sc.choices.some((c, i) => !c.disabled && ev.c[i] && ev.c[i].need)) return -1;
+    return risk[0];
   }
   // 이 장면을 자동진행이 어떻게 다루는가: { pass } 넘김, { arg, note } 대신 고름, { stop } 멈춤
   function apRule(sc, A) {

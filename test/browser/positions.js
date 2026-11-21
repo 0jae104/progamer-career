@@ -7,7 +7,7 @@ module.exports = async function positions(browser, url, R) {
   for (const [w, h] of [[320, 568], [390, 844], [768, 1024], [1280, 800]]) {
     const { ctx, pg } = await open(browser, url, { w, h }), m = auditor(pg);
     // A. 선수 등록: 다섯 포지션의 이름·영문 표기, 고르면 장점·주의·주요 능력치가 펼쳐진다
-    await pg.click('[data-act=create]');
+    await pg.click('[data-act=create]'); await pg.click('[data-act=cstep]');   // 0.11.2: 포지션은 등록의 두 번째 화면
     for (const id of Object.keys(NAMES)) {
       const b = pg.locator(`[data-act=pick][data-grp=role][data-id=${id}]`); await b.click();
       const t = await b.innerText();

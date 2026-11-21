@@ -334,7 +334,7 @@
   const STOP = {
     season: '시즌이 끝나 멈췄다. 결산을 확인하자.', offers: '계약 제안이 와서 멈췄다.', stove: '스토브리그: 남을지 옮길지 정할 차례라 멈췄다.', cards: '성장 카드를 고를 차례라 멈췄다.',
     info: '알림이 있어 멈췄다.', tryout: '입단 테스트를 정할 차례라 멈췄다.', pickOrg: '구단을 고를 차례라 멈췄다.', prematch: '경기 준비: 전략을 고를 차례라 멈췄다.', bigmatch: '중요한 경기(결승·국제전·라이벌 팀)라 멈췄다.',
-    once: '한 번뿐인 사건이라 직접 고르도록 멈췄다.', money: '돈이 드는 선택이라 멈췄다.', pause: '멈춤을 눌러 멈췄다.', hidden: '화면이 가려져 멈췄다.', leave: '다른 화면으로 옮겨 멈췄다.',
+    once: '한 번뿐인 사건이라 직접 고르도록 멈췄다.', money: '돈을 쓸지 정해야 하는 선택이라 멈췄다.', pause: '멈춤을 눌러 멈췄다.', hidden: '화면이 가려져 멈췄다.', leave: '다른 화면으로 옮겨 멈췄다.',
     max: `${D.BAL.ap.max}개월을 이어 와서 멈췄다. 다시 누르면 계속한다.`, unknown: '처음 보는 장면이라 멈췄다.', month: '안내가 달린 보고라 멈췄다.', moment: '경기 중이라 멈췄다.', mresult: '경기 중이라 멈췄다.', match: '경기 결과를 확인할 차례라 멈췄다.',
     error: '문제가 생겨 멈췄다. 진행한 곳까지는 저장됐다.', tab: '다른 탭에서 저장이 바뀌어 멈췄다.', over: '', tut: '',
   };
@@ -404,7 +404,7 @@
     const A = G.apInfo(), tg = (act, on, name, desc) => `<button class="tog wide" data-act="${act}" aria-pressed="${on}"><b>${esc(name)} — ${on ? '켜짐' : '꺼짐'}</b><small>${esc(desc)}</small></button>`;
     return `<div class="veil"><section class="sheet" role="dialog" aria-modal="true" aria-label="자동진행 설정" tabindex="-1"><p class="eyebrow">자동진행</p><h2>무엇을 맡길까</h2>
       <p>달을 계속 넘기고, 평범한 사건은 아래 성향대로 대신 고른다. 언제든 <b>멈춤</b>을 누르면 그달에서 선다.</p>
-      <p class="apstops"><b>항상 멈추는 곳</b> 계약·이적 제안, 스토브리그, 입단 테스트, 성장 카드, 시즌 결산, 콜업·강등·부상·우승 알림, 결승·국제전·라이벌 팀과의 경기, 한 번뿐인 사건, 돈이 드는 선택. 대신 정하지 않는다.</p>
+      <p class="apstops"><b>항상 멈추는 곳</b> 계약·이적 제안, 스토브리그, 입단 테스트, 성장 카드, 시즌 결산, 콜업·강등·부상·우승 알림, 결승·국제전·라이벌 팀과의 경기, 한 번뿐인 사건, 돈을 써야 위험을 피할 수 있는 사건. 대신 정하지 않는다.</p>
       <div><p class="sec">사건을 고르는 성향</p><div class="seg" role="group" aria-label="사건을 고르는 성향">${Object.keys(AP_STYLE).map(k => `<button data-act="ap-style" data-id="${k}" aria-pressed="${A.style === k}">${AP_STYLE[k][0]}</button>`).join('')}</div><p class="fine">${esc(AP_STYLE[A.style][1])} 돈이 드는 선택지는 고르지 않는다.</p></div>
       ${tg('ap-rest', A.rest, '컨디션이 낮으면 휴식', `컨디션 ${D.BAL.run.cond} 미만이나 손목 ${D.BAL.run.wrist} 이하면 쉬고, 컨디션이 ${D.BAL.ap.restBack}을 넘으면 하던 일로 돌아간다. 끄면 고른 할 일을 그대로 둔다.`)}
       ${tg('ap-match', A.match, '평범한 토너먼트 경기도 맡기기', '켜면 경기 전 전략과 승부처를 성향대로 대신 정하고 결과만 요약에 남긴다. 결승·국제전·라이벌 팀과의 경기는 켜도 직접 한다.')}

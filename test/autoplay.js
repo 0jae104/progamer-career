@@ -86,10 +86,16 @@ console.log(`  멈췄을 때 떠 있던 장면: ${Object.entries(stopSeen).sort(
   G.state().q.length = 0;
   const paid = D.EVENTS.find(e => !e.once && e.c.some(c => c.need));
   if (paid) { const sc = mk(paid); sc.choices.forEach((c, j) => { if (!paid.c[j].need) c.disabled = true; }); G.state().q.push(sc); r = G.autoMonth(); if (r.stop !== 'money') fail('돈이 드는 선택만 남았는데 멈추지 않음 ' + JSON.stringify(r)); G.state().q.length = 0; }
+  // 돈으로 피하는 선택지가 있고 남은 것이 성향이 꺼리는 도박뿐이면 멈춘다(균형 50%). 도전 성향은 그 도박을 고른다
+  const mixed = D.EVENTS.find(e => !e.once && e.c.some(c => c.need) && e.c.some(c => !c.need && c.chk) && !e.c.some(c => !c.need && !c.chk));
+  if (mixed) {
+    G.setAp('style', 'even'); G.state().q.push(mk(mixed)); r = G.autoMonth(); if (r.stop !== 'money' || G.scene().type !== 'event') fail('돈으로 피할 수 있는 도박을 균형 성향이 대신 고름 ' + JSON.stringify(r)); G.state().q.length = 0;
+    G.setAp('style', 'bold'); const sc2 = mk(mixed), ops2 = []; G.state().q.push(sc2); G._apTrace(ops2); G.state().pendingSim = false; G.autoMonth(); G._apTrace(null); const o2 = ops2.find(x => x[0] === 'res' && x[2] === 'event'); if (!o2 || mixed.c[o2[1]].need) fail('도전 성향이 도박을 고르지 않았거나 돈이 드는 선택을 고름'); G.state().q.length = 0; G.setAp('style', 'even');
+  }
   for (const t of NEVER) { if (t === 'retire') continue; G.state().q.push({ type: t }); r = G.autoMonth(); if (r.stop !== t || G.state().q.length !== 1) fail(`${t} 장면에서 멈추지 않음`); G.state().q.length = 0; }
   G.save(); mem.pg_career_v1 = mem.pg_career_v1 + ' ';   // 다른 탭이 저장을 바꾼 것처럼
   const ym = G.state().year * 12 + G.state().m; r = G.autoMonth(); if (r.stop !== 'tab' || G.state().year * 12 + G.state().m !== ym) fail('다른 탭이 저장을 바꿨는데 진행함'); if (G.autoStart()) fail('다른 탭이 저장을 바꿨는데 시작됨');
-  console.log(`정지 규칙: 모르는 장면 · 한 번뿐인 사건 · 돈이 드는 선택만 남은 사건${paid ? '' : '(해당 사건 없음)'} · ${NEVER.length - 1}종의 결정 장면 · 다른 탭의 저장 변경 — 모두 멈추고 장면은 그대로`);
+  console.log(`정지 규칙: 모르는 장면 · 한 번뿐인 사건 · 돈이 드는 선택만 남은 사건${paid ? '' : '(해당 사건 없음)'} · 돈으로 피할 수 있는 도박(균형·안정)${mixed ? '' : '(해당 사건 없음)'} · ${NEVER.length - 1}종의 결정 장면 · 다른 탭의 저장 변경 — 모두 멈추고 장면은 그대로`);
 }
 // ---- 5) 성향별 선택 ----
 {

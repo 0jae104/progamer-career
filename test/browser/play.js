@@ -138,7 +138,6 @@ module.exports = async function play(browser, url, R) {
     R.ok(changed, `${w}: 무작위 버튼이 얼굴을 바꾸지 않음`);
     for (let i = 0; i < 5; i++) await pg.click(`[data-act=look][data-i="${i}"]`);
     const look = await pg.evaluate(() => document.querySelector('canvas.av.big').dataset.look);
-    const px1 = await pg.evaluate(() => document.querySelector('canvas.av.big').toDataURL());
     await pg.fill('#nick', '얼굴검사'); await pg.click('[data-act=cstep]'); await m('등록 2/2'); const a2 = await pg.evaluate(A11Y);
     const s2 = await pg.evaluate(() => ({ roles: document.querySelectorAll('[data-grp=role]').length, traits: [...document.querySelectorAll('[data-grp=trait]')].map(b => [b.dataset.id, b.getAttribute('aria-pressed'), /처음이라면/.test(b.textContent), b.querySelectorAll('.rinfo').length].join(':')).join(' '), nickKept: PG_UI.state.C.nick }));
     R.ok(s2.roles === 5 && /brain:true:true:3/.test(s2.traits) && /grinder:false:false:3/.test(s2.traits) && /genius:false:false:3/.test(s2.traits) && s2.nickKept === '얼굴검사', `${w}: 등록 2/2 ${JSON.stringify(s2)}`);
@@ -146,8 +145,9 @@ module.exports = async function play(browser, url, R) {
     await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]'); await pg.waitForTimeout(200);
     R.ok(await pg.evaluate(l => PG.state().look === l && PG.state().nick === '얼굴검사' && PG.state().trait === 'brain' && JSON.parse(localStorage.getItem('pg_career_v1')).look === l, look), `${w}: 고른 얼굴이 저장되지 않음`);
     await pg.click('.sheet [data-act=res]'); await pg.waitForTimeout(150);
-    const hd = await pg.evaluate(() => { const c = document.querySelector('.lower canvas.av'); return { look: c.dataset.look, px: c.toDataURL() }; });
-    R.ok(hd.look === look && hd.px === px1, `${w}: 게임 화면의 얼굴이 고른 것과 다름`);
+    // 게임 화면의 얼굴: 고른 값으로 그려지고(유니폼 색만 구단 색), 얼굴을 고르지 않았을 때의 그림과는 다르다
+    const hd = await pg.evaluate(() => { const S = PG.state(), q = () => document.querySelector('.lower canvas.av'), a = q().toDataURL(), keep = S.look; delete S.look; PG_UI.render(); const b = q().toDataURL(); S.look = keep; PG_UI.render(); return { look: q().dataset.look, differs: a !== b, back: q().toDataURL() === a }; });
+    R.ok(hd.look === look && hd.differs && hd.back === true, `${w}: 게임 화면의 얼굴이 고른 것과 다름 ${JSON.stringify(hd)}`);
     R.ok(m.clean(), `${w}: 등록 화면 배치 ${m.line()}`);
     R.ok(![...a1.noName, ...a2.noName].length && !Object.keys(Object.assign({}, a1.lowContrast, a2.lowContrast)).length, `${w}: 등록 화면 접근성 ${JSON.stringify([a1.noName, a2.noName, a1.lowContrast, a2.lowContrast])}`);
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();

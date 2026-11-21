@@ -1,0 +1,2 @@
+0.11.2 저장에 든 새 항목: look=true ap=true alog=true recap=true auto=true | 나이 24 | 자동 관리 켠 항목 physio,counsel,fanmeet,analyst
+v0.11.1 로 열기: load="ok" · 은퇴까지 진행 됨 · 백업 파일 검사 통과
