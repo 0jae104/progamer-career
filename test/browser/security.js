@@ -125,7 +125,7 @@ module.exports = async function security(browser, url, R) {
       try {
         if (!PG.importApply(c.data) || PG.load() !== 'ok') throw new Error('복원 뒤 열리지 않음');
         PG_UI.state.view = 'game';
-        for (const tab of ['home', 'player', 'league', 'money', 'record', 'rep', 'apsheet']) { window.__pgRenderError = ''; PG_UI.state.tab = tab === 'rep' || tab === 'apsheet' ? 'home' : tab; PG_UI.state.repOpen = PG_UI.state.auOpen = PG_UI.state.goalOpen = tab === 'rep'; PG_UI.state.apOpen = tab === 'apsheet'; PG_UI.state.view = 'game'; PG_UI.render(); if (window.__pgRenderError) throw new Error(tab + ': ' + window.__pgRenderError); }
+        for (const tab of ['home', 'player', 'league', 'money', 'moneyopen', 'record', 'rep', 'apsheet']) { window.__pgRenderError = ''; PG_UI.state.tab = tab === 'rep' || tab === 'apsheet' ? 'home' : tab === 'moneyopen' ? 'money' : tab; PG_UI.state.shopOpen = tab === 'moneyopen'; PG_UI.state.shopInfo = tab === 'moneyopen' ? 'gear' : ''; PG_UI.state.repOpen = PG_UI.state.auOpen = PG_UI.state.goalOpen = tab === 'rep'; PG_UI.state.apOpen = tab === 'apsheet'; PG_UI.state.view = 'game'; PG_UI.render(); if (window.__pgRenderError) throw new Error(tab + ': ' + window.__pgRenderError); }
         for (let k = 0; k < 25 && !PG.state().over; k++) { PG.autoStep(); window.__pgRenderError = ''; PG_UI.state.view = 'game'; PG_UI.render(); if (window.__pgRenderError) throw new Error('진행 중: ' + window.__pgRenderError); }
       } catch (e) { if (res.crash.length < 12) res.crash.push(`${where} → ${v === undefined ? '(삭제)' : JSON.stringify(v)}: ${e.message}`); }
     }

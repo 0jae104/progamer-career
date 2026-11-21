@@ -16,10 +16,10 @@ module.exports = async function play(browser, url, R) {
       const foot = document.querySelector('.foot').getBoundingClientRect().top;
       const inView = (sel, lim) => { const e = document.querySelector(sel); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= (lim || innerHeight) + 1; };
       return { tabs: [...document.querySelectorAll('.tabs [role=tab]')].map(x => x.textContent).join('/'), next: inView('[data-act=next]'), go: inView('[data-act=ap-go]'), set: inView('[data-act=ap-set]'),
-        plans: document.querySelectorAll('.plan5 button').length, plansSeen: inView('.plan5', foot), fx: inView('.planfx', foot), goal: inView('.goalbtn', foot), hs: [...document.querySelectorAll('.hstat .hs')].map(x => x.textContent.replace(/[\d,억만 ]+$/, '').trim()).join('/'),
+        plans: document.querySelectorAll('.plan5 button').length, plansSeen: inView('.plan5', foot), fx: inView('.planfx', foot), goal: inView('.goalbtn', foot), hs: [...document.querySelectorAll('.hstat .hs')].map(x => x.firstChild.textContent.trim()).join('/'), moneyBtn: inView('.moneyrow', foot),
         scroll: document.documentElement.scrollHeight - innerHeight, auto: PG.autoInfo().n, ap: PG_UI.ap.on, sheet: !!document.querySelector('.veil'), log: document.querySelectorAll('.content .log').length, shop: document.querySelectorAll('.content .shop').length, stat: document.querySelectorAll('.content .stat').length };
     });
-    R.ok(first.tabs === '플레이/선수/리그/자산/기록' && first.next && first.go && first.set && first.plans === 5 && first.plansSeen && first.fx && first.goal && /컨디션\/(감독 신뢰|코치 평가)\/자금/.test(first.hs) && first.scroll <= 0 && first.auto === 0 && !first.ap && !first.sheet && !first.log && !first.shop && !first.stat, `${w}: 첫 화면 ${JSON.stringify(first)}`);
+    R.ok(first.tabs === '플레이/선수/리그/자산/기록' && first.next && first.go && first.set && first.plans === 5 && first.plansSeen && first.fx && first.goal && /^컨디션\/손목\/(감독 신뢰|코치 평가)\/인기$/.test(first.hs) && first.moneyBtn && first.scroll <= 0 && first.auto === 0 && !first.ap && !first.sheet && !first.log && !first.shop && !first.stat, `${w}: 첫 화면 ${JSON.stringify(first)}`);
     await m('플레이'); const a1 = await pg.evaluate(A11Y);
     // 할 일 바꾸기: 한 번 누름. 고른 것의 효과가 바로 아래에 나온다. 달은 넘어가지 않는다
     const y0 = await pg.evaluate(YM);
@@ -82,7 +82,7 @@ module.exports = async function play(browser, url, R) {
     R.ok(await pg.evaluate(() => PG.autoInfo().n === 0 && !PG.state().auto), 'C: 새로 불러온 저장에 자동 관리가 켜져 있음');
     await pg.click('[data-act=next]'); await pg.waitForTimeout(80); await clear(pg);
     R.ok(await pg.evaluate(() => !PG.lastRep() || !PG.lastRep().auto) && !/자동 관리 −/.test(await pg.evaluate(() => (document.querySelector('.recap') || {}).textContent || '')), 'C: 켜지 않았는데 자동으로 지출함');
-    await pg.click('[data-act=tab][data-id=money]'); await pg.click('[data-act=shop-auto][data-id=counsel]'); await pg.click('[data-act=shop-auto][data-id=gear]'); await pg.click('[data-act=tab][data-id=home]');
+    await pg.click('[data-act=tab][data-id=money]'); await pg.click('[data-act=shop-auto][data-id=counsel]'); await pg.click('[data-act=shopgrp]'); await pg.click('[data-act=shop-auto][data-id=gear]'); await pg.click('[data-act=tab][data-id=home]');
     const lv0 = await pg.evaluate(() => PG.state().shop.gear);
     let spent = 0, months = 0, dup = 0, neg = 0;
     for (let i = 0; i < 60 && months < 10; i++) {
@@ -99,7 +99,7 @@ module.exports = async function play(browser, url, R) {
     await pg.reload(); await pg.waitForTimeout(250); await pg.click('[data-act=continue]'); await pg.waitForTimeout(120); await clear(pg);
     await pg.click('[data-act=tab][data-id=money]');
     R.ok(await pg.evaluate(() => PG.autoInfo().items.find(x => x.id === 'counsel').on && /켜짐/.test(document.querySelector('[data-act=shop-auto][data-id=counsel]').textContent)), 'C: 새로 고친 뒤 자동 관리 설정이 사라짐');
-    await pg.click('[data-act=shop-auto][data-id=counsel]'); if (await pg.evaluate(() => PG.autoInfo().items.find(x => x.id === 'gear').on)) await pg.click('[data-act=shop-auto][data-id=gear]');
+    await pg.click('[data-act=shop-auto][data-id=counsel]'); if (await pg.evaluate(() => PG.autoInfo().items.find(x => x.id === 'gear').on)) { if (await pg.evaluate(() => !document.querySelector('[data-act=shop-auto][data-id=gear]'))) await pg.click('[data-act=shopgrp]'); await pg.click('[data-act=shop-auto][data-id=gear]'); }
     R.ok(await pg.evaluate(() => PG.autoInfo().n === 0), 'C: 자동 관리를 끄지 못함');
     await pg.click('[data-act=tab][data-id=home]'); await pg.click('[data-act=next]'); await pg.waitForTimeout(60); await clear(pg);
     R.ok(await pg.evaluate(() => !PG.lastRep() || !PG.lastRep().auto), 'C: 껐는데 자동으로 지출함');
@@ -169,6 +169,88 @@ module.exports = async function play(browser, url, R) {
     await pg.click('[data-act=buy][data-id=fanmeet]');
     const f1 = await pg.evaluate(() => [PG.state().fame, PG.state().cond, PG.state().money, document.querySelector('[data-act=buy][data-id=fanmeet]').disabled]);
     R.ok(shop === 'false,false' && f1[0] > f0[0] && Math.round(f0[1] - f1[1]) === 6 && f0[2] - f1[2] === 250 && f1[3] === true, `E: 팬 미팅 ${shop} ${JSON.stringify([f0, f1])}`);
+    R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
+  }
+
+  // F. 0.11.4: 홈의 상태 2×2와 자금 버튼, 자산 탭의 접힘, 라이벌 줄
+  const mk4 = await open(browser, url);
+  const S4 = await mk4.pg.evaluate(() => {
+    const out = {};
+    const run = (seed, want) => { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); PG._seen(); PG.seed(seed); PG.newGame({ nick: '상태검사', region: 'kr', role: 'core', trait: 'brain' }); let n = 0; while (n++ < 60000 && !PG.state().over) { const s = PG.state(), sc = PG.scene(); if (!sc && s.org && s.tut.done && want(s)) { delete s.recap; delete s.lastRep; PG.save(); return localStorage.getItem('pg_career_v1'); } PG.autoStep(); } return ''; };
+    out.trainee = run(41, s => s.squad === 'trainee'); out.second = run(42, s => s.squad === 'second'); out.first = run(43, s => s.squad === 'first' && s.injury === 0);
+    for (let k = 0; k < 30 && !(out.rv && out.plain); k++) { out.rv = run(500 + k, s => s.squad === 'first' && s.injury === 0 && PG.rivalFixtures().length > 0); out.plain = run(500 + k, s => s.squad === 'first' && s.injury === 0 && s.m >= 1 && s.m <= 6 && PG.rivalFixtures().length === 0 && s.rivals.length > 0); }
+    const mod = (raw, f) => { const o = JSON.parse(raw); f(o); return JSON.stringify(o); };
+    out.injured = mod(out.first, o => { o.injury = 2; o.wrist = 18; }); out.wristLow = mod(out.first, o => { o.wrist = 30; o.cond = 81; }); out.condLow = mod(out.first, o => { o.cond = 22; o.wrist = 90; });
+    return out;
+  });
+  await mk4.ctx.close();
+  R.ok(Object.values(S4).every(Boolean), `F: 검사용 저장 ${Object.keys(S4).filter(k => !S4[k])}`);
+  for (const [w, h] of [[430, 932], [390, 844], [360, 800], [320, 568]]) {
+    const { ctx, pg } = await open(browser, url, { w, h, init: 'window.__pgApMs = 250;' }), m = auditor(pg);
+    // 1) 여섯 상태에서 네 값이 저장된 수치 그대로, 이름이 소속에 맞게, 꾸며낸 말 없이
+    for (const kind of ['trainee', 'second', 'first', 'injured', 'wristLow', 'condLow']) {
+      await load(pg, S4[kind]);
+      const v = await pg.evaluate(() => { const S = PG.state(), cells = [...document.querySelectorAll('.hstat .hs')].map(e => ({ label: e.firstChild.textContent.trim(), n: +e.querySelector('b').textContent, em: (e.querySelector('em') || {}).textContent || '', bad: e.classList.contains('bad'), good: e.classList.contains('good') })); const mr = document.querySelector('.moneyrow'); return { cells, want: [Math.round(S.cond), Math.round(S.wrist), Math.round(S.trust), Math.round(S.fame)], squad: S.squad, injury: S.injury, cond: S.cond, wrist: S.wrist, money: mr.querySelector('b').textContent === PG.fmtMoney(S.money), aria: mr.getAttribute('aria-label'), meters: document.querySelectorAll('.meters').length, txt: document.querySelector('.hstat').textContent, over: document.documentElement.scrollHeight - innerHeight, planSeen: (() => { const r = document.querySelector('.plan5').getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.top >= 0 && r.bottom <= f + 1; })() }; });
+      const lab = v.cells.map(c => c.label).join('/'), nums = v.cells.map(c => c.n);
+      R.ok(v.cells.length === 4 && lab === `컨디션/손목/${v.squad === 'trainee' ? '코치 평가' : '감독 신뢰'}/인기` && JSON.stringify(nums) === JSON.stringify(v.want), `${w} ${kind}: 상태 네 칸 ${lab} ${nums} / 저장 ${v.want}`);
+      R.ok(v.cells[0].bad === (v.cond < 40) && v.cells[0].good === (v.cond >= 70) && v.cells[1].bad === (v.injury > 0 || v.wrist <= 35) && !v.cells[2].bad && !v.cells[3].bad && !/상승|하락/.test(v.txt), `${w} ${kind}: 경고 표시가 기준과 다르거나 꾸며낸 말이 있음 ${JSON.stringify(v.cells)}`);
+      if (kind === 'injured') R.ok(w <= 350 || /재활 2개월/.test(v.cells[1].em), `${w}: 부상 재활 표시가 없음 ${v.cells[1].em}`);
+      R.ok(v.money && /보유 자금 .*자산 페이지 열기/.test(v.aria) && v.meters === 0 && v.planSeen && v.over <= 0, `${w} ${kind}: 자금 줄·할 일 위치·넘침 ${JSON.stringify({ money: v.money, aria: v.aria, meters: v.meters, plan: v.planSeen, over: v.over })}`);
+      await m('홈 ' + kind);
+    }
+    // 2) 자금 → 자산: 한 번 누름, 아래 탭의 선택 표시, 맨 위. 키보드(Enter·Space)도 된다
+    await load(pg, S4.first); await pg.evaluate(() => scrollTo(0, 40));
+    await pg.click('.moneyrow');
+    R.ok(await pg.evaluate(() => PG_UI.state.tab === 'money' && document.querySelector('.tabs [aria-selected=true]').dataset.id === 'money' && scrollY === 0 && !!document.querySelector('#autop') && !document.querySelector('.veil') && !document.querySelector('.hstat')), `${w}: 자금을 눌러 자산 탭으로 가지 못함`);
+    await m('자산');
+    await pg.click('[data-act=tab][data-id=home]'); R.ok(await pg.evaluate(() => PG_UI.state.tab === 'home' && !!document.querySelector('.plan5')), `${w}: 자산에서 플레이로 돌아가지 못함`);
+    for (const key of ['Enter', 'Space']) { await pg.evaluate(() => { document.activeElement && document.activeElement.blur(); }); let on = false; for (let i = 0; i < 12 && !on; i++) { await pg.keyboard.press('Tab'); on = await pg.evaluate(() => document.activeElement.classList.contains('moneyrow')); } const ring = on ? await pg.evaluate(() => getComputedStyle(document.activeElement).outlineStyle) : 'unreached'; await pg.keyboard.press(key); R.ok(await pg.evaluate(() => PG_UI.state.tab === 'money') && ring !== 'none', `${w}: 키보드 ${key}로 자산에 가지 못하거나 초점 표시가 없음(${ring})`); await pg.click('[data-act=tab][data-id=home]'); }
+    // 3) 자동진행 중에 자금을 누르면 먼저 서고, 그다음 자산 탭으로 간다. 그 뒤로 달이 넘어가지 않고 저장과 화면이 같다
+    await pg.evaluate(() => { PG.seed(9); PG.setAp('seen', true); PG_UI.render(); });
+    await pg.click('[data-act=ap-go]'); await pg.waitForTimeout(350);
+    if (await pg.evaluate(() => PG_UI.ap.on)) {
+      await pg.click('.moneyrow'); const t = await pg.evaluate(() => PG.state().stat.turns); await pg.waitForTimeout(700);
+      R.ok(await pg.evaluate(t0 => !PG_UI.ap.on && PG_UI.ap.t === 0 && PG_UI.state.tab === 'money' && PG.state().stat.turns === t0 && PG.recap().stop === 'pause' && JSON.parse(localStorage.getItem('pg_career_v1')).stat.turns === t0 && !PG.saveFailed(), t), `${w}: 자동진행 중 자금을 눌렀을 때 서지 않거나 저장이 어긋남`);
+    } else R.ok(false, `${w}: 자금 버튼 검사 전에 자동진행이 이미 멈춤`);
+    // 4) 자산: 첫 화면에 요약·한도·매달 반복, 단계형은 접힘. 접힘·설명 펼침은 조작 뒤에도 유지되고 저장에는 들어가지 않는다
+    await load(pg, JSON.stringify(Object.assign(JSON.parse(S4.first), { money: 30000 }))); await pg.click('.moneyrow');
+    const a0 = await pg.evaluate(() => ({ sum: document.querySelector('.autosum').textContent, lims: document.querySelectorAll('[data-act=alim]').length, togs: [...document.querySelectorAll('[data-act=shop-auto]')].map(b => b.dataset.id).join(','), grp: document.querySelector('[data-act=shopgrp]').getAttribute('aria-expanded'), desc: document.querySelectorAll('.sdesc').length, grpTxt: document.querySelector('[data-act=shopgrp]').textContent }));
+    R.ok(/자동 모두 꺼짐/.test(a0.sum) && /없음/.test(a0.sum) && a0.lims === 2 && a0.togs === 'physio,counsel,fanmeet,analyst' && a0.grp === 'false' && a0.desc === 0 && /장비 0\/5/.test(a0.grpTxt), `${w}: 자산 첫 화면 ${JSON.stringify(a0)}`);
+    await pg.click('[data-act=shop-info][data-id=fanmeet]');
+    R.ok(await pg.evaluate(() => document.querySelectorAll('.sdesc').length === 1 && /인기 \+2/.test(document.querySelector('.sdesc').textContent)), `${w}: 이름을 눌러도 설명이 펼쳐지지 않음`);
+    await m('자산 설명 펼침');
+    await pg.click('[data-act=shopgrp]'); await m('자산 단계형 펼침');
+    R.ok(await pg.evaluate(() => [...document.querySelectorAll('[data-act=shop-auto]')].length === 7 && document.querySelector('[data-act=shopgrp]').getAttribute('aria-expanded') === 'true'), `${w}: 단계형 투자가 펼쳐지지 않음`);
+    // 일곱 항목 모두: 자동 켜기·끄기가 엔진 값과 같고, 펼쳐 둔 것이 닫히지 않는다
+    let togOk = true; for (const id of ['physio', 'counsel', 'fanmeet', 'analyst', 'gear', 'coach', 'care']) { await pg.click(`[data-act=shop-auto][data-id=${id}]`); const on = await pg.evaluate(i => PG.autoInfo().items.find(x => x.id === i).on && document.querySelector(`[data-act=shop-auto][data-id=${i}]`).getAttribute('aria-pressed') === 'true', id); await pg.click(`[data-act=shop-auto][data-id=${id}]`); const off = await pg.evaluate(i => !PG.autoInfo().items.find(x => x.id === i).on, id); if (!on || !off) togOk = false; }
+    R.ok(togOk && await pg.evaluate(() => document.querySelector('[data-act=shopgrp]').getAttribute('aria-expanded') === 'true' && document.querySelectorAll('.sdesc').length === 1 && document.querySelectorAll('[data-act=shop-auto]').length === 7), `${w}: 자동 스위치 일곱 개 또는 펼침 유지`);
+    // 직접 사기: 단계형 한 단계, 한 달에 한 번 항목, 그리고 펼침 유지
+    const b0 = await pg.evaluate(() => [PG.state().money, PG.state().shop.gear, PG.autoInfo().items.find(x => x.id === 'gear').cost, PG.autoInfo().items.find(x => x.id === 'counsel').cost]);
+    await pg.click('[data-act=buy][data-id=gear]'); await pg.click('[data-act=buy][data-id=counsel]');
+    const b1 = await pg.evaluate(() => ({ money: PG.state().money, gear: PG.state().shop.gear, used: document.querySelector('[data-act=buy][data-id=counsel]').disabled, usedTxt: document.querySelector('[data-act=shop-info][data-id=counsel]').textContent, grp: document.querySelector('[data-act=shopgrp]').getAttribute('aria-expanded'), desc: document.querySelectorAll('.sdesc').length, gearTxt: document.querySelector('[data-act=shop-info][data-id=gear]').textContent }));
+    R.ok(b1.money === b0[0] - b0[2] - b0[3] && b1.gear === b0[1] + 1 && b1.used && /이번 달 완료/.test(b1.usedTxt) && b1.grp === 'true' && b1.desc === 1 && /1\/5 단계/.test(b1.gearTxt), `${w}: 직접 사기 ${JSON.stringify(b1)} / ${b0}`);
+    // 한도 버튼, 잔고 부족, 최대 단계 표시
+    await pg.click('[data-act=alim][data-id=keep]'); await pg.click('[data-act=alim][data-id=cap]');
+    R.ok(await pg.evaluate(() => PG.autoInfo().keep === 2000 && PG.autoInfo().cap === 500 && document.querySelector('[data-act=shopgrp]').getAttribute('aria-expanded') === 'true'), `${w}: 한도 버튼 또는 펼침 유지`);
+    R.ok(await pg.evaluate(() => { const s = JSON.parse(localStorage.getItem('pg_career_v1')); return !('shopOpen' in s) && !('shopInfo' in s) && !JSON.stringify(s).includes('shopOpen'); }), `${w}: 화면의 접힘 상태가 저장에 들어감`);
+    await pg.evaluate(() => { const S = PG.state(); S.money = 10; S.shop.coach = 5; S.used = {}; PG_UI.render(); });
+    const lim = await pg.evaluate(() => ({ poor: document.querySelector('[data-act=buy][data-id=physio]').disabled, max: document.querySelector('[data-act=buy][data-id=coach]').textContent + '|' + document.querySelector('[data-act=buy][data-id=coach]').disabled, maxTxt: document.querySelector('[data-act=shop-info][data-id=coach]').textContent }));
+    R.ok(lim.poor && lim.max === '최대|true' && /5\/5 최대/.test(lim.maxTxt), `${w}: 잔고 부족·최대 단계 표시 ${JSON.stringify(lim)}`);
+    // 5) 라이벌: 라이벌전이 있는 달에만 홈에 나오고(실제 상대와 전적), 누르면 리그 탭의 라이벌 기록으로 간다. 없는 달에는 자리도 없다
+    await load(pg, S4.plain);
+    R.ok(await pg.evaluate(() => PG.rivalFixtures().length === 0 && !document.querySelector('.rvcard') && !/라이벌/.test(document.querySelector('.content').textContent)), `${w}: 라이벌전이 없는 달인데 홈에 라이벌 영역이 있음`);
+    await load(pg, S4.rv); await m('홈 라이벌전 달');
+    const rv = await pg.evaluate(() => { const fx = PG.rivalFixtures(), c = document.querySelector('.rvcard'), t = c ? c.textContent : ''; return { n: fx.length, cards: document.querySelectorAll('.rvcard').length, all: fx.every(f => t.includes(f.nick) && t.includes(f.org) && t.includes(`통산 ${f.w}승 ${f.l}패`)), plan: (() => { const r = document.querySelector('.plan5').getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.bottom <= f + 1; })(), seen: (() => { const r = c.getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.top >= 0 && r.bottom <= f + 1; })(), veil: !!document.querySelector('.veil') }; });
+    R.ok(rv.n > 0 && rv.cards === 1 && rv.all && rv.plan && rv.seen && !rv.veil, `${w}: 라이벌전 달의 홈 ${JSON.stringify(rv)}`);
+    await pg.click('.rvcard');
+    R.ok(await pg.evaluate(() => { const e = document.getElementById('rivals'), r = e && e.getBoundingClientRect(); return PG_UI.state.tab === 'league' && document.querySelector('.tabs [aria-selected=true]').dataset.id === 'league' && !!e && r.top >= -2 && r.top < innerHeight / 2 && document.querySelectorAll('#rivals .rival').length >= 1; }), `${w}: 라이벌 줄을 눌러 리그 탭의 라이벌 기록으로 가지 못함`);
+    await m('리그 라이벌');
+    // 그 달을 진행하면 요약의 라이벌전 결과가 엔진 기록과 같다(승패, 통산 전적), 소식 줄은 소식 목록에 있는 문장뿐이다
+    await pg.click('[data-act=tab][data-id=home]'); await pg.evaluate(() => PG.seed(77)); await pg.click('[data-act=next]'); await pg.waitForTimeout(120); await clear(pg);
+    const rr = await pg.evaluate(() => { const r = PG.recap() || {}, rs = PG.rivals(), lines = [...document.querySelectorAll('.recap .rvres')].map(e => e.textContent), news = [...document.querySelectorAll('.recap .rvnews')].map(e => e.textContent.replace(/^라이벌 소식\s*/, '')), log = PG.state().log.map(l => l.msg); const rv = (r.rv || []); return { rv: rv.length, lines: lines.filter(t => /^라이벌전/.test(t)).length, ok: rv.every(v => { const x = rs.find(q => q.nick === v.nick); return lines.some(t => t.includes(v.nick) && t.includes(v.win ? '승리' : '패배') && (!x || t.includes(`통산 ${x.w}승 ${x.l}패`))); }), news: news.length, newsOk: news.every(t => log.includes(t)), link: !!document.querySelector('.recap [data-to=rivals]') }; });
+    R.ok(rr.rv === rr.lines && rr.ok && rr.news <= 2 && rr.newsOk && (rr.rv + rr.news === 0 || rr.link), `${w}: 진행 요약의 라이벌 줄이 기록과 다름 ${JSON.stringify(rr)}`);
+    await m('요약 라이벌');
+    R.ok(m.clean(), `${w}: 0.11.4 화면 배치 ${m.line()}`); R.note(`0.11.4 ${w}x${h}`, m.line());
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
 };
