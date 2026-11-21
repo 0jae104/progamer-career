@@ -1,10 +1,10 @@
-// 홈·자산 화면의 길이와 조작 수를 버전별로 잰다(0.11.3 / 지금). 같은 저장: 1군 3월(라이벌 있음).
+// 홈·자산·시즌 결산 화면의 길이와 조작 수를 버전별로 잰다(직전 버전 / 지금). 같은 저장: 1군 3월(라이벌 있음).
 //   node test/browser/measure.js [그림을 둘 폴더=docs/qa-logs/stage11-4/shots]
 // PC 헤드리스 크롬의 폰 크기 에뮬레이션이다. 실제 폰이 아니고, 사람이 편하다고 느끼는지는 재지 못한다. git 이력이 필요하다.
 const { execSync } = require('child_process'), fs = require('fs'), path = require('path');
 const { ROOT, serve, tmpDir, launch, open } = require('./lib');
-const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'docs', 'qa-logs', 'stage11-4', 'shots'));
-const VERS = [['v0.11.3', '0031727'], ['지금', null]];
+const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'docs', 'qa-logs', 'stage11-5', 'shots'));
+const VERS = [['v0.11.4', 'a39de95'], ['지금', null]];
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const dirs = [];
@@ -13,11 +13,11 @@ const VERS = [['v0.11.3', '0031727'], ['지금', null]];
   const browser = await launch(), rows = [];
   // 저장은 예전 버전으로 만든다: (가) 1군, 장면 없음, 라이벌전이 있는 달 (나) 같은 선수, 라이벌전이 없는 달
   const s0 = await serve(dirs[0]), mk = await open(browser, s0.url);
-  const saves = await mk.pg.evaluate(() => { let rv = '', plain = ''; for (let k = 0; k < 30 && !(rv && plain); k++) { rv = plain = ''; localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); PG._seen(); PG.seed(20261121 + k); PG.newGame({ nick: 'Haneul', region: 'kr', role: 'core', trait: 'brain' }); let n = 0; while (n++ < 60000 && !PG.state().over && !(rv && plain)) { const sc = PG.scene(), s = PG.state(); if (!sc && s.squad === 'first' && s.tut.done && s.car.g > 20 && s.injury === 0) { const fx = PG.rivalFixtures().length; if (fx && !rv) { PG.save(); rv = localStorage.getItem('pg_career_v1'); } if (!fx && !plain && s.m >= 1 && s.m <= 6) { PG.save(); plain = localStorage.getItem('pg_career_v1'); } } PG.autoStep(); } } return { rv, plain }; });
+  const saves = await mk.pg.evaluate(() => { let rv = '', plain = ''; for (let k = 0; k < 30 && !(rv && plain); k++) { rv = plain = ''; localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); PG._seen(); PG.seed(20261121 + k); PG.newGame({ nick: 'Haneul', region: 'kr', role: 'core', trait: 'brain' }); let n = 0; while (n++ < 60000 && !PG.state().over && !(rv && plain)) { const sc = PG.scene(), s = PG.state(); if (!sc && s.squad === 'first' && s.tut.done && s.car.g > 20 && s.injury === 0) { const fx = PG.rivalFixtures().length; if (fx && !rv) { PG.save(); rv = localStorage.getItem('pg_career_v1'); } if (!fx && !plain && s.m >= 1 && s.m <= 6) { PG.save(); plain = localStorage.getItem('pg_career_v1'); } } PG.autoStep(); } } let pre = ''; for (let k = 0; k < 30 && !pre; k++) { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); PG._seen(); PG.seed(31000 + k); PG.newGame({ nick: 'Haneul', region: 'kr', role: 'core', trait: 'brain' }); let n = 0; while (n++ < 60000 && !PG.state().over) { const s = PG.state(); if (!PG.scene() && s.squad === 'first' && s.tut.done && s.m === 9 && s.year >= 4 && s.age < 30) { PG.save(); pre = localStorage.getItem('pg_career_v1'); break; } PG.autoStep(); } } return { rv, plain, pre }; });
   await mk.ctx.close(); await s0.close();
   if (!saves.rv || !saves.plain) { console.log('실패: 검사용 저장을 만들지 못함'); process.exit(1); }
   for (let v = 0; v < VERS.length; v++) {
-    const name = VERS[v][0], tag = name === '지금' ? 'v0.11.4' : name, srv = await serve(dirs[v]);
+    const name = VERS[v][0], tag = name === '지금' ? 'v0.11.5' : name, srv = await serve(dirs[v]);
     for (const [w, h] of [[320, 568], [360, 800], [390, 844], [430, 932]]) {
       const { ctx, pg } = await open(browser, srv.url, { w, h });
       const load = async raw => { await pg.evaluate(r => { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); localStorage.setItem('pg_opt_v1', '{"snd":0}'); localStorage.setItem('pg_career_v1', r); }, raw); await pg.reload(); await pg.waitForTimeout(300); await pg.addStyleTag({ content: '#toast{display:none!important}' }); await pg.click('[data-act=continue]'); await pg.waitForTimeout(400); };
@@ -44,7 +44,14 @@ const VERS = [['v0.11.3', '0031727'], ['지금', null]];
       // 라이벌전이 있는 달
       await load(saves.rv); await shot('3-rival-home');
       const rv = await pg.evaluate(() => { const fx = PG.rivalFixtures(), t = document.querySelector('.content').textContent; return { fx: fx.length, shown: fx.length > 0 && fx.every(f => t.includes(f.nick)), over: document.documentElement.scrollHeight - innerHeight, link: !!document.querySelector('.content [data-to=rivals]') }; });
-      rows.push({ name, w, h, home, money, moneyTaps, rv });
+      // 시즌 결산: 시즌 마지막 달 직전의 같은 저장에서 한 달을 진행해 결산 창까지 간다. 넘어가는 데 드는 누름 수와 그 버튼까지의 스크롤
+      await load(saves.pre); await pg.evaluate(() => PG.seed(4040)); await pg.click('[data-act=next]'); await pg.waitForTimeout(150);
+      for (let i = 0; i < 12 && await pg.evaluate(() => PG.scene() && PG.scene().type !== 'season'); i++) { await pg.evaluate(() => { const b = [...document.querySelectorAll('.veil .sheet [data-act]')].find(x => !x.disabled && x.dataset.act !== 'snd'); if (b) b.click(); }); await pg.waitForTimeout(80); }
+      const season = await pg.evaluate(() => { const sh = document.querySelector('.veil .sheet'); if (!sh || !PG.scene() || PG.scene().type !== 'season') return null; const btns = [...sh.querySelectorAll('[data-act=ok],[data-act=goal]')], vis = sh.getBoundingClientRect(), need = b => Math.max(0, Math.round(b.getBoundingClientRect().bottom - Math.min(vis.bottom, innerHeight))); return { btns: btns.length, first: need(btns[0]), last: need(btns[btns.length - 1]), sheet: Math.round(sh.scrollHeight) }; });
+      await shot('4-season');
+      let seasonTaps = 0; if (season) { await pg.evaluate(() => document.querySelector('.veil .sheet [data-act=ok], .veil .sheet [data-act=goal]').click()); seasonTaps = 1; await pg.waitForTimeout(100); }
+      const after = await pg.evaluate(() => PG.scene() && PG.scene().type);
+      rows.push({ name, w, h, home, money, moneyTaps, rv, season, seasonTaps, after });
       await ctx.close();
     }
     await srv.close();
@@ -58,5 +65,9 @@ const VERS = [['v0.11.3', '0031727'], ['지금', null]];
   console.log('| 버전 | 화면 | 상태 네 가지 확인 | 자금 → 자산 | 심리 상담 자동 켜기 | 장비 세팅 자동 켜기 | 자산을 다 펼친 길이(px) / 넘침(px) |');
   console.log('|---|---|---|---|---|---|---|');
   for (const r of rows) console.log(`| ${r.name} | ${r.w}×${r.h} | ${r.home.four === 4 ? '0번(홈에 있음)' : '1번(선수 탭으로 이동)'} | 1번(${r.home.moneyBtn ? '위쪽 자금 줄 또는 아래 탭' : '아래 탭만'}) | 2번 + 스크롤 ${r.money.counsel}px | ${2 + r.money.grpTaps}번 + 스크롤 ${r.money.gear}px | ${r.money.docOpen} / ${r.money.overOpen} |`);
+  console.log('\n시즌 결산 창(같은 저장에서 시즌 마지막 달을 진행)\n');
+  console.log('| 버전 | 화면 | 넘어가는 버튼 수 | 넘어가는 데 드는 누름 | 첫 버튼까지 스크롤(px) | 마지막 버튼까지 스크롤(px) | 창의 길이(px) | 넘어간 다음 장면 |');
+  console.log('|---|---|---|---|---|---|---|---|');
+  for (const r of rows) console.log(r.season ? `| ${r.name} | ${r.w}×${r.h} | ${r.season.btns} | ${r.seasonTaps} | ${r.season.first} | ${r.season.last} | ${r.season.sheet} | ${r.after} |` : `| ${r.name} | ${r.w}×${r.h} | (결산 창에 닿지 못함) | | | | | |`);
   console.log(`\n그림: ${path.relative(ROOT, OUT)}/<버전>-<폭>-<화면>.png (320·390px)`);
 })().catch(e => { console.error(e); process.exit(1); });

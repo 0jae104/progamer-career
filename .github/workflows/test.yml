@@ -24,5 +24,6 @@ jobs:
       - run: node test/pacing.js 40
       - run: node test/autoplay.js 30
       - run: node test/extras.js
+      - run: node test/story.js 30
       - run: node test/browser/run.js
       - run: node test/browser/update-chain.js

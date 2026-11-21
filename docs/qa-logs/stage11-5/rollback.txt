@@ -1,0 +1,4 @@
+0.11.5 저장(season에서 저장, 새 항목: goal=false goalLog=true prep=true 라이벌 기록=false) → v0.11.4 로 열기: load="ok" · 은퇴까지 진행 됨 · 백업 검사 통과
+0.11.5 저장(prematch에서 저장, 새 항목: goal=true goalLog=true prep=true 라이벌 기록=true) → v0.11.4 로 열기: load="ok" · 은퇴까지 진행 됨 · 백업 검사 통과
+0.11.5 저장(idle에서 저장, 새 항목: goal=true goalLog=true prep=true 라이벌 기록=true) → v0.11.4 로 열기: load="ok" · 은퇴까지 진행 됨 · 백업 검사 통과
+되돌리기 3가지 모두 열림
