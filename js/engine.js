@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.0';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.1';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -596,6 +596,7 @@
     }
     else { const T = str(S.org, S.squad); addTrust(o >= T ? 3 : o >= T - 5 ? 1.5 : o < T - 14 ? -2 : 0); }
     const sal = Math.round(S.contract.salary / 10); earn(sal); rep.salary = sal;
+    const au = autoSpend(); if (au) rep.auto = au;   // 자동 관리: 월급을 받은 직후 한 번(꺼져 있으면 아무 일도 없다)
     if (S.buff && --S.buff.m <= 0) S.buff = null;
     if (S.injury > 0) S.injury--;
     else if (S.wrist <= 20) {
@@ -939,7 +940,8 @@
     result: { title: 's', text: 's', ok: 'b', checked: 'b', p: 'n?', lines: ['s', 0, 16] },
     month: { title: 's', sub: 's', plan: 's', ovr: 'n', salary: 'n', notes: ['s', 0, 16], growth: ['pair', 0, 16],
       matches: [{ opp: 's', win: 'b', plays: 'b', r: 'n', k: 'n', d: 'n', a: 'n', label: 's?', score: 's?', mvp: 'b?', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8, '?'], rv: [{ nick: 's', r: 'n' }, 0, 6, '?'] }, 0, 16],
-      eval: { r: 'n', rank: 'n', d: 'n?', rivals: [{ nick: 's', rank: 'n', r: 'n' }, 0, 6, '?'], '?': 1 }, fans: [{ v: 's', t: 's' }, 0, 8, '?'] },
+      eval: { r: 'n', rank: 'n', d: 'n?', rivals: [{ nick: 's', rank: 'n', r: 'n' }, 0, 6, '?'], '?': 1 }, fans: [{ v: 's', t: 's' }, 0, 8, '?'],
+      auto: { spent: 'n', items: [{ id: 's', cost: 'n', why: 's' }, 0, 8], '?': 1 } },
     info: { title: 's', text: 's', tone: 's', lines: ['s', 0, 12], news: 's?', cele: 'n?' },
     season: { year: 'n', age: 'n', org: 's', squad: 'squad', tag: 's', g: 'n', w: 'n', avg: 'n', mvp: 'n', ovr: 'n', salary: 'n', titles: ['s', 0, 30], awards: ['s', 0, 30] },
     cards: { cards: ['card', 1, 6], reroll: 'n' },
@@ -1613,6 +1615,7 @@
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
     def(s, 'grow', 1); def(s, 'evn', {});
+    normAuto(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
     // 처음 안내: 이 값이 없는 저장은 안내가 생기기 전에 시작한 커리어다. 진행 중에 안내가 끼어들지 않게 끝난 것으로 둔다.
     if (!s.tut || typeof s.tut !== 'object') s.tut = { p: 1, g: 1, r: 1, done: true };
     // 팬 반응 상태: 없거나 깨져 있으면 처음부터(지난 경기를 지어내지 않는다)
@@ -1669,8 +1672,9 @@
     if (end) { if (!end.rid) end.rid = S.cid; if (!legacy().recs.some(r => r.id === end.rid)) legacyAdd(recFromScene(end, S), true); }
     flush(); save(); return from;
   }
-  function buy(id) {
-    const it = D.SHOP.find(x => x.id === id); if (!it || !S) return false;
+  // 구매의 실제 효과(직접 구매와 자동 구매가 같이 쓴다). 저장은 부르는 쪽에서 한다.
+  function purchase(it) {
+    const id = it.id;
     if (it.once) {
       if (S.used[id] || S.money < it.cost[0]) return false;
       S.money -= it.cost[0]; S.used[id] = 1;
@@ -1679,7 +1683,128 @@
       const lv = S.shop[id]; if (lv >= it.cost.length || S.money < it.cost[lv]) return false;
       S.money -= it.cost[lv]; S.shop[id]++;
     }
+    return true;
+  }
+  function buy(id) {
+    const it = D.SHOP.find(x => x.id === id); if (!it || !S) return false;
+    if (!purchase(it)) return false;
+    if (it.once) (S.man || (S.man = {}))[id] = S.year * 100 + S.m;   // 이 달에 직접 샀다는 표시: 자동 관리가 같은 달에 또 사지 않는다
     save(); return true;
+  }
+
+  /* ---------- 자동 관리(0.11.1): 켜 둔 투자 항목을 매달 한 번 알아서 산다 ----------
+     - 플레이어가 직접 켠 항목만. 새 커리어와 예전 저장은 전부 꺼져 있다(S.auto 가 없으면 아무 일도 하지 않고 판정도 예전과 같다).
+     - 실행 시점은 한 군데: 월말 결산에서 월급을 받은 직후(finishMonth). 한 달에 한 번만(S.auto.at 에 실행한 달을 적는다).
+     - 효과는 직접 구매(purchase)와 같다. 그 달에 이미 직접 산 "한 달에 한 번" 항목은 다시 사지 않는다.
+     - 남겨 둘 돈(keep) 아래로는 쓰지 않고, 한 달 상한(cap, 0 = 제한 없음)을 넘기지 않는다. 모자라면 사지 않고 이유를 적는다. 빚은 없다.
+     - 단계형 항목(장비·코치·식단)은 한 달에 한 단계까지만. 난수를 쓰지 않는다. */
+  const autoOn = id => !!(S.auto && S.auto.on && S.auto.on[id]);
+  function autoSpend() {
+    const A = S.auto; if (!A || !A.on) return null;
+    const list = D.SHOP.filter(it => A.on[it.id]); if (!list.length) return null;
+    const stamp = S.year * 100 + S.m; if (A.at === stamp) return null;
+    A.at = stamp;
+    const keep = A.keep || 0, cap = A.cap || 0, out = { spent: 0, items: [] };
+    for (const it of list.filter(x => x.once).concat(list.filter(x => !x.once))) {
+      const lv = it.once ? 0 : S.shop[it.id], cost = it.once ? it.cost[0] : it.cost[lv];
+      let why = '';
+      if (!it.once && lv >= it.cost.length) { why = 'max'; delete A.on[it.id]; }   // 최대 단계: 더 살 것이 없으니 자동 설정을 끈다
+      else if (it.once && (S.used[it.id] || (S.man && S.man[it.id] === stamp))) why = 'used';
+      else if (it.id === 'physio' && S.wrist > B.auto.physioBelow) why = 'full';      // 손목이 충분하면 돈을 쓰지 않는다
+      else if (cap && out.spent + cost > cap) why = 'cap';
+      else if (S.money - cost < keep) why = 'low';
+      if (!why && !purchase(it)) why = 'low';
+      if (why) out.items.push({ id: it.id, cost: cost || 0, why });
+      else { out.spent += cost; out.items.push({ id: it.id, cost, why: '' }); }
+    }
+    return out;
+  }
+  function setAuto(id, on) {
+    if (!S || !D.SHOP.some(x => x.id === id)) return false;
+    if (!S.auto) S.auto = { on: {}, keep: B.auto.keep, cap: 0 };
+    if (on) S.auto.on[id] = 1; else delete S.auto.on[id];
+    save(); return true;
+  }
+  function setAutoLimit(k, v) {
+    if (!S || (k !== 'keep' && k !== 'cap') || !B.auto[k + 's'].includes(v)) return false;
+    if (!S.auto) S.auto = { on: {}, keep: B.auto.keep, cap: 0 };
+    S.auto[k] = v; save(); return true;
+  }
+  function autoInfo() {
+    const A = S.auto || { on: {}, keep: B.auto.keep, cap: 0 };
+    const items = D.SHOP.map(it => { const lv = it.once ? 0 : S.shop[it.id], max = !it.once && lv >= it.cost.length; return { id: it.id, name: it.name, desc: it.desc, once: !!it.once, on: !!A.on[it.id], lv, of: it.once ? 0 : it.cost.length, max, cost: max ? 0 : it.cost[lv], used: !!(it.once && S.used[it.id]) }; });
+    return { items, keep: A.keep || 0, cap: A.cap || 0, n: items.filter(x => x.on).length, monthly: items.filter(x => x.on && x.once).reduce((a, x) => a + x.cost, 0), keeps: B.auto.keeps, caps: B.auto.caps };
+  }
+  // 저장에 들어 있는 자동 관리 설정을 안전한 모양으로 고친다(모르는 항목·이상한 값은 버린다. 값이 이상하면 꺼진 것으로 본다).
+  function normAuto(s) {
+    if (s.man != null) { const m = {}; if (typeof s.man === 'object' && !Array.isArray(s.man)) for (const it of D.SHOP) if (Number.isFinite(s.man[it.id]) && s.man[it.id] >= 0 && s.man[it.id] < 1e6) m[it.id] = Math.floor(s.man[it.id]); s.man = m; }
+    const a = s.auto; if (a == null) return;
+    if (typeof a !== 'object' || Array.isArray(a)) { delete s.auto; return; }
+    const on = {}; if (a.on && typeof a.on === 'object' && !Array.isArray(a.on)) for (const it of D.SHOP) if (a.on[it.id] === 1 || a.on[it.id] === true) on[it.id] = 1;
+    s.auto = { on, keep: B.auto.keeps.includes(a.keep) ? a.keep : B.auto.keep, cap: B.auto.caps.includes(a.cap) ? a.cap : 0 };
+    if (Number.isFinite(a.at) && a.at >= 0 && a.at < 1e6) s.auto.at = Math.floor(a.at);
+  }
+
+  /* ---------- 진행 래퍼(0.11.1): "이번 달 진행"과 "다음 중요한 순간까지" ----------
+     next() 와 resolve() 를 사람이 누르는 순서 그대로 부를 뿐이다. 판정·난수·저장 순서는 손으로 한 달씩 넘긴 것과 같다.
+     - 자동으로 닫는 것은 "평범한 월간 보고" 하나뿐이다(ordinary). 닫으면서 그 내용을 S.lastRep(지난달 보고)과 S.recap(진행 요약)에 남긴다.
+     - 선택이 필요한 장면(사건, 구단 선택, 경기 전 전략, 승부처, 성장 카드, 계약·이적)과 중요한 결과(경기 결과, 콜업·강등·우승 소식,
+       시즌 결산, 은퇴, 처음 안내 중의 보고)는 건드리지 않는다. 대신 고르지 않는다.
+     - 라이벌전이 있는 달은 그 달로 넘어가기 전에 멈춘다(할 일을 고를 수 있게). 그 달의 결과는 요약에 라이벌전 한 줄로 따로 적는다(S.recap.rv).
+     - 사건에서 내가 고른 선택의 결과(result)는 고를 것이 없는 사실 전달이라 창을 띄우지 않고 요약(S.recap.ev)에 담는다.
+     - 멈추는 조건: 장면이 생김 / 다음 달에 라이벌전 / 컨디션·손목이 위험 / 개월 수 상한 / 시간 상한. */
+  const ordinary = sc => !!sc && sc.type === 'month' && S.tut.done && !S.over;
+  function newRecap() { const mi = MONTHS[S.m]; return { y0: S.year, m0: mi.m, y1: S.year, m1: mi.m, n: 0, w: 0, l: 0, sal: 0, spent: 0, skip: 0, cond0: Math.round(S.cond), cond1: Math.round(S.cond), g: [], stop: '', cur: [S.year, mi.m] }; }
+  function absorb(sc) {
+    const r = S.recap || (S.recap = newRecap());
+    r.n++; r.y1 = r.cur[0]; r.m1 = r.cur[1];
+    for (const m of sc.matches) { if (m.plays) m.win ? r.w++ : r.l++; if (m.rv && m.rv.length && (r.rv || (r.rv = [])).length < 6) r.rv.push({ nick: m.rv[0].nick, opp: m.opp, win: !!m.win }); }
+    r.sal += sc.salary || 0;
+    if (sc.auto) { r.spent += sc.auto.spent; r.skip += sc.auto.items.filter(x => x.why === 'low' || x.why === 'cap').length; }
+    for (const g of sc.growth) { const e = r.g.find(x => x[0] === g[0]); if (e) e[1] = Math.round((e[1] + g[1]) * 10) / 10; else if (r.g.length < 16) r.g.push([g[0], g[1]]); }
+    r.cond1 = Math.round(S.cond);
+    S.lastRep = sc;
+  }
+  function settle() {
+    let n = 0;
+    while (S && !S.over && S.q.length && n < 24) {
+      const sc = S.q[0];
+      if (ordinary(sc)) absorb(sc);
+      else if (sc.type === 'result' && S.tut.done) (S.recap || (S.recap = newRecap())).ev = sc;   // 내가 고른 사건의 결과: 창 대신 플레이 화면 맨 위에 보여 준다
+      else break;
+      resolve(); n++;
+    }
+    return n;
+  }
+  // was = 진행을 시작할 때 이미 낮았는가. 이미 알고 누른 상태로는 다시 멈추지 않고, 진행 중에 새로 위험해졌을 때만 멈춘다.
+  function stopWhy(was) {
+    if (rivalFixtures().length) return 'rival';
+    if (S.injury > 0) return '';                       // 재활 중에는 컨디션·손목 때문에 멈추지 않는다(할 수 있는 것이 없다)
+    if (S.cond < B.run.cond && !was.cond) return 'cond';
+    if (S.wrist <= B.run.wrist && !was.wrist) return 'wrist';
+    return '';
+  }
+  function advance(max) {
+    if (!S || S.over || S.q.length || stale()) return 0;
+    max = clamp(Math.floor(max) || 1, 1, B.run.max);
+    S.recap = newRecap();
+    const t0 = Date.now(), was = { cond: S.cond < B.run.cond, wrist: S.wrist <= B.run.wrist }; let k = 0;
+    while (k < max) {
+      const mi = MONTHS[S.m]; S.recap.cur = [S.year, mi.m];
+      next(); k++; settle();
+      if (!S || S.over || S.q.length) { if (S && S.recap) S.recap.stop = 'scene'; break; }
+      if (k >= max) { S.recap.stop = max > 1 ? 'max' : ''; break; }
+      const why = stopWhy(was); if (why) { S.recap.stop = why; break; }
+      if (Date.now() - t0 > B.run.ms) { S.recap.stop = 'time'; break; }
+    }
+    if (S) save();
+    return k;
+  }
+  function normRecap(s) {
+    const r = s.recap, num = v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e12;
+    if (r != null && !(typeof r === 'object' && !Array.isArray(r) && ['y0', 'm0', 'y1', 'm1', 'n', 'w', 'l', 'sal', 'spent', 'skip', 'cond0', 'cond1'].every(k => num(r[k])) && typeof r.stop === 'string' && r.stop.length < 12
+      && Array.isArray(r.g) && r.g.length <= 16 && r.g.every(x => fits(x, 'pair')) && Array.isArray(r.cur) && r.cur.length === 2 && r.cur.every(num) && (r.ev == null || fits(r.ev, SCENE.result)) && fits(r.rv, [{ nick: 's', opp: 's', win: 'b' }, 0, 6, '?']))) delete s.recap;
+    if (s.lastRep != null && !(validScene(s.lastRep) && s.lastRep.type === 'month')) delete s.lastRep;
   }
 
   /* ---------- 경기 체험(0.11.0) ----------
@@ -1770,6 +1895,7 @@
     state: () => S, scene: () => S && S.q[0], ovr: () => S ? ovr() : 0, isStarter, org, region, role,
     setPlan(id) { if (S && D.PLANS.find(p => p.id === id)) { S.plan = id; save(); } },
     setFast(v) { S.opt.fast = !!v; save(); },
+    advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,

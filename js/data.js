@@ -107,6 +107,11 @@
     //   wait   [뒤질 때, 동률, 앞설 때, 전력 열세일 때(뒤지지 않은 세트)]
     tac: { cap: 1.6, fav: .55, press: [.5, 20, -.5, 1.5, -1.2], steady: [1, .3, -.8], wait: [1.6, -.4, -.9, .8] },
     // ── 이벤트 ──
+    // 자동 관리(0.11.1): keep = 남겨 둘 돈의 기본값(만원. 심리 상담 + 물리치료 한 달 치보다 조금 많게), keeps·caps = 고를 수 있는 값(cap 0 = 제한 없음),
+    //   physioBelow = 손목이 이 값보다 높으면 물리치료를 자동으로 사지 않는다.
+    auto: { keep: 500, keeps: [0, 500, 2000, 5000], caps: [0, 500, 2000, 5000], physioBelow: 75 },
+    // 진행 래퍼(0.11.1): "다음 중요한 순간까지"가 한 번에 넘기는 달 수의 상한, 시간 상한(ms), 멈추는 컨디션·손목 기준
+    run: { max: 12, ms: 1500, cond: 40, wrist: 30 },
     eventChance: .5,        // 매달 선택 이벤트가 나올 확률
     eventChanceTrainee: .5, // 경기가 없는 연습생 기간
     eventMemory: 7,          // 최근 이 개수의 이벤트는 다시 나오지 않는다
@@ -1201,7 +1206,7 @@
     { id: 'grade_s', name: '전설', desc: 'S등급 이상으로 은퇴한다' },
   ];
 
-  (root.PG_VER = root.PG_VER || {}).data = '0.11.0';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
+  (root.PG_VER = root.PG_VER || {}).data = '0.11.1';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
