@@ -1616,7 +1616,7 @@
     def(s, 'opt', { fast: false }); def(s, 'used', {}); def(s, 'flags', {}); def(s, 'recentEv', []); def(s, 'perks', []); def(s, 'log', []); def(s, 'hist', []);
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
     def(s, 'grow', 1); def(s, 'evn', {});
-    normAuto(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
+    normAuto(s); normAp(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
     // 처음 안내: 이 값이 없는 저장은 안내가 생기기 전에 시작한 커리어다. 진행 중에 안내가 끼어들지 않게 끝난 것으로 둔다.
     if (!s.tut || typeof s.tut !== 'object') s.tut = { p: 1, g: 1, r: 1, done: true };
     // 팬 반응 상태: 없거나 깨져 있으면 처음부터(지난 경기를 지어내지 않는다)
@@ -1804,8 +1804,113 @@
   function normRecap(s) {
     const r = s.recap, num = v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e12;
     if (r != null && !(typeof r === 'object' && !Array.isArray(r) && ['y0', 'm0', 'y1', 'm1', 'n', 'w', 'l', 'sal', 'spent', 'skip', 'cond0', 'cond1'].every(k => num(r[k])) && typeof r.stop === 'string' && r.stop.length < 12
-      && Array.isArray(r.g) && r.g.length <= 16 && r.g.every(x => fits(x, 'pair')) && Array.isArray(r.cur) && r.cur.length === 2 && r.cur.every(num) && (r.ev == null || fits(r.ev, SCENE.result)) && fits(r.rv, [{ nick: 's', opp: 's', win: 'b' }, 0, 6, '?']))) delete s.recap;
+      && Array.isArray(r.g) && r.g.length <= 16 && r.g.every(x => fits(x, 'pair')) && Array.isArray(r.cur) && r.cur.length === 2 && r.cur.every(num) && (r.ev == null || fits(r.ev, SCENE.result)) && fits(r.rv, [{ nick: 's', opp: 's', win: 'b' }, 0, 6, '?'])
+      && fits(r.au, [{ k: 's', t: 's', c: 's', r: 's?' }, 0, 8, '?']) && fits(r.mt, [{ t: 's', opp: 's', win: 'b', s: 's' }, 0, 6, '?']) && fits(r.aun, 'n?') && fits(r.ap, 'n?'))) delete s.recap;
     if (s.lastRep != null && !(validScene(s.lastRep) && s.lastRep.type === 'month')) delete s.lastRep;
+  }
+
+  /* ---------- 자동진행(0.11.2) ----------
+     화면의 "자동진행"이 쓴다. 한 번 부르면 한 달만 처리하고 돌아간다(autoMonth). 화면이 이것을 짧은 예약 작업으로 이어 부른다.
+     검사용 autoStep 과 다르다: autoStep 은 계약·이적·테스트까지 스스로 정하지만, 여기서는 아래 표에 "대신 해도 된다"고 적힌 장면만 처리하고
+     나머지는 전부 멈춘다. 표에 없는 새 장면도 멈춘다(모르면 멈춘다).
+     - 엔진을 부르는 순서는 사람이 같은 선택을 직접 누를 때와 같다(setPlan → next → resolve). 난수를 따로 쓰지 않는다(test/autoplay.js).
+     - 대신 고른 것은 S.alog 와 진행 요약(S.recap.au)에 남는다. */
+  const AP_RULE = {
+    month: 'pass',      // 평범한 월간 보고: 요약에 쌓고 넘긴다
+    result: 'pass',     // 사건의 결과: 요약에 쌓고 넘긴다
+    event: 'event',     // 사건 선택: 성향대로 고른다. 생애에 한 번뿐인 사건과 돈이 드는 선택만 남은 경우는 멈춘다
+    prematch: 'series', // 경기 준비: "경기도 맡기기"를 켰고 결승·국제전·라이벌 팀이 아닐 때만 대신 시작한다
+    moment: 'mine',     // 승부처·세트 결과·경기 결과: 자동진행이 방금 시작한 시리즈일 때만 넘긴다
+    mresult: 'mine', match: 'mine',
+    info: 'stop', season: 'stop', cards: 'stop', stove: 'stop', offers: 'stop', tryout: 'stop', pickOrg: 'stop', retire: 'stop',
+  };
+  const AP_STYLE = { safe: 1, even: 1, bold: 1 };
+  let apMine = false, apTrace = null;   // apMine = 자동진행이 시작한 시리즈가 진행 중, apTrace = 검사용 호출 기록
+  const apInfo = () => { const a = (S && S.ap) || {}; return { style: AP_STYLE[a.style] ? a.style : 'even', rest: a.rest !== false, match: a.match === true, seen: a.seen === true, spd: a.spd === 'fast' ? 'fast' : 'norm', back: a.back || '' }; };
+  function setAp(k, v) {
+    if (!S) return;
+    const a = S.ap || (S.ap = {});
+    if (k === 'style' && AP_STYLE[v]) a.style = v; else if (k === 'spd') a.spd = v === 'fast' ? 'fast' : 'norm'; else if (k === 'rest' || k === 'match' || k === 'seen') a[k] = !!v; else return;
+    save();
+  }
+  const apOp = (op, arg, sc) => { if (apTrace) apTrace.push([op, arg === undefined ? null : arg, sc ? sc.type : '', sc && sc.ev ? sc.ev : '']); };
+  function apLog(k, t, c) {
+    const L = S.alog || (S.alog = []); L.unshift({ y: S.year, m: MONTHS[S.m].m, k, t: txt(t, 60), c: txt(c, 80) }); if (L.length > B.ap.log) L.length = B.ap.log;
+    const r = S.recap; if (r) { (r.au || (r.au = [])).push({ k, t: txt(t, 60), c: txt(c, 80) }); if (r.au.length > 8) r.au.shift(); r.aun = (r.aun || 0) + 1; }
+  }
+  // 사건에서 성향대로 고를 선택지(없으면 -1). 돈이 드는 선택지와 고를 수 없는 선택지는 대신 고르지 않는다.
+  function apPickEvent(sc, style) {
+    const ev = D.EVENTS.find(e => e.id === sc.ev); if (!ev || ev.once) return -1;
+    const ok = sc.choices.map((c, i) => i).filter(i => !sc.choices[i].disabled && ev.c[i] && !ev.c[i].need);
+    if (!ok.length) return -1;
+    const sure = ok.filter(i => sc.choices[i].p == null), risk = ok.filter(i => sc.choices[i].p != null).sort((a, b) => sc.choices[b].p - sc.choices[a].p || a - b);
+    const min = style === 'bold' ? B.ap.bold : style === 'even' ? B.ap.even : 101;
+    if (risk.length && sc.choices[risk[0]].p >= min) return risk[0];
+    return sure.length ? sure[0] : risk[0];
+  }
+  // 이 장면을 자동진행이 어떻게 다루는가: { pass } 넘김, { arg, note } 대신 고름, { stop } 멈춤
+  function apRule(sc, A) {
+    const rule = Object.prototype.hasOwnProperty.call(AP_RULE, sc.type) ? AP_RULE[sc.type] : 'unknown';
+    if (rule === 'pass') return sc.type === 'month' && !ordinary(sc) ? { stop: 'month' } : { pass: true };
+    if (rule === 'event') {
+      const ev = D.EVENTS.find(e => e.id === sc.ev); if (!ev) return { stop: 'unknown' };
+      if (ev.once) return { stop: 'once' };
+      const i = apPickEvent(sc, A.style); if (i < 0) return { stop: 'money' };
+      return { arg: i, note: ['event', sc.title, sc.choices[i].label + (sc.choices[i].p != null ? ` (${sc.choices[i].p}%)` : '')] };
+    }
+    if (rule === 'series') {
+      const t = S.sim && S.sim.tour, c = t && t.cur;
+      if (!A.match || !t || !c || c.tac !== null) return { stop: 'prematch' };
+      if (sc.label === '결승' || t.kind !== 'playoff' || sc.rival) return { stop: 'bigmatch' };
+      const best = sc.tacs.slice().sort((a, b) => b.p - a.p)[0], id = A.style === 'safe' ? 'steady' : A.style === 'bold' ? 'press' : best.id;
+      return { arg: id, mine: true, note: ['tac', `${sc.tour} ${sc.label} · ${sc.opp}`, D.TACTICS.find(x => x.id === id).name] };
+    }
+    if (rule === 'mine') {
+      if (!apMine) return { stop: sc.type };
+      if (sc.type === 'moment') { const i = bestChoice(sc); return { arg: 'auto', note: ['moment', sc.title, sc.choices[i].label + ` (${sc.choices[i].p}%)`] }; }
+      return { pass: true, end: sc.type === 'match' };
+    }
+    return { stop: rule === 'stop' ? sc.type : 'unknown' };
+  }
+  // 이번 달 할 일: "컨디션이 낮으면 휴식"을 켰을 때만 건드린다. 쉬게 한 뒤에는 원래 하던 일로 되돌린다.
+  function apPlan(A) {
+    if (!A.rest || S.injury > 0) return;
+    const low = S.cond < B.run.cond || S.wrist <= B.run.wrist;
+    if (low && S.plan !== 'rest') { const was = S.plan; S.plan = 'rest'; (S.ap || (S.ap = {})).back = was; apOp('plan', 'rest'); apLog('rest', '컨디션 관리', `휴식 (컨디션 ${Math.round(S.cond)} · 손목 ${Math.round(S.wrist)})`); }
+    else if (!low && A.back && S.plan === 'rest' && S.cond >= B.ap.restBack) { const to = D.PLANS.find(p => p.id === A.back) ? A.back : 'scrim'; S.plan = to; delete S.ap.back; apOp('plan', to); apLog('rest', '컨디션 관리', `${D.PLANS.find(p => p.id === to).name}(으)로 복귀`); }
+  }
+  function autoStart() { if (!S || S.over || stale() || !S.tut.done) return false; S.recap = newRecap(); S.recap.ap = 1; apMine = false; setAp('seen', true); return true; }
+  function autoStop(why) { if (S && S.recap && S.recap.ap && !S.recap.stop) { S.recap.stop = txt(why, 10); apMine = false; if (!stale()) save(); } }
+  function autoMonth() {
+    if (!S) return { k: 0, stop: 'over' };
+    const fin = why => { if (S && S.recap) S.recap.stop = why; apMine = false; if (S && !stale()) save(); return { k, stop: why }; };
+    let k = 0;
+    if (S.over) return fin('over'); if (stale()) return { k: 0, stop: 'tab' }; if (!S.tut.done) return fin('tut');
+    if (!S.recap || !S.recap.ap || S.recap.stop) { S.recap = newRecap(); S.recap.ap = 1; }
+    const A = apInfo();
+    if (!S.q.length) { apPlan(A); const mi = MONTHS[S.m]; S.recap.cur = [S.year, mi.m]; apOp('next'); next(); k = 1; }
+    for (let guard = 0; S && !S.over && S.q.length; guard++) {
+      if (guard >= 80) return fin('unknown');
+      const sc = S.q[0], r = apRule(sc, A);
+      if (r.stop) return fin(r.stop);
+      if (r.note) apLog(r.note[0], r.note[1], r.note[2]);
+      if (r.pass) {
+        if (sc.type === 'month') absorb(sc);
+        else if (sc.type === 'result') { const L = S.recap.au || [], e = L[L.length - 1]; if (e && e.k === 'event' && e.r == null) e.r = (sc.checked ? (sc.ok ? '성공 — ' : '실패 — ') : '') + txt(sc.text, 110); }
+        else if (sc.type === 'match') { (S.recap.mt || (S.recap.mt = [])).push({ t: txt(`${sc.tour} ${sc.label}`, 60), opp: txt(sc.opp, 40), win: !!sc.win, s: `${sc.x}-${sc.y}` }); if (S.recap.mt.length > 6) S.recap.mt.shift(); }
+      }
+      if (r.mine) apMine = true;
+      if (r.end) apMine = false;
+      apOp('res', r.arg, sc); resolve(r.arg);
+    }
+    if (!S || S.over) return fin('over');
+    save();
+    return { k, stop: '' };
+  }
+  function normAp(s) {
+    const a = s.ap;
+    if (a != null) { if (typeof a !== 'object' || Array.isArray(a)) delete s.ap; else s.ap = Object.assign({ style: AP_STYLE[a.style] ? a.style : 'even', rest: a.rest !== false, match: a.match === true, seen: a.seen === true, spd: a.spd === 'fast' ? 'fast' : 'norm' }, typeof a.back === 'string' && D.PLANS.find(p => p.id === a.back) ? { back: a.back } : {}); }
+    if (s.alog != null) { if (!Array.isArray(s.alog)) delete s.alog; else s.alog = s.alog.filter(x => fits(x, { y: 'n', m: 'n', k: 's', t: 's', c: 's' })).slice(0, B.ap.log).map(x => ({ y: x.y, m: x.m, k: txt(x.k, 10), t: txt(x.t, 60), c: txt(x.c, 80) })); }
   }
 
   /* ---------- 경기 체험(0.11.0) ----------
@@ -1894,8 +1999,9 @@
   const Game = {
     D, MONTHS, SQUAD, VERSION, seed, rand: () => rnd(), goal, newGame, load, save, next, resolve, buy, table, fmtMoney, autoStep, evaluate,
     state: () => S, scene: () => S && S.q[0], ovr: () => S ? ovr() : 0, isStarter, org, region, role,
-    setPlan(id) { if (S && D.PLANS.find(p => p.id === id)) { S.plan = id; save(); } },
+    setPlan(id) { if (S && D.PLANS.find(p => p.id === id)) { S.plan = id; if (S.ap) delete S.ap.back; save(); } },   // 직접 고르면 자동 휴식의 "되돌릴 일"은 잊는다
     setFast(v) { S.opt.fast = !!v; save(); },
+    autoStart, autoMonth, autoStop, setAp, apInfo: () => apInfo(), autoLog: () => (S && S.alog ? S.alog.slice() : []), AP_RULE, _apTrace(a) { apTrace = a; },
     advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수

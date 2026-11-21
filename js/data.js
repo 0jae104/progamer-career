@@ -37,11 +37,11 @@
     { id: 'wait', name: '상대 실수를 노린다', good: '전력이 밀릴 때, 세트를 뒤지고 있을 때 받아친다.', bad: '전력이 앞서는데 기다리면 주도권을 내준다.' },
   ];
   D.PLANS = [
-    { id: 'solo', name: '솔로 랭크', desc: '피지컬·반응속도 성장. 컨디션과 손목 소모가 크다', g: { mech: .9, reflex: .7, pool: .2 }, cond: -9, wrist: -3 },
-    { id: 'scrim', name: '팀 스크림', desc: '팀워크·판단력 성장. 감독 신뢰가 오른다', g: { team: .9, sense: .5, mental: .2 }, cond: -7, wrist: -2, trust: 2.5 },
-    { id: 'review', name: '리플레이 분석', desc: '판단력·숙련 폭 성장. 소모가 적다', g: { sense: .8, pool: .8 }, cond: -3, wrist: 0 },
-    { id: 'rest', name: '휴식', desc: '컨디션과 손목 회복. 멘탈이 조금 오른다', g: { mental: .4 }, cond: 24, wrist: 5, base: .5 },
-    { id: 'stream', name: '개인 방송', desc: '인기와 수입. 성장은 더디다', g: {}, cond: -4, wrist: -1, fame: 1.5, base: .6 },
+    { id: 'solo', s: '솔랭', name: '솔로 랭크', desc: '피지컬·반응속도 성장. 컨디션과 손목 소모가 크다', g: { mech: .9, reflex: .7, pool: .2 }, cond: -9, wrist: -3 },
+    { id: 'scrim', s: '스크림', name: '팀 스크림', desc: '팀워크·판단력 성장. 감독 신뢰가 오른다', g: { team: .9, sense: .5, mental: .2 }, cond: -7, wrist: -2, trust: 2.5 },
+    { id: 'review', s: '분석', name: '리플레이 분석', desc: '판단력·숙련 폭 성장. 소모가 적다', g: { sense: .8, pool: .8 }, cond: -3, wrist: 0 },
+    { id: 'rest', s: '휴식', name: '휴식', desc: '컨디션과 손목 회복. 멘탈이 조금 오른다', g: { mental: .4 }, cond: 24, wrist: 5, base: .5 },
+    { id: 'stream', s: '방송', name: '개인 방송', desc: '인기와 수입. 성장은 더디다', g: {}, cond: -4, wrist: -1, fame: 1.5, base: .6 },
   ];
 
   /* 밸런스 상수. 난이도와 커리어 길이를 정하는 숫자는 여기에 모아 둔다.
@@ -112,6 +112,9 @@
     auto: { keep: 500, keeps: [0, 500, 2000, 5000], caps: [0, 500, 2000, 5000], physioBelow: 75 },
     // 진행 래퍼(0.11.1): "다음 중요한 순간까지"가 한 번에 넘기는 달 수의 상한, 시간 상한(ms), 멈추는 컨디션·손목 기준
     run: { max: 12, ms: 1500, cond: 40, wrist: 30 },
+    // 자동진행(0.11.2): even·bold = 그 성향이 확률 판정에 도전하는 최소 성공 확률(%), restBack = 자동 휴식을 끝내는 컨디션,
+    //   max = 한 번 시작해서 넘기는 달 수의 상한(안전장치), log = 남겨 두는 자동 선택 기록 수
+    ap: { even: 60, bold: 35, restBack: 70, max: 36, log: 30 },
     eventChance: .5,        // 매달 선택 이벤트가 나올 확률
     eventChanceTrainee: .5, // 경기가 없는 연습생 기간
     eventMemory: 7,          // 최근 이 개수의 이벤트는 다시 나오지 않는다
