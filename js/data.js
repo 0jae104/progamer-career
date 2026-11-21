@@ -1219,7 +1219,7 @@
     { id: 'grade_s', name: '전설', desc: 'S등급 이상으로 은퇴한다' },
   ];
 
-  (root.PG_VER = root.PG_VER || {}).data = '0.11.3';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
+  (root.PG_VER = root.PG_VER || {}).data = '0.11.4';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
