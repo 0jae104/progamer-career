@@ -188,4 +188,4 @@ v0.11.5 320×568 자동진행 18개월: 보유 자금 줄 최대 10개(달마다
 
 ## 11. GitHub Actions
 
-(PR을 올린 뒤 결과를 여기에 적습니다.)
+PR #20, 커밋 `21d0a87`: **성공**(2026-11-22). https://github.com/0jae104/progamer-career/actions/runs/44940902680 — sim 1000, tactics, static, pacing, autoplay, extras, story, 브라우저 12묶음(`apdom` 포함), 갱신 연쇄, `repro.js`(v0.11.5에서 결함 재현). 이 줄을 적은 뒤의 커밋은 문서만 바꿉니다.
