@@ -240,8 +240,11 @@ module.exports = async function play(browser, url, R) {
     await load(pg, S4.plain);
     R.ok(await pg.evaluate(() => PG.rivalFixtures().length === 0 && !document.querySelector('.rvcard') && !/라이벌/.test(document.querySelector('.content').textContent)), `${w}: 라이벌전이 없는 달인데 홈에 라이벌 영역이 있음`);
     await load(pg, S4.rv); await m('홈 라이벌전 달');
-    const rv = await pg.evaluate(() => { const fx = PG.rivalFixtures(), c = document.querySelector('.rvcard'), t = c ? c.textContent : ''; return { n: fx.length, cards: document.querySelectorAll('.rvcard').length, all: fx.every(f => t.includes(f.nick) && t.includes(f.org) && t.includes(`통산 ${f.w}승 ${f.l}패`)), plan: (() => { const r = document.querySelector('.plan5').getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.bottom <= f + 1; })(), seen: (() => { const r = c.getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.top >= 0 && r.bottom <= f + 1; })(), veil: !!document.querySelector('.veil') }; });
-    R.ok(rv.n > 0 && rv.cards === 1 && rv.all && rv.plan && rv.seen && !rv.veil, `${w}: 라이벌전 달의 홈 ${JSON.stringify(rv)}`);
+    const rv = await pg.evaluate(() => { const fx = PG.rivalFixtures(), c = document.querySelector('.rvcard'), t = c ? c.textContent : ''; return { n: fx.length, cards: document.querySelectorAll('.rvcard').length, all: fx.every(f => t.includes(f.nick) && t.includes(f.org) && t.includes(`통산 ${f.w}승 ${f.l}패`)), plan: (() => { const r = document.querySelector('.plan5').getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.bottom <= f + 1; })(), seen: (() => { const r = c.getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.top >= 0 && r.bottom <= f + 1; })(), peek: (() => { const r = c.getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return Math.round(f - r.top); })(), veil: !!document.querySelector('.veil') }; });
+    // 0.11.7: 목표가 할 일 위로 올라가면서 320×568에서는 라이벌전 줄이 첫 화면에 다 들어오지 않는다(플레이어가 요청한 순서의 대가. 보고서에 적음).
+    // 그 크기에서는 "이번 달 라이벌전" 제목 줄이 보이는지(40px 이상)만 보고, 그보다 큰 화면에서는 전처럼 줄 전체가 보여야 한다.
+    R.ok(rv.n > 0 && rv.cards === 1 && rv.all && rv.plan && (w <= 320 ? rv.peek >= 40 : rv.seen) && !rv.veil, `${w}: 라이벌전 달의 홈 ${JSON.stringify(rv)}`);
+    R.note(`라이벌전 달 ${w}`, `라이벌전 줄이 첫 화면에 ${rv.seen ? '다 보임' : `위쪽 ${rv.peek}px만 보임(나머지는 스크롤)`}`);
     await pg.click('.rvcard');
     R.ok(await pg.evaluate(() => { const e = document.getElementById('rivals'), r = e && e.getBoundingClientRect(); return PG_UI.state.tab === 'league' && document.querySelector('.tabs [aria-selected=true]').dataset.id === 'league' && !!e && r.top >= -2 && r.top < innerHeight / 2 && document.querySelectorAll('#rivals .rival').length >= 1; }), `${w}: 라이벌 줄을 눌러 리그 탭의 라이벌 기록으로 가지 못함`);
     await m('리그 라이벌');
@@ -321,15 +324,15 @@ module.exports = async function play(browser, url, R) {
   for (const [w, h] of [[390, 844], [320, 568]]) {
     const { ctx, pg } = await open(browser, url, { w, h, init: 'window.__pgApMs = 15;' }), m = auditor(pg);
     await load(pg, raw, 41);
-    // 1) 홈의 순서: 할 일 → (라이벌전) → 지난 진행 → 목표. 화면 위치와 DOM 순서가 같다. 목표는 접힌 한 줄
+    // 1) 홈의 순서(0.11.7): 자금 → 목표 → 할 일 → (라이벌전) → 지난 진행. 화면 위치와 DOM 순서가 같다. 목표는 접힌 요약
     await pg.evaluate(() => { PG.setAuto('counsel', true); }); await pg.click('[data-act=next]'); await pg.waitForTimeout(150); await clear(pg);
     const ord = await pg.evaluate(() => {
       const q = s => document.querySelector(s), top = e => (e ? Math.round(e.getBoundingClientRect().top) : -1), kids = [...q('main.content').children].map(e => e.className.split(' ')[0]);
       const gb = q('.goalbtn'), foot = q('.foot').getBoundingClientRect().top, g = PG.goalNow(), nx = PG.goal();
-      return { kids, plan: top(q('.plansec')), recap: top(q('.recap')), goal: top(q('.goal')), exp: gb.getAttribute('aria-expanded'), bars: document.querySelectorAll('.goal .gi').length, sum: gb.textContent, g, nx: nx.title, nOk: nx.items.filter(i => i.ok).length + '/' + nx.items.length,
+      return { kids, money: top(q('.stagebg .moneyrow')), moneyBottom: Math.round(q('.stagebg .moneyrow').getBoundingClientRect().bottom), goalN: document.querySelectorAll('.goal').length, plan: top(q('.plansec')), recap: top(q('.recap')), goal: top(q('.goal')), exp: gb.getAttribute('aria-expanded'), bars: document.querySelectorAll('.goal .gi').length, sum: gb.textContent, g, nx: nx.title, nOk: nx.items.filter(i => i.ok).length + '/' + nx.items.length,
         h: Math.round(gb.getBoundingClientRect().height), planSeen: q('.plan5').getBoundingClientRect().bottom <= foot + 1, next: !!q('[data-act=next]:not([disabled])'), recapLines: document.querySelectorAll('.recap > p').length, recapTxt: q('.recap').textContent.replace(/\s+/g, ' ').slice(0, 200), over: document.documentElement.scrollHeight - innerHeight };
     });
-    R.ok(ord.kids.indexOf('plansec') < ord.kids.indexOf('recap') && ord.kids.indexOf('recap') < ord.kids.indexOf('goal') && ord.kids[ord.kids.length - 1] === 'goal' && ord.plan < ord.recap && ord.recap < ord.goal, `${w}: 홈의 순서가 할 일 → 지난 진행 → 목표가 아님 ${JSON.stringify(ord).slice(0, 300)}`);
+    R.ok(ord.kids[0] === 'gbox' && ord.kids.indexOf('gbox') < ord.kids.indexOf('plansec') && ord.kids.indexOf('plansec') < ord.kids.indexOf('recap') && ord.kids.filter(k => k === 'gbox').length === 1 && ord.money < ord.goal && ord.goal < ord.plan && ord.plan < ord.recap && ord.goal - ord.moneyBottom <= 24 && ord.goalN === 1, `${w}: 홈의 순서가 자금 → 목표 → 할 일 → 지난 진행이 아님(0.11.7) ${JSON.stringify(ord).slice(0, 300)}`);
     R.ok(ord.exp === 'false' && ord.bars === 0 && ord.h >= 44 && ord.h <= (w <= 320 ? 90 : 76) && ord.sum.includes(ord.nx) && ord.sum.includes(ord.nOk) && (!ord.g || ord.sum.includes(ord.g.t)), `${w}: 목표가 접힌 한 줄이 아니거나 요약이 실제 목표와 다름 ${JSON.stringify(ord).slice(0, 400)}`);
     R.ok(ord.planSeen && ord.next && ord.recapLines >= 1 && ord.recapLines <= 3, `${w}: 지난 진행이 1~3줄이 아니거나 할 일·진행 버튼이 가려짐 ${JSON.stringify(ord).slice(0, 300)}`);
     R.ok(/자금 [+−]/.test(ord.recapTxt) && /월급 \+/.test(ord.recapTxt) && /자동 관리 −/.test(ord.recapTxt), `${w}: 한 달 요약에 자금의 순변동과 내역이 없음: ${ord.recapTxt}`);
