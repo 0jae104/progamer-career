@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.5';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.6';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -80,7 +80,23 @@
   function setCond(v) { S.cond = clamp(v, has('form') ? 55 : 0, 100); }
   function addWrist(v) { if (v < 0 && has('steel')) v *= .5; S.wrist = clamp(S.wrist + v, 0, 100); }
   function log(msg, tone) { S.log.unshift({ y: S.year, m: MONTHS[S.m].m, msg, tone: tone || '' }); if (S.log.length > 40) S.log.pop(); }
-  function earn(v) { S.money += v; if (v > 0) S.car.earn += v; }
+  /* 자금 내역(0.11.6): 돈이 바뀌는 모든 곳(월급·방송·상금·수상·사건·직접 구매·자동 관리)에서 한 줄씩 적는다.
+     화면이 "이번 달에 왜 늘거나 줄었는지"를 보여 주고 검사가 정산을 대조하는 데만 쓴다. 판정·난수에 쓰이지 않고 저장하지도 않는다
+     (새로 고치면 비어 있다. 그때 화면은 내역이 없다고 적는다). gap = 적히지 않은 변동이 사이에 있었다는 표시. */
+  let CASH = { cid: '', seq: 0, mark: 0, bal: 0, all: [] };
+  function cashAdd(k, v) {
+    if (!S || !v) return;
+    if (CASH.cid !== S.cid) CASH = { cid: S.cid, seq: CASH.seq, mark: CASH.seq, bal: S.money - v, all: [] };
+    const e = { seq: ++CASH.seq, y: S.year, m: MONTHS[S.m] ? MONTHS[S.m].m : 0, k, v, bal: S.money };
+    if (Math.abs(CASH.bal - (S.money - v)) > 1e-6) e.gap = 1;
+    CASH.bal = S.money; CASH.all.push(e); if (CASH.all.length > 240) CASH.all.shift();
+  }
+  // month = 마지막으로 "진행"을 누른 뒤의 내역(그달의 정산과 그 뒤에 직접 산 것). 다른 커리어의 내역은 돌려주지 않는다
+  function cash() {
+    const mine = S && CASH.cid === S.cid, all = mine ? CASH.all.map(x => Object.assign({}, x)) : [], month = all.filter(x => x.seq > CASH.mark);
+    return { seq: CASH.seq, mark: CASH.mark, all, month, known: mine && month.length > 0, gap: month.some(x => x.gap), net: month.reduce((a, x) => a + x.v, 0), to: S ? S.money : 0 };
+  }
+  function earn(v, k) { S.money += v; if (v > 0) S.car.earn += v; cashAdd(k || 'etc', v); }
   const info = (title, text, tone, lines) => ({ type: 'info', title, text, tone: tone || '', lines: lines || [] });
 
   function applyFx(fx) {
@@ -91,7 +107,7 @@
       else if (k === 'money') {
         if (v === 'ad') v = 300 + Math.round(S.fame) * 20;
         if (v === 'collab') v = 100 + Math.round(S.fame) * 5;
-        earn(v); out.push(`자금 ${v > 0 ? '+' : '-'}${fmtMoney(Math.abs(v))}`);
+        earn(v, 'event'); out.push(`자금 ${v > 0 ? '+' : '-'}${fmtMoney(Math.abs(v))}`);
       }
       else if (k === 'cap') { for (const s of D.STATS) S.caps[s.id] = Math.min(99, S.caps[s.id] + v); out.push(`모든 한계 +${v}`); }
       else if (k === 'all') { for (const s of D.STATS) S.stats[s.id] = clamp(S.stats[s.id] + v, 1, 99); out.push(`모든 능력치 +${v}`); }
@@ -385,7 +401,7 @@
     S.car.titles.push({ y: S.year, name, tier }); S.yr.titles.push(name);
     const fame = { world: 14, mid: 8, nations: 10, dom: 5, second: 1 }[tier];
     const prize = { world: 20000, mid: 8000, nations: 3000, dom: 3000, second: 200 }[tier];
-    addFame(fame); earn(prize); log(`${name}! 상금 ${fmtMoney(prize)}`, 'gold');
+    addFame(fame); earn(prize, 'prize'); log(`${name}! 상금 ${fmtMoney(prize)}`, 'gold');
     const sc = info('우승', name, 'gold', [`상금 ${fmtMoney(prize)}`, `인기 상승`]);
     sc.cele = 1;   // 우승 연출: 1 아직 재생 전, 2 재생함(다시 열어도 연출 없이 같은 내용만 보여 준다)
     sc.news = `${teamName()}, ${name}` + (fin && fin.plays ? ` — 결승 ${fin.score}, ${S.nick} 평점 ${fin.r.toFixed(1)}` : '');
@@ -534,7 +550,7 @@
       else {
         rep.notes.push(`${t.name} ${last.label}에서 ${last.opp}에 막혔다. 우승은 ${D.ORG[ch].name}.`);
         log(`${t.name} ${last.label} 탈락.`);
-        if (last.label === '결승') { addFame(4); earn(t.cup === 'world' ? 6000 : 2500); }
+        if (last.label === '결승') { addFame(4); earn(t.cup === 'world' ? 6000 : 2500, 'prize'); }
       }
     } else {
       rep.matches.push(...t.lines);
@@ -563,7 +579,7 @@
     setCond(S.cond + c + 4 + S.shop.care * 1.5);
     addWrist(plan.wrist + 1 - Math.max(0, S.age - 24) * B.wristAge);
     if (plan.trust && S.squad !== 'trainee') addTrust(plan.trust);
-    if (plan.fame) { addFame(plan.fame); const inc = 30 + Math.round(S.fame * 8); earn(inc); return inc; }
+    if (plan.fame) { addFame(plan.fame); const inc = 30 + Math.round(S.fame * 8); earn(inc, 'stream'); return inc; }
     return 0;
   }
 
@@ -603,7 +619,7 @@
       rep.eval = { r, rank: clamp(Math.round(6.5 - (r - 6) * 3), 1, 12), d: Math.round((S.trust - before) * 10) / 10 };
     }
     else { const T = str(S.org, S.squad); addTrust(o >= T ? 3 : o >= T - 5 ? 1.5 : o < T - 14 ? -2 : 0); }
-    const sal = Math.round(S.contract.salary / 10); earn(sal); rep.salary = sal;
+    const sal = Math.round(S.contract.salary / 10); earn(sal, 'sal'); rep.salary = sal;
     const au = autoSpend(); if (au) rep.auto = au;   // 자동 관리: 월급을 받은 직후 한 번(꺼져 있으면 아무 일도 없다)
     if (S.buff && --S.buff.m <= 0) S.buff = null;
     if (S.injury > 0) S.injury--;
@@ -708,7 +724,7 @@
       if (avg1 >= 7.2 + gauss() * .25) award(`${region().lg} 베스트 5`, 4);
       let sc = avg1 * 10 + S.fame * .02;
       for (const t of S.car.titles) if (t.y === S.year) sc += { world: 6, mid: 3, nations: 3, dom: 2, second: 0 }[t.tier];
-      if (sc > 84.5 + gauss() * 2) { award('올해의 선수', 12); earn(5000); }
+      if (sc > 84.5 + gauss() * 2) { award('올해의 선수', 12); earn(5000, 'award'); }
     }
     const rec = { year: S.year, age: S.age, org: org().name, tag: org().tag, squad: squadPlayed, g: y.g, w: y.w, avg: y.g ? y.rs / y.g : 0, mvp: y.mvp, titles: y.titles.slice(), awards: y.awards.slice(), ovr: Math.floor(ovr()), salary: S.contract.salary };
     S.hist.push(rec);
@@ -1507,6 +1523,8 @@
   const rFill = (t, r) => r ? String(t).replace(/\{r\}/g, r.nick).replace(/\{org\}/g, D.ORG[r.org].name) : t;
   function next() {
     if (!S || S.over || S.q.length) return;
+    if (CASH.cid !== S.cid) CASH = { cid: S.cid, seq: CASH.seq, mark: CASH.seq, bal: S.money, all: [] };
+    CASH.mark = CASH.seq;   // 자금 내역: 여기부터가 이번에 진행하는 달
     S.used = {};
     S.stat.turns++;
     if (!S.tut.done && !S.tut.replay && S.stat.turns > 3) tutFinish();   // 안내는 첫 3개월까지만
@@ -1708,17 +1726,17 @@
     flush(); save(); return from;
   }
   // 구매의 실제 효과(직접 구매와 자동 구매가 같이 쓴다). 저장은 부르는 쪽에서 한다.
-  function purchase(it) {
+  function purchase(it, kind) {
     const id = it.id;
     if (it.once) {
       if (S.used[id] || S.money < it.cost[0]) return false;
-      S.money -= it.cost[0]; S.used[id] = 1;
+      S.money -= it.cost[0]; S.used[id] = 1; cashAdd(kind || 'buy', -it.cost[0]);
       if (id === 'physio') addWrist(25);
       else if (it.fx) { for (const k in it.fx) { if (k === 'fame') addFame(it.fx[k]); else if (k === 'cond') setCond(S.cond + it.fx[k]); else if (k in S.stats) S.stats[k] = clamp(Math.max(S.stats[k], Math.min(S.caps[k], S.stats[k] + it.fx[k])), 1, 99); } }
       else { S.stats.mental = clamp(S.stats.mental + 1, 1, 99); setCond(S.cond + 12); }
     } else {
       const lv = S.shop[id]; if (lv >= it.cost.length || S.money < it.cost[lv]) return false;
-      S.money -= it.cost[lv]; S.shop[id]++;
+      S.money -= it.cost[lv]; S.shop[id]++; cashAdd(kind || 'buy', -it.cost[lv]);
     }
     return true;
   }
@@ -1753,7 +1771,7 @@
       else if (it.fx && Object.keys(it.fx).some(k => k in S.stats) && Object.keys(it.fx).filter(k => k in S.stats).every(k => S.stats[k] >= S.caps[k])) why = 'full';   // 더 오를 곳이 없다
       else if (cap && out.spent + cost > cap) why = 'cap';
       else if (S.money - cost < keep) why = 'low';
-      if (!why && !purchase(it)) why = 'low';
+      if (!why && !purchase(it, 'auto')) why = 'low';
       if (why) out.items.push({ id: it.id, cost: cost || 0, why });
       else { out.spent += cost; out.items.push({ id: it.id, cost, why: '' }); if (it.id === 'analyst') S.prep = S.m + 1 < MONTHS.length ? S.year * 100 + S.m + 1 : (S.year + 1) * 100; }   // 자동 구매는 그달 경기가 끝난 뒤라 다음 달 토너먼트에
     }
@@ -2181,7 +2199,7 @@
     setFast(v) { S.opt.fast = !!v; save(); },
     LOOK_MAX, lookOk: LOOK,
     autoStart, autoMonth, autoStop, setAp, apInfo: () => apInfo(), autoLog: () => (S && S.alog ? S.alog.slice() : []), AP_RULE, _apTrace(a) { apTrace = a; }, _offers(withRenew) { let r = null; offerProbe = (cand, out) => { r = { cand, out }; }; try { genOffers(withRenew); } finally { offerProbe = null; } return r; },
-    advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
+    cash, advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,

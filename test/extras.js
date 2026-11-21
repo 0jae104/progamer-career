@@ -122,4 +122,35 @@ const toIdle = () => { let n = 0; while (n++ < 4000 && !(G.state().org && G.stat
   const sp = G.spendInfo(); if (!sp || typeof sp.stream !== 'number' || sp.stream !== 30 + Math.round(G.state().fame * 8) || sp.payPct !== Math.round(G.state().fame / 2)) fail('인기의 효과 안내가 실제 식과 다름');
   console.log(`분석 자료: 플레이오프 달 ${checked}번에서 산 경우에만 경기 준비 화면에 표시되고 1세트 승률이 평균 ${(gain / checked).toFixed(1)}%p 오름(${up}번은 표시 숫자가 바뀜) · 달이 지나면 사라짐 · 자동 구매는 다음 달(${bench}번 확인) · 이상한 값은 버림 · 인기 안내는 실제 식과 같음`);
 }
+// ---- 6) 자금 내역(0.11.6): 돈이 바뀌는 모든 걸음에서 "시작 잔고 + 적힌 수입·지출 = 끝 잔고". 자동 관리는 한 달에 한 번, 같은 항목은 한 번 ----
+{
+  let steps = 0, months = 0, autoM = 0, dupes = 0; const kinds = {}, K = ['sal', 'stream', 'prize', 'award', 'event', 'auto', 'buy'];
+  for (let c = 0; c < 24; c++) {
+    fresh(9100 + c, { region: ['kr', 'cn', 'eu', 'na'][c % 4], role: ['van', 'rov', 'core', 'gun', 'sup'][c % 5], trait: ['genius', 'grinder', 'brain'][c % 3] }); toIdle();
+    if (c % 3 !== 2) for (const it of D.SHOP) G.setAuto(it.id, true);   // 세 커리어 중 둘은 자동 관리를 전부 켠다
+    if (c % 4 === 1) G.setAutoLimit('cap', G.autoInfo().caps[1]);
+    let n = 0;
+    while (!G.state().over && n++ < 30000) {
+      const S = G.state(), m0 = S.money, q = G.cash().seq, ym = S.year * 100 + S.m;
+      if (c % 5 === 0 && !G.scene() && n % 7 === 0) G.buy('counsel');   // 가끔 직접 산다
+      G.autoStep(); steps++;
+      const S1 = G.state(), it = G.cash().all.filter(x => x.seq > q), sum = it.reduce((a, x) => a + x.v, 0);
+      if (Math.abs(m0 + sum - S1.money) > 1e-6 || it.some(x => x.gap)) fail(`자금 내역: 커리어 ${c} ${ym} — 잔고 ${m0} + 내역 ${sum} ≠ ${S1.money}`);
+      if (S1.money < 0) fail(`자금 내역: 잔고가 음수 ${S1.money}`);
+      for (const x of it) { if (!K.includes(x.k)) fail(`자금 내역: 종류를 모르는 변동 ${x.k} ${x.v}`); kinds[x.k] = (kinds[x.k] || 0) + 1; if (x.k === 'auto' && x.v >= 0) fail('자동 관리가 돈을 늘림'); if (x.k === 'sal' && x.v <= 0) fail('월급이 0 이하'); }
+      const sal = it.filter(x => x.k === 'sal'), au = it.filter(x => x.k === 'auto'), lr = S1.q.find(x => x.type === 'month') || G.lastRep();   // 방금 만들어진 그달의 보고(아직 창으로 남아 있으면 그것)
+      if (sal.length > 1) fail(`자금 내역: 한 걸음에 월급이 ${sal.length}번`);
+      if (sal.length) { months++; if (lr && lr.salary !== sal[0].v) fail(`월급 ${sal[0].v} ≠ 월간 보고 ${lr.salary}`); const spent = lr && lr.auto ? lr.auto.spent : 0; if (-au.reduce((a, x) => a + x.v, 0) !== spent) fail(`자동 관리 내역 ${-au.reduce((a, x) => a + x.v, 0)} ≠ 월간 보고 ${spent}`); if (au.length) { autoM++; const ids = lr.auto.items.filter(x => !x.why).map(x => x.id); if (new Set(ids).size !== ids.length || ids.length !== au.length) { dupes++; fail(`자동 관리: 같은 달에 같은 항목이 두 번(${ids})`); } } }
+      else if (au.length) fail('월급 없이 자동 관리만 나감');
+    }
+  }
+  if (!kinds.sal || !kinds.auto || !kinds.buy || months < 1500) fail(`자금 내역: 표본이 모자람 ${JSON.stringify(kinds)}`);
+  // 내역은 저장하지 않는다: 저장 글자에 들어가지 않고, 다시 불러오면 비어 있다. 다른 커리어의 내역은 섞이지 않는다
+  fresh(9199); toIdle(); G.next(); let k = 0; while (G.scene() && k++ < 60) G.autoStep(); G.save();
+  if (/"cash"|"seq"/.test(mem[KEY])) fail('자금 내역이 저장에 들어감');
+  if (!G.cash().all.length) fail('진행했는데 내역이 없음');
+  const raw = mem[KEY]; fresh(9200); if (G.cash().all.length || G.cash().known) fail('새 커리어에 앞 커리어의 내역이 보임');
+  mem[KEY] = raw; G._seen(); if (G.load() !== 'ok') fail('저장을 다시 열지 못함');
+  console.log(`자금 내역: 24커리어 ${steps}걸음(월급 ${months}달, 자동 관리가 나간 달 ${autoM}개)에서 잔고 + 내역 = 다음 잔고, 빠진 변동 0건 · 같은 달 중복 구매 ${dupes}건 · 종류별 ${K.filter(x => kinds[x]).map(x => `${x} ${kinds[x]}`).join(', ')} · 저장에는 들어가지 않음`);
+}
 console.log('통과');

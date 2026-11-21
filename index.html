@@ -12,19 +12,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=0.11.5">
+<link rel="stylesheet" href="css/style.css?v=0.11.6">
 </head>
 <body>
 <div id="app"></div>
 <noscript>이 게임은 자바스크립트가 필요합니다.</noscript>
-<script src="js/data.js?v=0.11.5"></script>
-<script src="js/engine.js?v=0.11.5"></script>
-<script src="js/card.js?v=0.11.5"></script>
-<script src="js/ui.js?v=0.11.5"></script>
+<script src="js/data.js?v=0.11.6"></script>
+<script src="js/engine.js?v=0.11.6"></script>
+<script src="js/card.js?v=0.11.6"></script>
+<script src="js/ui.js?v=0.11.6"></script>
 <script>
 // 파일 버전 확인: 업데이트 도중 연결이 끊기면 새 페이지에 예전 스크립트가 섞여 열릴 수 있다. 그때는 게임을 시작하지 않고 새로 고침을 안내한다.
 (function () {
-  var want = '0.11.5', v = window.PG_VER || {}, bad = ['data', 'engine', 'card', 'ui'].filter(function (k) { return v[k] !== want; });
+  var want = '0.11.6', v = window.PG_VER || {}, bad = ['data', 'engine', 'card', 'ui'].filter(function (k) { return v[k] !== want; });
   if (bad.length) {
     var app = document.getElementById('app'), box = document.createElement('div'), p = document.createElement('p'), b = document.createElement('button');
     box.setAttribute('role', 'alert'); box.style.cssText = 'padding:24px 16px;display:flex;flex-direction:column;gap:14px';

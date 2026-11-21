@@ -475,5 +475,30 @@ canvas.av.big { width: 96px; height: 96px; flex: none; border: 1px solid var(--l
 .rvcard small { display: block; font-size: 13px; color: var(--text); margin-top: 2px; }
 .orgidt { font-size: 14px; line-height: 1.5; color: #d5d8f5; border-left: 4px solid var(--team, var(--line)); padding-left: 10px; } .orgidt b { color: var(--text); }
 /* 작은 화면: 올해 목표가 있으면 "다음 목표" 제목 줄은 접고 조건 칸만 남긴다(펼치면 막대와 설명이 나온다). 목표 칸이 한 줄 늘어 진행 버튼에 가리지 않게 */
-@media (max-width: 350px), (max-height: 600px) { .goalbtn .sgoal + .sec { display: none; } .sgoal { font-size: 13px; } }
-.rvcard + .goal .sgoal + .sec { display: none; }   /* 라이벌전 줄이 뜨는 달에는 목표 칸의 제목 줄을 접어 홈의 높이를 지킨다(조건 칸은 남고, 누르면 다 펼쳐진다) */
+@media (max-width: 350px), (max-height: 600px) { .sgoal { font-size: 13px; } }
+
+/* ---------- 0.11.6 긴급 사용성 패치 ---------- */
+/* 자동진행의 자금 한 줄: 지나간 달을 쌓지 않고 이 줄의 글자만 바뀐다. 두 줄까지 자리를 미리 잡아 버튼이 달마다 움직이지 않게 한다 */
+#apcash { font-size: 13px; line-height: 1.4; text-align: center; color: var(--dim); min-height: 36px; overflow-wrap: anywhere; }
+/* 목표: 홈 맨 아래의 접힌 한 줄 */
+.goal.low { border-left-color: var(--line); }
+.goal.low .goalbtn { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; }
+.gsum { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 14px; line-height: 1.4; min-width: 0; } .gsum > b { color: var(--cy); font-size: 13px; }
+.gsum em { font-style: normal; color: var(--dim); white-space: nowrap; } .gsum .ok, .gsum em.ok { color: var(--ok); }
+.goal.low .goalbtn > i { flex: none; font-style: normal; font-size: 13px; font-weight: 700; color: var(--cy); }
+.goal.slim > .sgoal { margin: 4px 14px 8px; } .goal.slim > .gnext { margin: 0 14px 8px; }
+/* 지난 진행의 핵심 결과: 접힌 동안 사건 글은 두 줄까지 */
+.evres.clamp > p:not(.sec) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.log.clamp li span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+/* 자산 탭의 돈의 흐름 */
+.cashbox { display: flex; flex-direction: column; gap: 6px; }
+button.cashsum { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; padding: 6px 12px; text-align: left; background: var(--panel); border: 1px solid var(--line); font-size: 14px; }
+button.cashsum b { color: var(--dim); font-size: 13px; margin-right: 6px; } button.cashsum i { flex: none; font-style: normal; font-size: 13px; font-weight: 700; color: var(--cy); }
+p.cashsum.none { font-size: 13px; line-height: 1.5; color: var(--dim); }
+.cashrow { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; } .cashrow b { color: var(--dim); margin-right: 4px; }
+.cashsum em, .cashrow em { font-style: normal; font-weight: 700; } em.up { color: var(--ok); } em.down { color: var(--bad); }
+/* 선수 등록: 고른 항목의 한 줄 요약과 자세히 */
+.pinfo { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--cy); background: var(--panel); }
+.psum { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; } .psum b { color: var(--cy); margin-right: 4px; }
+.pdet { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+@media (max-width: 350px), (max-height: 600px) { .goal.low .goalbtn { min-height: 44px; padding-top: 4px; padding-bottom: 4px; } .gsum { font-size: 13px; gap: 0 10px; } #apcash { font-size: 12px; min-height: 34px; } }
