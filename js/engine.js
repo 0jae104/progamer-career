@@ -960,7 +960,7 @@
     month: { title: 's', sub: 's', plan: 's', ovr: 'n', salary: 'n', notes: ['s', 0, 16], growth: ['pair', 0, 16],
       matches: [{ opp: 's', win: 'b', plays: 'b', r: 'n', k: 'n', d: 'n', a: 'n', label: 's?', score: 's?', mvp: 'b?', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8, '?'], rv: [{ nick: 's', r: 'n' }, 0, 6, '?'] }, 0, 16],
       eval: { r: 'n', rank: 'n', d: 'n?', rivals: [{ nick: 's', rank: 'n', r: 'n' }, 0, 6, '?'], '?': 1 }, fans: [{ v: 's', t: 's' }, 0, 8, '?'],
-      auto: { spent: 'n', items: [{ id: 's', cost: 'n', why: 's' }, 0, 8], '?': 1 } },
+      auto: { spent: 'n', items: [{ id: 's', cost: 'n', why: 's' }, 0, 8], bal: 'n?', '?': 1 } },
     info: { title: 's', text: 's', tone: 's', lines: ['s', 0, 12], news: 's?', cele: 'n?' },
     season: { year: 'n', age: 'n', org: 's', squad: 'squad', tag: 's', g: 'n', w: 'n', avg: 'n', mvp: 'n', ovr: 'n', salary: 'n', titles: ['s', 0, 30], awards: ['s', 0, 30] },
     cards: { cards: ['card', 1, 6], reroll: 'n' },
@@ -1742,6 +1742,7 @@
       if (why) out.items.push({ id: it.id, cost: cost || 0, why });
       else { out.spent += cost; out.items.push({ id: it.id, cost, why: '' }); }
     }
+    out.bal = S.money;   // 자동 구매를 마친 직후의 잔고(검산용: 무엇이든 샀다면 남겨 둘 돈 이상이어야 한다)
     return out;
   }
   function setAuto(id, on) {

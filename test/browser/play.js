@@ -41,6 +41,10 @@ module.exports = async function play(browser, url, R) {
     await m('진행 요약'); await pg.click('[data-act=repopen]');
     R.ok(await pg.evaluate(() => { const b = document.querySelector('.repbody'); return !!b && /심리 상담 −220만/.test(b.textContent) && /OVR/.test(b.textContent); }), `${w}: 결과 자세히에 자동 관리 내역이 없음`);
     await m('결과 자세히'); const a3 = await pg.evaluate(A11Y);
+    // 긴 대회 단계·상대 이름이 잘리지 않고 줄을 바꾼다(390px에서 말줄임으로 잘리던 문제의 회귀 검사)
+    const longOpp = await pg.evaluate(() => { const lr = PG.state().lastRep; lr.matches = [{ opp: '구름용 이스포츠 아카데미', win: true, plays: true, r: 7.1, k: 3, d: 1, a: 5, label: '준결승', score: '2-1' }, { opp: '문타이거즈', win: false, plays: true, r: 6.0, k: 1, d: 2, a: 3 }]; PG_UI.render(); const e = document.querySelector('.repbody .matches .opp'), cs = getComputedStyle(e); return { text: e.textContent, cut: e.scrollWidth > e.clientWidth + 1, ell: cs.textOverflow, ws: cs.whiteSpace, inside: e.getBoundingClientRect().right <= innerWidth }; });
+    R.ok(/준결승/.test(longOpp.text) && /구름용 이스포츠 아카데미/.test(longOpp.text) && !longOpp.cut && longOpp.ell !== 'ellipsis' && longOpp.ws !== 'nowrap' && longOpp.inside, `${w}: 월간 보고의 긴 상대 이름이 잘림 ${JSON.stringify(longOpp)}`);
+    await m('긴 상대 이름');
     for (const t of ['player', 'league', 'record']) { await pg.click(`[data-act=tab][data-id=${t}]`); await m('탭 ' + t); }
     R.ok(m.clean(), `${w}: 배치 ${m.line()}`);
     const noName = [...a1.noName, ...a2.noName, ...a3.noName], low = Object.assign({}, a1.lowContrast, a2.lowContrast, a3.lowContrast);
