@@ -502,3 +502,8 @@ p.cashsum.none { font-size: 13px; line-height: 1.5; color: var(--dim); }
 .psum { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; } .psum b { color: var(--cy); margin-right: 4px; }
 .pdet { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 @media (max-width: 350px), (max-height: 600px) { .goal.low .goalbtn { min-height: 44px; padding-top: 4px; padding-bottom: 4px; } .gsum { font-size: 13px; gap: 0 10px; } #apcash { font-size: 12px; min-height: 34px; } }
+
+/* ---------- 0.11.7 목표를 보유 자금 바로 아래로 ---------- */
+/* 접힌 요약은 두 줄(올해 목표 / 다음 목표). "목표" 이름표는 첫 줄 안에 있어 따로 한 줄을 쓰지 않는다. 긴 이름은 잘리지 않고 줄을 넘긴다 */
+.gsum { flex-direction: column; flex-wrap: nowrap; gap: 2px; } .gsum > span { overflow-wrap: anywhere; } .gsum > span > b { color: var(--cy); font-size: 13px; margin-right: 8px; }
+.goal.low { border-left-color: var(--cy); }

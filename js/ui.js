@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.6';
+  const UI_VERSION = '0.11.7';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -487,13 +487,19 @@
     const fx = G.rivalFixtures();
     return fx.length ? `<button class="rvcard" data-act="tab" data-id="league" data-to="rivals" aria-label="이번 달 라이벌전: ${fx.map(f => `${esc(f.nick)}의 ${esc(f.org)}, 통산 ${esc(f.w)}승 ${esc(f.l)}패`).join(', ')}. 라이벌 기록 열기"><span><b>이번 달 라이벌전</b>${fx.map(f => `${esc(f.nick)}의 ${esc(f.org)} · 통산 ${esc(f.w)}승 ${esc(f.l)}패`).join(' / ')}${fx[0].story ? `<small>${esc(fx[0].story)}</small>` : ''}</span><i aria-hidden="true">기록 ›</i></button>` : '';   // 라이벌전이 있는 달에만. 없으면 자리도 두지 않는다
   }
-  function goalLine() {
+  /* 0.11.7: 목표는 보유 자금 바로 아래(본문의 맨 처음)에 둔다. 상자(#gbox)는 그대로 두고 자동진행은 그 안쪽만 바꾼다.
+     - 상태·자금 상자(#hbox) 안에 넣지 않는다: 그 상자는 달마다 통째로 바뀌므로 목표가 사라지거나 펼친 상태가 접힌다.
+     - 안쪽의 글이 지난달과 같으면 건드리지 않는다(포커스가 유지된다). 펼침 여부는 U.goalOpen 이 기억한다.
+     - 화면에 보이는 순서와 DOM 순서가 같다: 상태 → 자금 → 목표 → 이번 달 할 일 → 라이벌전 → 지난 진행. */
+  let GOAL_HTML = '';
+  function goalLine() { GOAL_HTML = goalIn(); return `<div class="gbox" id="gbox">${GOAL_HTML}</div>`; }
+  function goalIn() {
     const g = G.goal(), open = U.goalOpen || !!G.tutTip('goal'), sg = G.goalNow(), okN = g.items.filter(i => i.ok).length;
-    return `<div class="goal slim low"><button class="goalbtn" data-act="goalopen" aria-expanded="${open}"><span class="gsum"><b>목표</b>${sg ? `<span class="${sg.done ? 'ok' : ''}">올해 ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</span>` : ''}<span>다음 ${esc(g.title)} <em class="${okN === g.items.length ? 'ok' : ''}">${esc(okN)}/${esc(g.items.length)}</em></span></span><i aria-hidden="true">${open ? '접기' : '펼치기'}</i></button>
+    return `<div class="goal slim low"><button class="goalbtn" data-act="goalopen" aria-expanded="${open}"><span class="gsum">${sg ? `<span class="${sg.done ? 'ok' : ''}"><b>목표</b>올해 ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</span>` : ''}<span>${sg ? '' : '<b>목표</b>'}다음 ${esc(g.title)} <em class="${okN === g.items.length ? 'ok' : ''}">${esc(okN)}/${esc(g.items.length)}</em></span></span><i aria-hidden="true">${open ? '접기' : '펼치기'}</i></button>
 ${tip('goal')}
       ${open ? `${sg ? `<p class="sgoal ${sg.done ? 'ok' : ''}"><b>올해 목표</b> ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</p>` : ''}<p class="sec gnext">다음 목표 · ${esc(g.title)}</p>${g.items.map(i => `<div class="gi ${i.ok ? 'ok' : ''}"><span>${esc(i.label)}</span><div class="bar"><i style="width:${i.low ? (i.ok ? 100 : 40) : Math.max(4, Math.min(100, Math.round(i.cur / i.need * 100)))}%"></i></div><b>${esc(i.cur)}${i.low ? '위' : ''} <em>/ ${esc(i.need)}${i.low ? '위 안' : ''}</em></b></div>`).join('')}<p class="fine">${esc(g.note)}</p>` : ''}</div>`;
   }
-  function tPlay(S) { return `${planBar(S)}${rivalLine()}${recapCard()}${goalLine()}`; }
+  function tPlay(S) { return `${goalLine()}${planBar(S)}${rivalLine()}${recapCard()}`; }
   function tMoney(S) {
     const c = S.contract;
     return `<p class="moneyline"><span>보유 자금</span><b>${money(S.money)}</b><em>연봉 ${money(c.salary)} · 계약 ${esc(c.years)}년 남음</em></p>${autoPanel(S)}${cashBox(S)}`;   // 돈의 흐름은 맨 아래: 위쪽의 요약·한도·자동 스위치 위치를 0.11.5 와 같게 둔다
@@ -909,10 +915,13 @@ ${tip('goal')}
     if (r.stop) { AP.on = false; if (r.stop === 'tab') checkStale(); return render(); }
     if (AP.n >= D.BAL.ap.max) return apStop('max');
     // 달마다 화면 전체를 다시 그리지 않는다: 진행 줄과 위쪽 숫자만 바꾼다
-    const S = G.state(), el = document.getElementById('apline'), ec = document.getElementById('apcash'), hb = document.getElementById('hbox'), ov = app.querySelector('.lower .ovr b');
+    const S = G.state(), el = document.getElementById('apline'), ec = document.getElementById('apcash'), hb = document.getElementById('hbox'), gb = document.getElementById('gbox'), ov = app.querySelector('.lower .ovr b');
     AP.cash = cashMonth(G.cash().all.filter(x => x.seq > q0), S);
-    if (!el || !ec || !hb || app.querySelectorAll('#hbox, .stagebg .moneyrow, .stagebg .hstat').length !== 3) render();   // 하나라도 없거나 여럿이면 통째로 다시 그린다
-    else { el.textContent = apLine(S); ec.textContent = AP.cash; hb.innerHTML = hstatIn(S); if (ov) ov.textContent = Math.floor(G.ovr()); }
+    if (!el || !ec || !hb || !gb || app.querySelectorAll('#hbox, #gbox, .stagebg .moneyrow, .stagebg .hstat, .stagebg .goal').length !== 5) render();   // 하나라도 없거나 여럿이면 통째로 다시 그린다
+    else {
+      el.textContent = apLine(S); ec.textContent = AP.cash; hb.innerHTML = hstatIn(S); if (ov) ov.textContent = Math.floor(G.ovr());
+      const gh = goalIn(); if (gh !== GOAL_HTML) { GOAL_HTML = gh; gb.innerHTML = gh; }   // 목표의 진척: 글이 달라진 달에만 안쪽을 바꾼다
+    }
     apKick();
   }
   document.addEventListener('visibilitychange', () => { if (document.hidden) apStop('hidden'); });
@@ -1001,7 +1010,7 @@ ${tip('goal')}
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
     SND.unlock();   // 사용자의 입력 뒤에만 오디오를 켠다
     if (a === 'reload') { window.location.reload(); return; }
-    if (AP.on) { apStop('pause'); if (a !== 'tab') return; }   // 자동진행 중에는 어떤 입력이든 먼저 멈춘다(탭 이동만 이어서 처리)
+    if (AP.on) { apStop('pause'); if (!['tab', 'plan', 'goalopen'].includes(a)) return; }   // 자동진행 중에는 어떤 입력이든 먼저 멈춘다. 탭 이동, 이번 달 할 일 바꾸기, 목표 펼치기는 멈춘 뒤 그대로 처리한다(한 번 누르면 된다. 0.11.7)
     if (checkStale()) return;
     // 두 번 눌림 방지: 진행·선택·확정 버튼은 직전 입력 뒤 잠깐 동안 다시 받지 않는다.
     // 화면이 바뀌면서 같은 자리에 다른 버튼이 오면, 연달아 누른 두 번째 입력이 엉뚱한 선택이 되기 때문이다.

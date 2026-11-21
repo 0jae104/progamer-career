@@ -29,9 +29,20 @@ const HOOK = () => {
         hs: [...hs].map(b => b.textContent).join(','), hsWant: hs.length ? [S.cond, S.wrist, S.trust, S.fame].map(v => String(Math.round(v))).join(',') : '',
         ovr: (document.querySelector('.lower .ovr b') || {}).textContent || '', ovrWant: String(Math.floor(PG.ovr())),
         pause: pause ? (pr.height >= 44 && pr.bottom <= window.innerHeight + 1 && !!hit && (hit === pause || pause.contains(hit))) : null,
+        goals: q('.stagebg .goal').length, gbox: q('#gbox').length, hbox: q('#hbox').length, aplines: q('#apline').length, apcashes: q('#apcash').length,
         line: (document.getElementById('apline') || {}).textContent || '', cashLine: (document.getElementById('apcash') || {}).textContent || '', plan: q('.stagebg .plan5 button').length };
       if (PG.cash && seq != null) { const c = PG.cash(), it = c.all.filter(x => x.seq > seq); row.led = it.reduce((a, x) => a + x.v, 0); row.gap = it.some(x => x.gap); row.auto = it.filter(x => x.k === 'auto').reduce((a, x) => a + x.v, 0); row.sal = it.filter(x => x.k === 'sal').reduce((a, x) => a + x.v, 0); }
       const lr = PG.lastRep(); if (r.k && lr) { row.repSal = lr.salary || 0; row.repAuto = lr.auto ? lr.auto.spent : 0; row.repItems = lr.auto ? lr.auto.items.filter(x => !x.why).map(x => x.id) : []; row.bal = lr.auto ? lr.auto.bal : null; }
+      // 목표 칸(0.11.7): 자금 바로 다음, 할 일 바로 앞. 요약의 글이 엔진의 지금 목표와 같은지
+      const gEl = document.querySelector('.stagebg .goal'), gBtn = gEl && gEl.querySelector('.goalbtn'), mrow = mr[0], p5 = document.querySelector('.stagebg .plan5');
+      if (gEl && gBtn && PG.goalNow) {
+        const sg = PG.goalNow(), g = PG.goal(), txt = gBtn.textContent, F = Node.DOCUMENT_POSITION_FOLLOWING;
+        row.goalOk = txt.includes(g.title) && txt.includes(`${g.items.filter(i => i.ok).length}/${g.items.length}`) && (!sg || (txt.includes(sg.t) && (!sg.txt || txt.includes(sg.txt))));
+        row.goalTxt = txt.replace(/\s+/g, ' ').slice(0, 90); row.goalOpen = gBtn.getAttribute('aria-expanded'); row.bars = gEl.querySelectorAll('.gi').length; row.barsWant = g.items.length;
+        row.order = !!mrow && !!p5 && !!(mrow.compareDocumentPosition(gEl) & F) && !!(gEl.compareDocumentPosition(p5) & F) && mrow.getBoundingClientRect().bottom <= gEl.getBoundingClientRect().top + 1 && gEl.getBoundingClientRect().bottom <= p5.getBoundingClientRect().top + 1;
+        const main = document.querySelector('main.content'); row.firstKid = main && main.firstElementChild ? main.firstElementChild.id : '';
+        row.goalH = Math.round(gEl.getBoundingClientRect().height); row.planBottom = Math.round(p5.getBoundingClientRect().bottom); row.footTop = Math.round(document.querySelector('.foot').getBoundingClientRect().top);
+      }
       row.ym = S.year * 100 + S.m;
       window.__ap.push(row);
     }, 0);
@@ -57,15 +68,21 @@ async function run(browser, url, raw, o) {
   await pg.reload(); await pg.waitForTimeout(250); await pg.click('[data-act=continue]'); await pg.waitForTimeout(150);
   await pg.evaluate(a => { PG.seed(a.seed || 5); if (a.auto) { for (const id of a.auto) PG.setAuto(id, true); } if (a.give) { PG.state().money += a.give; PG.save(); } }, { seed: o.seed, auto: o.auto, give: o.give || 0 });
   await pg.evaluate(HOOK);
+  if (o.goalOpen) { await pg.click('[data-act=goalopen]'); await pg.waitForTimeout(40); }
   const money0 = await pg.evaluate(() => PG.state().money);
   const ev = { starts: 0, pauses: 0, tabs: 0, scenes: {} };
-  let guard = 0, paused = false, tabbed = false;
+  let guard = 0, paused = false, tabbed = false, planned = false;
   while (await months(pg) < o.want && guard++ < 200) {
     if (!await go(pg)) break; ev.starts++;
     const n0 = await months(pg);
     if (o.pauseAt != null && !paused && n0 >= o.pauseAt) {   // 달리는 중에 멈춤을 누르고 다시 시작한다
       await pg.waitForFunction(n => window.__ap.reduce((a, x) => a + x.k, 0) > n || !PG_UI.ap.on, n0, { timeout: 30000 });
       if (await pg.evaluate(() => { const b = document.querySelector('[data-act=ap-pause]'); if (!PG_UI.ap.on || !b) return false; b.click(); return !PG_UI.ap.on; })) { paused = true; ev.pauses++; }
+    }
+    if (o.planAt != null && !planned && n0 >= o.planAt) {   // 달리는 중에 이번 달 할 일을 한 번 눌러 바꾼다
+      await pg.waitForFunction(n => window.__ap.reduce((a, x) => a + x.k, 0) > n || !PG_UI.ap.on, n0, { timeout: 30000 });
+      const pr = await pg.evaluate(() => { if (!PG_UI.ap.on) return null; const cur = PG.state().plan, b = [...document.querySelectorAll('.stagebg .plan5 button')].find(x => x.dataset.id !== cur && !x.disabled && x.getAttribute('aria-pressed') !== 'true'); if (!b) return null; const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const seen = r.bottom <= document.querySelector('.foot').getBoundingClientRect().top + 1 && !!hit && (hit === b || b.contains(hit)); b.click(); return { from: cur, want: b.dataset.id, now: PG.state().plan, seen, on: PG_UI.ap.on, goals: document.querySelectorAll('.stagebg .goal').length, rows: document.querySelectorAll('.stagebg .moneyrow').length }; });
+      if (pr) { planned = true; ev.plan = pr; }
     }
     await stopped(pg); await pg.waitForTimeout(30);
     const sc = await pg.evaluate(() => (PG.scene() ? PG.scene().type : '')); if (sc) ev.scenes[sc] = (ev.scenes[sc] || 0) + 1;
@@ -75,7 +92,7 @@ async function run(browser, url, raw, o) {
     }
   }
   await pg.waitForTimeout(40);
-  const log = await pg.evaluate(() => window.__ap), end = await pg.evaluate(() => ({ rows: document.querySelectorAll('.stagebg .moneyrow').length, hstat: document.querySelectorAll('.stagebg .hstat').length, over: PG.state().over, ver: PG.VERSION, err: window.__pgApError || window.__pgRenderError || '', money: PG.state().money, cash: PG.cash ? (c => ({ n: c.all.length, sum: c.all.reduce((a, x) => a + x.v, 0), gap: c.all.filter(x => x.gap).length, kinds: c.all.reduce((o, x) => (o[x.k] = (o[x.k] || 0) + x.v, o), {}) }))(PG.cash()) : null }));
+  const log = await pg.evaluate(() => window.__ap), end = await pg.evaluate(() => ({ rows: document.querySelectorAll('.stagebg .moneyrow').length, goals: document.querySelectorAll('.stagebg .goal').length, hstat: document.querySelectorAll('.stagebg .hstat').length, over: PG.state().over, ver: PG.VERSION, err: window.__pgApError || window.__pgRenderError || '', money: PG.state().money, cash: PG.cash ? (c => ({ n: c.all.length, sum: c.all.reduce((a, x) => a + x.v, 0), gap: c.all.filter(x => x.gap).length, kinds: c.all.reduce((o, x) => (o[x.k] = (o[x.k] || 0) + x.v, o), {}) }))(PG.cash()) : null }));
   end.money0 = money0;
   const errs = pg.errs.slice(); await ctx.close();
   return { log, ev, end, errs };
@@ -86,15 +103,18 @@ function digest(log) {
   const max = (a, f) => a.reduce((v, x) => Math.max(v, f(x)), 0);
   let grow = 0, run = 0; for (let i = 1; i < m.length; i++) { if (m[i].planTop > m[i - 1].planTop) { run++; grow = Math.max(grow, run); } else run = 0; }
   return { plan0: m.length ? m[0].planTop : 0, plan1: m.length ? Math.max(...m.map(x => x.planTop)) : 0, n: m.length, months: log.reduce((a, x) => a + x.k, 0), maxRows: max(m, x => x.rows), maxHstat: max(m, x => x.hstat), minRows: m.reduce((v, x) => Math.min(v, x.rows), 99), maxMainH: max(m, x => x.mainH), minMainH: m.reduce((v, x) => Math.min(v, x.mainH), 1e9), maxDocH: max(m, x => x.docH), maxBtns: max(m, x => x.btns), minBtns: m.reduce((v, x) => Math.min(v, x.btns), 1e9), maxNodes: max(m, x => x.nodes), minNodes: m.reduce((v, x) => Math.min(v, x.nodes), 1e9),
-    staleMoney: m.filter(x => x.first !== x.want).length, badMoney: m.filter(x => x.shown !== x.want).length, badStat: m.filter(x => x.hs !== x.hsWant).length, badOvr: m.filter(x => x.ovr !== x.ovrWant).length, badPause: m.filter(x => x.pause !== true).length, growRun: grow };
+    staleMoney: m.filter(x => x.first !== x.want).length, badMoney: m.filter(x => x.shown !== x.want).length, badStat: m.filter(x => x.hs !== x.hsWant).length, badOvr: m.filter(x => x.ovr !== x.ovrWant).length, badPause: m.filter(x => x.pause !== true).length, growRun: grow,
+    badGoalN: m.filter(x => x.goals !== 1 || x.gbox !== 1 || x.hbox !== 1 || x.aplines !== 1 || x.apcashes !== 1).length, badGoalTxt: m.filter(x => x.goalOk !== true).length, badOrder: m.filter(x => x.order !== true || x.firstKid !== 'gbox').length, goalTexts: new Set(m.map(x => x.goalTxt)).size, maxGoalH: max(m, x => x.goalH || 0), badPlanSeen: m.filter(x => !(x.planBottom <= x.footTop + 1)).length };
 }
 module.exports = async function apdom(browser, url, R) {
   const mk = await open(browser, url), first = await mk.pg.evaluate(SAVE, [3, 'first']), second = await mk.pg.evaluate(SAVE, [4, 'second']); await mk.ctx.close();
   R.ok(!!first && !!second, '검사용 저장(1군·2군)을 만들지 못함');
   const AUTO = ['counsel', 'physio', 'analyst', 'gear', 'coach', 'care'];
   const cases = [
-    { name: '390×844 1군 24개월(자동 관리 켬, 멈춤·재개, 자산 탭 왕복)', raw: first, w: 390, h: 844, want: 24, auto: AUTO, give: 3000, pauseAt: 3, tabAt: 6, seed: 11 },
-    { name: '320×568 1군 24개월(자동 관리 켬)', raw: first, w: 320, h: 568, want: 24, auto: AUTO, give: 3000, pauseAt: 2, tabAt: 5, seed: 12 },
+    { name: '390×844 1군 24개월(자동 관리 켬, 멈춤·재개, 자산 탭 왕복, 달리는 중 할 일 바꾸기)', raw: first, w: 390, h: 844, want: 24, auto: AUTO, give: 3000, pauseAt: 3, tabAt: 6, planAt: 8, seed: 11 },
+    { name: '320×568 1군 24개월(자동 관리 켬, 달리는 중 할 일 바꾸기)', raw: first, w: 320, h: 568, want: 24, auto: AUTO, give: 3000, pauseAt: 2, tabAt: 5, planAt: 9, seed: 12 },
+    { name: '390×844 2군 24개월(목표를 펼쳐 둔 채로)', raw: second, w: 390, h: 844, want: 24, goalOpen: true, pauseAt: 0, tabAt: 7, seed: 15 },
+    { name: '320×568 2군 12개월(목표를 펼쳐 둔 채로)', raw: second, w: 320, h: 568, want: 12, goalOpen: true, seed: 16 },
     { name: '375×812 2군 12개월(자동 관리 끔)', raw: second, w: 375, h: 812, want: 12, pauseAt: 0, tabAt: 3, seed: 13 },
     { name: '430×932 1군 6개월(자동 관리 켬)', raw: first, w: 430, h: 932, want: 6, auto: AUTO.slice(0, 3), seed: 14 },
   ];
@@ -108,9 +128,16 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(d.badStat === 0 && d.badOvr === 0, `${c.name}: 화면의 상태·OVR이 실제와 다른 달 ${d.badStat}·${d.badOvr}개`);
     R.ok(d.badPause === 0, `${c.name}: 멈춤 버튼이 가려지거나 화면 밖인 달 ${d.badPause}개`);
     R.ok(d.maxBtns - d.minBtns <= 2 && d.maxNodes - d.minNodes <= 16, `${c.name}: 달리는 중 버튼·요소 수가 크게 변함(라이벌전 줄처럼 달에 따라 있고 없는 것만 허용)(버튼 ${d.minBtns}~${d.maxBtns}, 요소 ${d.minNodes}~${d.maxNodes})`);
-    R.ok(d.growRun <= 1 && d.plan1 - d.plan0 <= 24 && d.maxMainH - d.minMainH <= 24, `${c.name}: 달리는 중 이번 달 할 일 칸이 아래로 밀림(${d.plan0}→${d.plan1}px, 이어서 밀린 달 ${d.growRun}, 위 칸 높이 ${d.minMainH}~${d.maxMainH}px)`);
-    R.ok(d.plan1 < c.h - 150, `${c.name}: 이번 달 할 일 칸이 화면 아래쪽으로 밀려남(${d.plan1}px / 화면 ${c.h}px)`);
+    R.ok(d.growRun <= 1 && d.plan1 - d.plan0 <= (c.goalOpen ? 60 : 24) && d.maxMainH - d.minMainH <= 24, `${c.name}: 달리는 중 이번 달 할 일 칸이 아래로 밀림(${d.plan0}→${d.plan1}px, 이어서 밀린 달 ${d.growRun}, 위 칸 높이 ${d.minMainH}~${d.maxMainH}px)`);
+    if (!c.goalOpen) R.ok(d.plan1 < c.h - 150, `${c.name}: 이번 달 할 일 칸이 화면 아래쪽으로 밀려남(${d.plan1}px / 화면 ${c.h}px)`);
     R.ok(m.every(x => x.plan === 5), `${c.name}: 이번 달 할 일 다섯 칸이 사라진 달이 있음`);
+    // 목표 칸(0.11.7): 달마다 정확히 하나, 자금 바로 다음·할 일 바로 앞, 요약의 글이 엔진의 지금 목표와 같다. 진행 줄·자금 줄도 하나씩
+    R.ok(d.badGoalN === 0 && r.end.goals === 1, `${c.name}: 목표 칸·상자·진행 줄이 하나가 아닌 달 ${d.badGoalN}개(끝난 뒤 목표 ${r.end.goals}개)`);
+    R.ok(d.badGoalTxt === 0, `${c.name}: 목표 요약이 실제 목표·진척과 다른 달 ${d.badGoalTxt}개 ${JSON.stringify(m.filter(x => x.goalOk !== true).slice(0, 2).map(x => x.goalTxt))}`);
+    R.ok(d.badOrder === 0, `${c.name}: 순서가 자금 → 목표 → 이번 달 할 일이 아닌 달 ${d.badOrder}개`);
+    if (c.goalOpen) R.ok(m.every(x => x.goalOpen === 'true' && x.bars === x.barsWant && x.bars > 0), `${c.name}: 펼쳐 둔 목표가 달리는 중에 접히거나 막대가 사라짐`);
+    else { R.ok(m.every(x => x.goalOpen === 'false' && x.bars === 0), `${c.name}: 접어 둔 목표가 달리는 중에 펼쳐짐`); R.ok(d.badPlanSeen === 0 && d.maxGoalH <= (c.w <= 320 ? 112 : 90), `${c.name}: 접힌 목표 때문에 할 일 다섯 칸이 첫 화면 밖으로 나간 달 ${d.badPlanSeen}개(목표 높이 최대 ${d.maxGoalH}px)`); }
+    if (c.planAt != null) R.ok(!!r.ev.plan && r.ev.plan.seen && r.ev.plan.now === r.ev.plan.want && r.ev.plan.goals === 1 && r.ev.plan.rows === 1, `${c.name}: 달리는 중에 할 일을 한 번 눌러 바꾸지 못함 ${JSON.stringify(r.ev.plan)}`);
     R.ok(c.tabAt ? r.ev.tabs === 1 && r.ev.toMoney === 'money' : true, `${c.name}: 자금 줄을 눌러 자산 탭으로 가지 못함(${r.ev.toMoney})`);
     R.ok(c.pauseAt != null ? r.ev.pauses === 1 : true, `${c.name}: 멈춤·재개를 해 보지 못함`);
     R.ok(!r.errs.length && !r.end.err, `${c.name}: 스크립트 오류 ${r.errs} ${r.end.err}`);
@@ -125,7 +152,7 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(r.end.cash && r.end.cash.n < 240 && r.end.cash.gap === 0 && Math.abs(r.end.money0 + r.end.cash.sum - r.end.money) < 1e-6, `${c.name}: 처음 잔고 ${r.end.money0} + 내역 합 ${r.end.cash && r.end.cash.sum} ≠ 마지막 잔고 ${r.end.money} (빠진 변동 ${r.end.cash && r.end.cash.gap}건)`);
     if (!c.auto) R.ok(all.every(x => !x.auto && !x.repAuto), `${c.name}: 자동 관리를 껐는데 자동 지출이 있음`);
     const spent = all.reduce((a, x) => a - (x.auto || 0), 0), sal = all.reduce((a, x) => a + (x.sal || 0), 0);
-    R.note(c.name, `${d.months}개월(부분 갱신 ${d.n}달) · 시작 ${r.ev.starts}번 · 멈춤 ${r.ev.pauses} · 탭 왕복 ${r.ev.tabs} · 자금 버튼 ${d.minRows}~${d.maxRows}개 · 상태 영역 ${d.maxHstat}개 · 할 일 칸 위치 ${d.plan0}~${d.plan1}px · 버튼 ${d.minBtns}~${d.maxBtns} · 월급 합 ${sal} · 자동 지출 합 ${spent} · 잔고 ${r.end.money0} + 내역 ${JSON.stringify(r.end.cash.kinds)} = ${r.end.money} · 멈춘 장면 ${JSON.stringify(r.ev.scenes)}`);
+    R.note(c.name, `${d.months}개월(부분 갱신 ${d.n}달) · 시작 ${r.ev.starts}번 · 멈춤 ${r.ev.pauses} · 탭 왕복 ${r.ev.tabs} · 자금 버튼 ${d.minRows}~${d.maxRows}개 · 상태 영역 ${d.maxHstat}개 · 할 일 칸 위치 ${d.plan0}~${d.plan1}px · 버튼 ${d.minBtns}~${d.maxBtns} · 월급 합 ${sal} · 자동 지출 합 ${spent} · 잔고 ${r.end.money0} + 내역 ${JSON.stringify(r.end.cash.kinds)} = ${r.end.money} · 목표 칸 항상 1개, 요약이 바뀐 횟수 ${d.goalTexts}가지, 높이 최대 ${d.maxGoalH}px${r.ev.plan ? ` · 달리는 중 할 일 ${r.ev.plan.from}→${r.ev.plan.now}(자동진행 ${r.ev.plan.on ? '계속' : '멈춤'})` : ''} · 멈춘 장면 ${JSON.stringify(r.ev.scenes)}`);
   }
 };
 module.exports.run = run; module.exports.digest = digest; module.exports.SAVE = SAVE;
