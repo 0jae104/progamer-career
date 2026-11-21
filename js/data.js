@@ -122,6 +122,8 @@
     // 자동진행(0.11.2): even·bold = 그 성향이 확률 판정에 도전하는 최소 성공 확률(%), restBack = 자동 휴식을 끝내는 컨디션,
     //   max = 한 번 시작해서 넘기는 달 수의 상한(안전장치), log = 남겨 두는 자동 선택 기록 수
     ap: { even: 60, bold: 35, restBack: 70, max: 36, log: 30 },
+    // 전술 분석가의 분석 자료(0.11.5): 산 달(자동으로 샀다면 다음 달)에 내가 주전으로 뛰는 토너먼트 시리즈에서 팀 전력에 더하는 값. 리그 경기에는 들어가지 않는다
+    prepStr: 1,
     eventChance: .5,        // 매달 선택 이벤트가 나올 확률
     eventChanceTrainee: .5, // 경기가 없는 연습생 기간
     eventMemory: 7,          // 최근 이 개수의 이벤트는 다시 나오지 않는다
@@ -192,7 +194,7 @@
     { id: 'counsel', name: '심리 상담', desc: '멘탈 +1, 컨디션 +12. 한 달에 한 번', once: true, cost: [220] },
     // 0.11.2: 돈을 쓰면 다른 것을 내주는 선택 두 가지. 기본은 꺼짐이고, 사지 않으면 판정이 예전과 같다.
     { id: 'fanmeet', name: '팬 미팅', desc: '인기 +2, 대신 컨디션 −6. 인기는 연봉 제안과 방송 수입을 올린다. 한 달에 한 번', once: true, cost: [250], fx: { fame: 2, cond: -6 }, minCond: 40 },
-    { id: 'analyst', name: '전술 분석가', desc: '판단력 +0.3, 숙련 폭 +0.2(한계까지). 나이가 들어 성장이 느려져도 같은 만큼 오른다. 한 달에 한 번', once: true, cost: [350], fx: { sense: .3, pool: .2 } },
+    { id: 'analyst', name: '전술 분석가', desc: '판단력 +0.3, 숙련 폭 +0.2(한계까지). 그리고 분석 자료: 직접 산 달(자동이면 다음 달)에 주전으로 뛰는 토너먼트 경기에서 팀 전력 +1. 리그 경기에는 효과가 없어 토너먼트가 없는 달에는 능력치 몫만 남는다. 한 달에 한 번', once: true, cost: [350], fx: { sense: .3, pool: .2 } },
   ];
 
   // r: 0 일반, 1 희귀, 2 영웅, 3 전설
@@ -1241,7 +1243,7 @@
     { id: 'grade_s', name: '전설', desc: 'S등급 이상으로 은퇴한다' },
   ];
 
-  (root.PG_VER = root.PG_VER || {}).data = '0.11.4';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
+  (root.PG_VER = root.PG_VER || {}).data = '0.11.5';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.4';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.5';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -196,6 +196,8 @@
   // 내가 출전했을 때 팀의 실제 전력. mod.s 는 승부처 선택으로 생긴 그 세트 한정 보정이다.
   // 포지션별 경기 영향력: 기준보다 잘하는 만큼만 배율이 붙는다(못할 때의 손해는 포지션과 무관하게 같다).
   const carried = d => d > 0 ? d * (B.carry[S.role] || 1) : d;
+  // 분석 자료(0.11.5): 전술 분석가를 산 달의 토너먼트 시리즈에서, 내가 주전으로 뛸 때만 팀 전력에 더한다. 사지 않으면 0이라 판정이 예전과 같다
+  const prepStr = () => (S.prep === S.year * 100 + S.m && !S.injury && isStarter() ? B.prepStr : 0);
   function effStr(T, plays, mod) {
     if (!plays) return T;
     return T + carried(ovr() - T) * B.impact + (S.cond - 60) / 40 * 1.2 + (has('dynasty') ? 2 : 0) + (mod ? mod.s : 0);
@@ -267,6 +269,7 @@
       type: 'prematch', tour: t.name, label: m.label, bo: m.bo, me: tName(t, t.me), opp: tName(t, opp),
       meTag: meO ? meO.tag : '', oppTag: opO ? opO.tag : '', meColor: meO ? meO.color : '', oppColor: opO ? opO.color : '',
       base: pct(base), cond: Math.round(S.cond), role: role().name,
+      prep: t.kind !== 'nations' && prepStr() > 0,
       rival: rv.map(r => r.nick).join(', '), h2h: rv.length ? `${rv[0].nick}와의 통산 ${rv[0].w}승 ${rv[0].l}패` : '', story: rv.length ? rivalBefore(rv[0]) : '',
       oppStyle: opO ? opO.style : '', oppIdt: opO ? opO.idt : '',
       tacs: D.TACTICS.map(k => ({ id: k.id, p: pct(winP(effStr(T, true, { s: tacS({ tac: k.id, x: 0, y: 0 }, T, O), r: 0 }), O)) })),
@@ -279,7 +282,7 @@
       meTag: meO ? meO.tag : '', oppTag: opO ? opO.tag : '', meColor: meO ? meO.color : '', oppColor: opO ? opO.color : '',
       sets: c.sets.map(x => ({ w: !!x.w, d: x.d })), from: Math.min(c.shown || 0, c.sets.length), tac: c.tac || '',
       r: rec.r, k: rec.k, d: rec.d, a: rec.a, mvp: !!rec.mvp, moms: c.moms.map(x => ({ title: x.title, label: x.label, ok: x.ok, auto: !!x.auto })),
-      rival: v ? `${v.nick}의 ${rec.opp}와(과) 통산 ${v.w}승 ${v.l}패` : '', story: v && v.s ? v.s : '',
+      rival: v ? `${v.nick}의 ${rec.opp}와(과) 통산 ${v.w}승 ${v.l}패` : '', story: v && v.s ? v.s : '', prep: t.kind !== 'nations' && c.plays && prepStr() > 0,
       next: rec.win ? (adv ? '다음 라운드 진출' : m.label === '결승' ? '우승' : '시리즈 승리') : (m.label === '결승' ? '준우승' : '이 대회는 여기까지'),
     };
   }
@@ -343,7 +346,7 @@
         while (x < need && y < need) rnd() < p ? x++ : y++;
         t.w[t.i++] = x > y ? a : b; continue;
       }
-      const opp = a === t.me ? b : a, T = tStr(t, t.me), O = tStr(t, opp);
+      const opp = a === t.me ? b : a, prep = t.kind === 'nations' ? 0 : prepStr(), T = tStr(t, t.me) + prep, O = tStr(t, opp);
       if (!t.cur) {
         t.cur = newSeries();
         // 내가 출전하는 시리즈: 전략을 묻고 멈춘다. 빠른 진행에서는 묻지 않는다(승부처와 같은 규칙. 판정은 예전과 같다).
@@ -1645,6 +1648,7 @@
     def(s, 'pity', 0); def(s, 'injury', 0); def(s, 'recentMom', []); if (s.sim === undefined) s.sim = null;
     def(s, 'grow', 1); def(s, 'evn', {});
     if (s.look != null && !LOOK(s.look)) delete s.look;   // 외형(0.11.2): 이상하면 버리고 예전 얼굴로
+    if (s.prep != null && !Number.isFinite(s.prep)) delete s.prep;
     normStory(s);   // 시즌 목표와 라이벌 서사의 기록(0.11.5): 없으면 없는 대로, 이상하면 버린다
     normAuto(s); normAp(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
     // 처음 안내: 이 값이 없는 저장은 안내가 생기기 전에 시작한 커리어다. 진행 중에 안내가 끼어들지 않게 끝난 것으로 둔다.
@@ -1722,6 +1726,7 @@
     const it = D.SHOP.find(x => x.id === id); if (!it || !S) return false;
     if (!purchase(it)) return false;
     if (it.once) (S.man || (S.man = {}))[id] = S.year * 100 + S.m;   // 이 달에 직접 샀다는 표시: 자동 관리가 같은 달에 또 사지 않는다
+    if (id === 'analyst') S.prep = S.year * 100 + S.m;   // 분석 자료: 직접 사면 이번 달 토너먼트에
     save(); return true;
   }
 
@@ -1750,7 +1755,7 @@
       else if (S.money - cost < keep) why = 'low';
       if (!why && !purchase(it)) why = 'low';
       if (why) out.items.push({ id: it.id, cost: cost || 0, why });
-      else { out.spent += cost; out.items.push({ id: it.id, cost, why: '' }); }
+      else { out.spent += cost; out.items.push({ id: it.id, cost, why: '' }); if (it.id === 'analyst') S.prep = S.m + 1 < MONTHS.length ? S.year * 100 + S.m + 1 : (S.year + 1) * 100; }   // 자동 구매는 그달 경기가 끝난 뒤라 다음 달 토너먼트에
     }
     out.bal = S.money;   // 자동 구매를 마친 직후의 잔고(검산용: 무엇이든 샀다면 남겨 둘 돈 이상이어야 한다)
     return out;
@@ -2185,6 +2190,8 @@
     rivals: () => S ? S.rivals.map(rivalView) : [],
     roleLabel, roleReview, offerInfo,
     rivalFixtures: () => (S && S.org ? rivalFixtures().map(r => ({ nick: r.nick, org: D.ORG[r.org].name, w: r.w, l: r.l, story: rivalBefore(r) })) : []),
+    // 돈을 쓰기 전에 볼 사실(0.11.5): 분석 자료가 이번 달에 걸려 있는가, 이번 달에 토너먼트가 있는가, 인기가 지금 무엇을 바꾸는가
+    spendInfo() { if (!S || !S.org) return null; const mi = MONTHS[S.m]; return { prepNow: S.prep === S.year * 100 + S.m, tour: !!(mi.playoff || mi.type === 'intl') && S.squad !== 'trainee', starter: isStarter() && !S.injury, fame: Math.round(S.fame), stream: 30 + Math.round(S.fame * 8), payPct: Math.round(S.fame / 2), nego: Math.round(S.fame * .2) }; },
     goalNow, goalLog: () => (S && S.goalLog ? S.goalLog.slice() : []),
     pot(k) { const c = S.caps[k]; return c >= 95 ? 'S' : c >= 90 ? 'A' : c >= 85 ? 'B' : 'C'; },
     hasSave() { return !!(read(KEY) || read(BAK)); },

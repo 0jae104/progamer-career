@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.4';
+  const UI_VERSION = '0.11.5';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -393,11 +393,15 @@
      항목은 한 줄(이름·상태 / 자동 스위치 / 사기)이고 설명은 이름을 눌렀을 때만 펼친다. 가격·조건·효과·자동 관리 규칙은 그대로다.
      접힘·펼침은 화면 상태(U.shopOpen, U.shopInfo)로만 기억한다. 저장에는 들어가지 않는다. */
   function shopRow(it, S) {
-    const open = U.shopInfo === it.id, st = it.once ? (it.used ? '이번 달 완료' : `${money(it.cost)} · 매달`) : (it.max ? `${it.lv}/${it.of} 최대` : `${it.lv}/${it.of} 단계 · 다음 ${money(it.cost)}`);
+    const open = U.shopInfo === it.id, sp = G.spendInfo() || {};
+    // 돈을 쓰기 전에 볼 사실(0.11.5): 분석 자료가 이번 달에 쓰이는가, 인기가 지금 무엇을 바꾸는가. 숫자는 게임이 실제로 쓰는 식에서 나온다
+    const fact = it.id === 'analyst' ? (sp.prepNow ? ' 이번 달 분석 자료가 준비돼 있다.' : '') + (sp.tour ? ' 이번 달에는 플레이오프나 국제전이 열린다(팀이 올라가야 경기가 있다).' : ' 이번 달에는 토너먼트가 없어 분석 자료는 쓰이지 않는다.') + (sp.starter ? '' : ' 지금은 주전이 아니라 분석 자료가 적용되지 않는다.')
+      : it.id === 'fanmeet' ? ` 지금 인기 ${sp.fame}: 방송 한 달 수입 약 ${money(sp.stream)}, 1군 연봉 제안 +${sp.payPct}%, 연봉 협상 성공률 +${sp.nego}%p.` : '';
+    const st = it.once ? (it.id === 'analyst' && sp.prepNow ? '분석 자료 준비됨' : it.used ? '이번 달 완료' : `${money(it.cost)} · 매달`) : (it.max ? `${it.lv}/${it.of} 최대` : `${it.lv}/${it.of} 단계 · 다음 ${money(it.cost)}`);
     return `<div class="srow"><button class="sname" data-act="shop-info" data-id="${esc(it.id)}" aria-expanded="${open}"><b>${esc(it.name)}</b><span>${esc(st)}</span></button>
       <button class="tog" data-act="shop-auto" data-id="${esc(it.id)}" aria-pressed="${it.on}" aria-label="${esc(it.name)} ${it.once ? '매달 자동' : '모이면 자동'} ${it.on ? '켜짐' : '꺼짐'}" ${it.max && !it.on ? 'disabled' : ''}>자동 ${it.on ? '켜짐' : '꺼짐'}</button>
       <button class="sbuy" data-act="buy" data-id="${esc(it.id)}" aria-label="${esc(it.name)} ${it.max ? '최대 단계' : it.used ? '이번 달 완료' : `지금 사기 ${esc(money(it.cost))}`}" ${it.max || it.used || S.money < it.cost ? 'disabled' : ''}>${it.max ? '최대' : it.used ? '완료' : '사기'}</button></div>
-      ${open ? `<p class="sdesc">${esc(it.desc)}${it.once ? '' : ' 자동을 켜면 돈이 모였을 때 한 달에 한 단계씩 산다.'}${!it.max && !it.used && S.money < it.cost ? ' 지금은 자금이 모자라다.' : ''}</p>` : ''}`;
+      ${open ? `<p class="sdesc">${esc(it.desc)}${esc(fact)}${it.once ? '' : ' 자동을 켜면 돈이 모였을 때 한 달에 한 단계씩 산다.'}${!it.max && !it.used && S.money < it.cost ? ' 지금은 자금이 모자라다.' : ''}</p>` : ''}`;
   }
   function autoPanel(S) {
     const a = G.autoInfo(), opt = (k, v) => (k === 'keep' ? `${money(v)}` : v ? money(v) : '제한 없음');
@@ -647,7 +651,7 @@ ${tip('goal')}
     const need = (sc.bo + 1) / 2;
     return `${arenaTop(sc)}${arenaHead(sc, '', 0)}
       <p class="stake"><b>${esc(sc.bo)}전 ${esc(need)}선승</b>${sc.label === '결승' ? '이기면 우승이다.' : '지면 이 대회는 여기서 끝난다.'}</p>
-      <div class="chips"><span class="chip">${esc(sc.role)} 출전</span><span class="chip ${sc.cond >= 70 ? 'up' : sc.cond < 50 ? 'down' : ''}">컨디션 ${esc(sc.cond)}</span><span class="chip ${sc.base >= 55 ? 'up' : sc.base <= 45 ? 'down' : ''}">전력으로 본 세트 승률 ${esc(sc.base)}%</span></div>
+      <div class="chips"><span class="chip">${esc(sc.role)} 출전</span><span class="chip ${sc.cond >= 70 ? 'up' : sc.cond < 50 ? 'down' : ''}">컨디션 ${esc(sc.cond)}</span><span class="chip ${sc.base >= 55 ? 'up' : sc.base <= 45 ? 'down' : ''}">전력으로 본 세트 승률 ${esc(sc.base)}%</span>${sc.prep ? `<span class="chip up">분석 자료 · 전력 +${esc(D.BAL.prepStr)}</span>` : ''}</div>
       ${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. ${esc(sc.h2h)}${sc.h2h ? '.' : ''}${sc.story ? ` ${esc(sc.story)}` : ''}</p>` : ''}
       <h2>어떻게 싸울까</h2>
       ${sc.tacs.map(t => { const k = TAC(t.id); if (!k) return ''; const dd = t.p - sc.base; return `<button class="choice tac" data-act="tac" data-id="${esc(t.id)}" aria-pressed="${U.tac === t.id}"><div class="grow"><b>${esc(k.name)}</b><small class="tgood">유리 — ${esc(k.good)}</small><small class="tbad">불리 — ${esc(k.bad)}</small></div><span class="pill ${dd > 0 ? 'hi' : dd < 0 ? 'lo' : ''}">${esc(t.p)}%<small>1세트 ${esc(sgn(dd))}</small></span></button>`; }).join('')}
@@ -661,8 +665,9 @@ ${tip('goal')}
   function causeLines(sc, k) {
     const ds = sc.sets.map(x => x.d || 0), sum = Math.round(ds.reduce((a, b) => a + b, 0) / Math.max(1, ds.length) * 10) / 10, res = `실제 ${sc.x}:${sc.y} ${sc.win ? '승리' : '패배'}`;
     const l1 = k ? `<b>${esc(k.name)}</b>을(를) 골랐다 → 세트 승률 평균 ${esc(sgn(sum))}%p(${ds.map(d => esc(sgn(d))).join(' / ')}) → ${esc(res)}.` : `전략 없이 치렀다 → 세트 승률 보정 없음 → ${esc(res)}.`;
+    const l0 = sc.prep ? `<p>전술 분석가의 <b>분석 자료</b>가 적용된 경기였다(팀 전력 +${esc(D.BAL.prepStr)}).</p>` : '';
     const l2 = sc.moms.map(m => `승부처 「${esc(m.title)}」에서 <b>${esc(m.label)}</b>${m.auto ? '(감독 판단)' : ''} → ${m.ok ? '성공' : '실패'}.`).join(' ');
-    return `<div class="cause"><p>${l1}</p>${l2 ? `<p>${l2}</p>` : ''}<p class="fine">선택은 확률을 조금 움직였을 뿐이다. 결과의 원인이라고 단정할 수는 없다.</p></div>`;
+    return `<div class="cause">${l0}<p>${l1}</p>${l2 ? `<p>${l2}</p>` : ''}<p class="fine">선택은 확률을 조금 움직였을 뿐이다. 결과의 원인이라고 단정할 수는 없다.</p></div>`;
   }
   function vMatch(sc) {
     const k = TAC(sc.tac), plus = sc.sets.filter(x => x.d > 0), minus = sc.sets.filter(x => x.d < 0);

@@ -96,4 +96,30 @@ const toIdle = () => { let n = 0; while (n++ < 4000 && !(G.state().org && G.stat
   if (!cand || shown !== cand || flagged !== cand) fail(`귀국 제안: 해외 선수 ${abroad}명 · 후보 ${cand} · 목록 ${shown} · 표시 ${flagged}`);
   console.log(`귀국 제안: 고국에서 뛰는 선수 ${same}명의 제안 목록·난수는 새 규칙 전과 같음 · 해외 선수 ${abroad}명 — 성적을 낸 경우 고국 1군 제안이 후보에 든 ${cand}번 모두 목록에 나오고 복귀 표시가 붙음 · 성적이 없는 경우(${plain}번)는 예전 규칙`);
 }
+// ---- 5) 분석 자료(0.11.5): 전술 분석가를 산 달의 토너먼트에서만, 주전으로 뛸 때만 팀 전력 +B.prepStr ----
+{
+  // 같은 저장·같은 시드에서 플레이오프 달 직전에 산 경우와 사지 않은 경우의 "경기 준비" 화면을 비교한다
+  const toPlayoff = seed => { fresh(seed); let n = 0; while (!G.state().over && n++ < 60000) { const s = G.state(); if (!G.scene() && s.squad === 'first' && s.tut.done && G.isStarter() && !s.injury && (s.m === 2 || s.m === 6) && s.money > 1000) { G.save(); return mem[KEY]; } G.autoStep(); } return ''; };
+  let checked = 0, bench = 0, up = 0, gain = 0;
+  for (let seed = 700; seed < 760 && checked < 6; seed++) {
+    const raw = toPlayoff(seed); if (!raw) continue;
+    const run = buy => { for (const k in mem) delete mem[k]; mem.pg_tut_v1 = '1'; mem[KEY] = raw; G._seen(); G.load(); G.seed(seed * 7); if (buy && !G.buy('analyst')) fail('전술 분석가를 사지 못함'); const stamp = G.state().year * 100 + G.state().m; if (buy && G.state().prep !== stamp) fail('직접 샀는데 이번 달 분석 자료가 준비되지 않음'); G.next(); let k = 0; while (G.scene() && G.scene().type !== 'prematch' && k++ < 20) G.resolve(G.scene().type === 'event' ? 0 : undefined); return G.scene() && G.scene().type === 'prematch' ? G.scene() : null; };
+    const a = run(false), b = run(true); if (!a || !b) continue;   // 팀이 플레이오프에 못 올라간 달: 분석 자료는 쓰이지 않는다(돈만 나간다)
+    if (a.prep || !b.prep) fail('분석 자료 표시가 산 것과 다름');
+    if (b.base < a.base || b.base - a.base > 8) fail(`분석 자료의 효과가 설명과 다름: 세트 승률 ${a.base}% → ${b.base}%`);
+    if (b.base > a.base) up++; gain += b.base - a.base;   // 전력 차가 큰 경기에서는 반올림한 승률이 같게 보일 수 있다
+    checked++;
+    // 그달이 지나면 사라진다
+    let k = 0; while (G.scene() && k++ < 80) G.autoStep(); if (G.spendInfo().prepNow) fail('달이 지났는데 분석 자료가 남아 있음');
+  }
+  if (checked < 3 || !up) fail(`플레이오프 달의 표본이 부족하거나 효과가 한 번도 보이지 않음: ${checked}번 중 ${up}번`);
+  // 주전이 아니면 적용되지 않고, 자동 구매는 다음 달에 걸린다. 이상한 값은 버린다
+  fresh(31); toIdle(); const S = G.state(); S.money = 9000; S.used = {}; G.setAuto('analyst', true);
+  for (let t = 0; t < 6 && !S.over; t++) { while (G.scene() && !S.over) G.autoStep(); if (S.over) break; const m0 = S.m, y0 = S.year, money0 = S.money; S.stats.sense = Math.min(S.stats.sense, S.caps.sense - 2); G.next(); let k = 0; while (G.scene() && k++ < 40 && S.year * 100 + S.m === y0 * 100 + m0) G.autoStep(); const bought = S.money < money0 && S.used.analyst === 1;
+    if (bought) { const want = m0 + 1 < 10 ? y0 * 100 + m0 + 1 : (y0 + 1) * 100; if (S.prep !== want) fail(`자동으로 산 분석 자료가 다음 달에 걸리지 않음: ${S.prep} / ${want}`); bench++; } }
+  if (!bench) fail('자동 구매가 한 번도 일어나지 않아 확인하지 못함');
+  G.save(); const o = JSON.parse(mem[KEY]); o.prep = 'x'; mem[KEY] = JSON.stringify(o); G._seen(); if (G.load() !== 'ok' || G.state().prep != null) fail('이상한 분석 자료 값이 남음');
+  const sp = G.spendInfo(); if (!sp || typeof sp.stream !== 'number' || sp.stream !== 30 + Math.round(G.state().fame * 8) || sp.payPct !== Math.round(G.state().fame / 2)) fail('인기의 효과 안내가 실제 식과 다름');
+  console.log(`분석 자료: 플레이오프 달 ${checked}번에서 산 경우에만 경기 준비 화면에 표시되고 1세트 승률이 평균 ${(gain / checked).toFixed(1)}%p 오름(${up}번은 표시 숫자가 바뀜) · 달이 지나면 사라짐 · 자동 구매는 다음 달(${bench}번 확인) · 이상한 값은 버림 · 인기 안내는 실제 식과 같음`);
+}
 console.log('통과');
