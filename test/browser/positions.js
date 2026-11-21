@@ -46,14 +46,18 @@ module.exports = async function positions(browser, url, R) {
       await pg.locator('.sheet .choice').first().click(); await pg.waitForTimeout(80); await m('승부처 결과 ' + id);
       const before = await pg.evaluate(() => JSON.stringify([PG.scene().ok, PG.scene().x, PG.scene().y, PG.state().money]));
       await reopen(pg); R.ok(await pg.evaluate(() => JSON.stringify([PG.scene().ok, PG.scene().x, PG.scene().y, PG.state().money])) === before, `${w} ${id}: 승부처 결과 화면에서 새로 고치자 결과가 달라짐`);
-      for (let i = 0; i < 40 && (await pg.evaluate(() => PG.scene() && PG.scene().type)) !== 'month'; i++) await step(pg);
-      const rep = await pg.evaluate(() => { const sc = PG.scene(), v = PG.roleReview(sc.matches), e = document.querySelector('.sheet .act'); return { has: !!v, shown: e ? e.textContent : '', pos: v && v.pos, moms: [...document.querySelectorAll('.sheet .mom')].map(x => x.textContent).join(' ') }; });
+      // 0.11.1: 평범한 달의 보고는 창이 아니라 플레이 화면의 "결과 자세히"에 들어간다. 그 달의 보고가 나올 때까지 진행한 뒤 펼쳐서 본다(라이벌전이 있던 달은 창으로 뜬다)
+      const lr0 = await pg.evaluate(() => JSON.stringify(PG.lastRep()));
+      for (let i = 0; i < 40 && (await pg.evaluate(() => PG.scene() && PG.scene().type)) !== 'month' && (await pg.evaluate(() => JSON.stringify(PG.lastRep()))) === lr0; i++) await step(pg);
+      const modal = await pg.evaluate(() => !!PG.scene() && PG.scene().type === 'month');
+      if (!modal) await pg.evaluate(() => { PG_UI.state.repOpen = true; PG_UI.render(); });   // 다른 창(탈락 소식 등)이 떠 있어도 뒤의 플레이 화면에 펼쳐 둔다
+      const rep = await pg.evaluate(modal => { const sc = modal ? PG.scene() : PG.lastRep(), box = document.querySelector(modal ? '.sheet' : '.repbody'), v = PG.roleReview(sc.matches), e = box.querySelector('.act'); return { has: !!v, shown: e ? e.textContent : '', pos: v && v.pos, moms: [...box.querySelectorAll('.mom')].map(x => x.textContent).join(' ') }; }, modal);
       R.ok(rep.has ? rep.shown.includes(NAMES[id][0] + ' 해설') : !rep.shown, `${w} ${id}: 월간 보고의 포지션 해설 표시 ${JSON.stringify(rep).slice(0, 200)}`);
       R.ok(rep.moms.includes('승부처'), `${w} ${id}: 승부처 결과가 월간 보고의 경기 기록에 없음`); await m('월간 보고 ' + id);
       await put(got.offers); await reopen(pg);
       const of = await pg.evaluate(() => [...document.querySelectorAll('.sheet .offer')].map(o => o.querySelector('.oinfo') ? o.querySelector('.oinfo').textContent : ''));
       R.ok(of.length >= 2 && of.every(t => /전력 \d+ \(리그 \d+팀 중 \d+위\)/.test(t) && /감독 신뢰/.test(t)) && of.some(t => /지금 연봉보다|지금 팀이다/.test(t)), `${w} ${id}: 계약 제안 설명이 빠짐 ${of.join(' / ').slice(0, 200)}`); await m('계약 제안 ' + id);
-      await put(got.home); await reopen(pg); await pg.click('[data-act=tab][data-id=stats]');
+      await put(got.home); await reopen(pg); await pg.click('[data-act=tab][data-id=career]');
       const st = await pg.evaluate(() => ({ guide: (document.querySelector('.guide') || {}).textContent || '', kinds: [...document.querySelectorAll('.rkind')].map(e => e.textContent), rivals: document.querySelectorAll('.rival').length, head: document.querySelector('.lower .who span').textContent }));
       R.ok(st.guide.includes(NAMES[id][0] + ' 가이드') && /OVR을 빨리 올리는 계획/.test(st.guide) && st.kinds.length === st.rivals && st.head.includes(NAMES[id][0]), `${w} ${id}: 능력 탭의 포지션 가이드 또는 라이벌 구분 ${JSON.stringify(st).slice(0, 240)}`);
       await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await m('능력 탭 ' + id);

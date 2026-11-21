@@ -56,7 +56,7 @@ module.exports = async function security(browser, url, R) {
       await pg.locator('[data-act=endcard]').first().click(); await pg.waitForSelector('.cardimg', { timeout: 10000 }); await look('은퇴 카드');
       await pg.click('[data-act=back]'); await pg.click('[data-act=hall]'); await look('은퇴 뒤 명예의 전당'); await pg.locator('.hmain').first().click(); await look('은퇴 기록 상세');
     }
-    if (kind === 'home') for (const tab of ['stats', 'league', 'shop', 'record', 'home']) { await pg.click(`[data-act=tab][data-id=${tab}]`); const q = await look('탭 ' + tab); if (tab !== 'shop' && tab !== 'league') R.ok(q.shown > 0, `탭 ${tab}: 넣은 문자열이 보이지 않음`); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + tab + ' 펼침'); }
+    if (kind === 'home') for (const tab of ['career', 'shop', 'record', 'home']) { if (tab === 'shop') { await pg.click('[data-act=tab][data-id=home]'); await pg.click('[data-act=moneyopen]'); } else await pg.click(`[data-act=tab][data-id=${tab}]`); const q = await look('탭 ' + tab); if (tab !== 'shop' && tab !== 'league') R.ok(q.shown > 0, `탭 ${tab}: 넣은 문자열이 보이지 않음`); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + tab + ' 펼침'); }
   }
   // 보관소·예전 명예의 전당·도전 과제에 직접 넣는다
   const rec = i => ({ id: '"\'zz=' + i, src: 'play', at: 5, ver: PAY, nick: PAY, role: PAY, roleId: 'core', home: 'kr', trait: 'brain', age: 30, years: 12, score: 80 - i, grade: PAY, ep: PAY, pct: 5, g: 300, w: 200, avg: 7, mvp: 30, kda: 4, peak: 90, earn: 9, big: 3, debut: 19, reason: PAY,
@@ -77,7 +77,7 @@ module.exports = async function security(browser, url, R) {
   await pg.click('[data-act=vt][data-id=backup]'); await pg.setInputFiles('#impfile', evilFile); await pg.waitForTimeout(250);
   R.ok(await pg.locator('.impbox').count() === 1, '따옴표·꺾쇠가 든 백업의 미리보기가 열리지 않음'); await look('백업 미리보기');
   await pg.click('[data-act=impok]'); await look('복원 뒤 타이틀'); await pg.click('[data-act=continue]'); await pg.waitForTimeout(100);
-  for (const tab of ['stats', 'record', 'home']) { await pg.click(`[data-act=tab][data-id=${tab}]`); await look('복원 뒤 탭 ' + tab); }
+  for (const tab of ['career', 'record', 'home']) { await pg.click(`[data-act=tab][data-id=${tab}]`); await look('복원 뒤 탭 ' + tab); }
   R.ok(await pg.evaluate(() => !Object.keys(localStorage).some(k => k.startsWith('pg_career') && /[<>]/.test(localStorage.getItem(k)))), '가져온 커리어 저장에 꺾쇠가 그대로 남음');
   R.note('문자열 삽입', `화면 ${screens}개를 열어 넣은 문자열이 글자로 ${shownTotal}번 보임, 실행·요소 삽입·속성 삽입 ${bad.length}건`);
   for (const b of bad) R.ok(false, '문자열이 글자가 아닌 것으로 해석됨 — ' + b);
@@ -125,7 +125,7 @@ module.exports = async function security(browser, url, R) {
       try {
         if (!PG.importApply(c.data) || PG.load() !== 'ok') throw new Error('복원 뒤 열리지 않음');
         PG_UI.state.view = 'game';
-        for (const tab of ['home', 'stats', 'league', 'shop', 'record']) { window.__pgRenderError = ''; PG_UI.state.tab = tab; PG_UI.state.view = 'game'; PG_UI.render(); if (window.__pgRenderError) throw new Error(tab + ': ' + window.__pgRenderError); }
+        for (const tab of ['home', 'career', 'record', 'money', 'plan', 'rep']) { window.__pgRenderError = ''; PG_UI.state.tab = tab === 'money' || tab === 'plan' || tab === 'rep' ? 'home' : tab; PG_UI.state.moneyOpen = tab === 'money'; PG_UI.state.planOpen = tab === 'plan'; PG_UI.state.repOpen = tab === 'rep'; PG_UI.state.view = 'game'; PG_UI.render(); if (window.__pgRenderError) throw new Error(tab + ': ' + window.__pgRenderError); }
         for (let k = 0; k < 25 && !PG.state().over; k++) { PG.autoStep(); window.__pgRenderError = ''; PG_UI.state.view = 'game'; PG_UI.render(); if (window.__pgRenderError) throw new Error('진행 중: ' + window.__pgRenderError); }
       } catch (e) { if (res.crash.length < 12) res.crash.push(`${where} → ${v === undefined ? '(삭제)' : JSON.stringify(v)}: ${e.message}`); }
     }
