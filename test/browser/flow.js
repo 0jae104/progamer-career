@@ -2,7 +2,8 @@
 const { open, step, start, fixtures } = require('./lib');
 const tips = pg => pg.evaluate(() => [...document.querySelectorAll('.tip')].filter(e => !e.closest('[inert]')).map(e => e.id));
 const inview = (pg, sel) => pg.evaluate(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(), f = document.querySelector('.foot'); const lim = f && !e.closest('.sheet') ? f.getBoundingClientRect().top + 18 : innerHeight; return r.top >= 0 && r.bottom <= lim; }, sel);
-async function toReport(pg) { await pg.click('[data-act=next]'); while (await pg.evaluate(() => PG.scene() && PG.scene().type) !== 'month') await step(pg); }
+// 달을 넘겨 월간 보고까지 간다. 처음 안내 기간에는 보고가 창으로 뜨고, 그 뒤(0.11.1)에는 창 없이 요약으로 남는다
+async function toReport(pg) { const t0 = await pg.evaluate(() => PG.state().stat.turns); await pg.click('[data-act=next]'); for (let i = 0; i < 40; i++) { const s = await pg.evaluate(() => ({ t: PG.scene() && PG.scene().type, n: PG.state().stat.turns })); if (s.t === 'month' || (!s.t && s.n > t0)) return; await step(pg); } throw new Error('toReport: 월간 보고에 닿지 못함'); }
 const reopen = async pg => { await pg.reload(); await pg.waitForTimeout(200); await pg.click('[data-act=continue]'); };
 
 module.exports = async function flow(browser, url, R) {

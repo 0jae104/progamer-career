@@ -366,3 +366,37 @@ input.srhide:focus + label.btn { outline: 2px solid var(--cy); outline-offset: 2
 @media (prefers-reduced-motion: reduce) { .mark, .pips i { transition: none; } }
 .sheet.arenas h2 { font-size: 22px; }
 .sheet.arenas .choice.tac { padding: 10px 12px; }
+
+/* ---------- 플레이 화면(0.11.1): 한 화면에서 매달 하는 일 ---------- */
+.tabs { grid-template-columns: repeat(3, 1fr); }
+.hstat { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
+.hs { font-size: 14px; font-weight: 600; color: var(--dim); background: var(--panel); border: 1px solid var(--line); padding: 5px 10px; }
+.hs b { color: var(--text); font-size: 16px; margin-left: 2px; }
+.hs.good b { color: var(--ok); } .hs.bad { border-color: var(--bad); color: var(--text); } .hs.bad b { color: var(--bad); }
+.recap { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--cy); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rline { font-size: 15px; line-height: 1.5; } .rline b { color: var(--cy); }
+.stopwhy { font-size: 14px; color: var(--gold); }
+.repbody { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.autoline { font-size: 14px; color: var(--dim); } .autoline b { color: var(--text); }
+.more { align-self: flex-start; min-height: 44px; padding: 0 12px; font-size: 14px; font-weight: 600; color: var(--cy); border: 1px solid var(--line); background: var(--panel2); }
+.planbig, .rowbtn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 60px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); text-align: left; }
+.planbig { border-left: 4px solid var(--hot); }
+.planbig b, .rowbtn b { display: block; font-size: 18px; } .planbig span, .rowbtn span { display: block; font-size: 14px; color: var(--dim); line-height: 1.4; }
+.planbig em, .rowbtn em { flex: none; font-style: normal; font-size: 13px; font-weight: 600; color: var(--cy); }
+.planlist { margin-top: 6px; } .planlist .plan span { font-size: 13px; }
+.autop { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid var(--line); background: var(--ink); }
+.lims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lim { min-height: 56px; padding: 6px 10px; text-align: left; font-size: 13px; color: var(--dim); background: var(--panel); border: 1px solid var(--line); }
+.lim b { display: block; font-size: 16px; color: var(--text); }
+.shoprow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.shoprow button { min-height: 44px; padding: 0 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--line); background: var(--panel2); color: var(--text); }
+.shoprow button:disabled { opacity: .5; }
+.tog[aria-pressed="true"] { border-color: var(--ok); color: var(--ok); box-shadow: inset 4px 0 0 var(--ok); }
+.ctas { display: grid; grid-template-columns: 1fr; gap: 8px; } .ctas.two { grid-template-columns: 1fr 1fr; }
+.cta.run { background: var(--panel2); color: var(--text); border: 1px solid var(--cy); }
+.cta.run small { color: var(--dim); opacity: 1; }
+@media (max-width: 350px) { .ctas.two .cta { font-size: 14px; padding-left: 6px; padding-right: 6px; } .ctas.two .cta small { font-size: 12px; } .planbig b, .rowbtn b { font-size: 16px; } }
+.evres { border-left: 4px solid var(--line); padding: 2px 0 2px 10px; display: flex; flex-direction: column; gap: 6px; }
+.evres.ok { border-color: var(--ok); } .evres.no { border-color: var(--bad); }
+.evres p:not(.sec) { font-size: 15px; line-height: 1.5; }
+.rvres { font-size: 15px; font-weight: 600; } .rvres b { color: var(--gold); margin-right: 4px; } .rvres.w { color: var(--ok); } .rvres.l { color: var(--bad); }

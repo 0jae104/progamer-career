@@ -1,0 +1,14 @@
+    창 종류 — v0.11.0: cards 1, event 5, month 10, offers 1, result 5, season 1 | 지금: cards 1, event 5, offers 1, season 1
+  시즌 1: v0.11.0 33번(진행 10 · 확인만 16 · 선택 7 · 관전 건너뛰기 0) | N월 진행만 18번(진행 10 · 확인만 1 · 선택 7) | 다음 중요한 순간 14번(진행 6 · 확인만 1 · 선택 7)
+    창 종류 — v0.11.0: cards 1, event 6, info 1, match 4, moment 3, month 10, mresult 3, offers 1, prematch 4, result 6, season 1 | 지금: cards 1, event 6, info 1, match 4, moment 3, mresult 1, offers 1, prematch 4, season 1
+  시즌 2: v0.11.0 54번(진행 10 · 확인만 25 · 선택 15 · 관전 건너뛰기 4) | N월 진행만 36번(진행 10 · 확인만 7 · 선택 15) | 다음 중요한 순간 35번(진행 9 · 확인만 7 · 선택 15)
+    창 종류 — v0.11.0: cards 1, event 2, match 1, month 10, offers 1, prematch 1, result 2, season 1 | 지금: cards 1, event 2, match 1, offers 1, prematch 1, season 1
+  시즌 3: v0.11.0 30번(진행 10 · 확인만 14 · 선택 5 · 관전 건너뛰기 1) | N월 진행만 18번(진행 10 · 확인만 2 · 선택 5) | 다음 중요한 순간 15번(진행 7 · 확인만 2 · 선택 5)
+    창 종류 — v0.11.0: cards 1, event 6, month 10, offers 1, result 6, season 1 | 지금: cards 1, event 6, offers 1, season 1
+  시즌 4: v0.11.0 35번(진행 10 · 확인만 17 · 선택 8 · 관전 건너뛰기 0) | N월 진행만 19번(진행 10 · 확인만 1 · 선택 8) | 다음 중요한 순간 17번(진행 8 · 확인만 1 · 선택 8)
+    창 종류 — v0.11.0: cards 1, event 8, month 10, offers 1, result 8, season 1 | 지금: cards 1, event 8, offers 1, season 1
+  시즌 5: v0.11.0 39번(진행 10 · 확인만 19 · 선택 10 · 관전 건너뛰기 0) | N월 진행만 21번(진행 10 · 확인만 1 · 선택 10) | 다음 중요한 순간 20번(진행 9 · 확인만 1 · 선택 10)
+1군 한 시즌 평균(5시즌): v0.11.0 38.2번 | "N월 진행"만 22.4번(41% 감소) | "다음 중요한 순간" 20.2번(47% 감소)
+  그중 고를 것 없이 확인만 누른 횟수: 18.2번 → 2.4번(87% 감소) | 진행 버튼: 10.0번 → 10.0번 / 7.8번 | 직접 고른 선택: 9.0번(세 경로 같음)
+확인 17개, 실패 0개
+exit 0

@@ -72,7 +72,7 @@ async function step(pg) {
   else if (t === 'offers') await pg.click('.sheet [data-act=accept]');
   else if (t === 'stove') await pg.click('.sheet [data-act=stay]');
   else if (t === 'tryout') await pg.click('.sheet [data-act=try]');
-  else await pg.click('.sheet [data-act=ok]');
+  else await pg.click('.sheet [data-act=ok]', { timeout: 4000 }).catch(async e => { throw new Error('step: ' + t + ' → ' + await pg.evaluate(() => JSON.stringify([PG.scene() && PG.scene().type, PG.state().tut, PG_UI.state.view, PG.inDemo(), (document.querySelector('.veil') || document.body).textContent.slice(0, 120)]))); });
   return t;
 }
 async function start(pg, nick) { await pg.click('[data-act=create]'); await pg.fill('#nick', nick || 'Haneul'); await pg.click('[data-act=start]'); }

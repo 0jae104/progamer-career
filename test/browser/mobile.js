@@ -45,7 +45,8 @@ module.exports = async function mobile(browser, url, R) {
       // 0.11.0: 승부처와 경기 결과는 관전으로 시작할 수 있다. 관전 화면을 본 뒤 건너뛰어 선택·결과 화면도 본다
       if (await pg.evaluate(() => { const b = document.querySelector('[data-act=wskip]'); if (b) b.click(); return !!b; })) { await pg.waitForTimeout(80); await look('장면 ' + k + ' (관전 뒤)'); }
     }
-    await load(saves.home); for (const t of ['home', 'stats', 'league', 'shop', 'record']) { await pg.click(`[data-act=tab][data-id=${t}]`); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + t); }
+    const goTab = async t => { if (t === 'shop') { await pg.click('[data-act=tab][data-id=home]'); if (await pg.evaluate(() => !document.querySelector('#autop'))) await pg.click('[data-act=moneyopen]'); } else if (t === 'plan') { await pg.click('[data-act=tab][data-id=home]'); if (await pg.evaluate(() => !document.querySelector('.planlist'))) await pg.click('[data-act=planopen]'); } else await pg.click(`[data-act=tab][data-id=${t}]`); };
+    await load(saves.home); for (const t of ['home', 'career', 'shop', 'plan', 'record']) { await goTab(t); await pg.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await look('탭 ' + t); }
     await pg.click('[data-act=tab][data-id=home]');
     R.ok(await pg.evaluate(() => { scrollTo(0, document.documentElement.scrollHeight); const f = document.querySelector('.foot').getBoundingClientRect(), kids = [...document.querySelector('main.content').children].filter(e => e.getBoundingClientRect().height > 0), last = kids[kids.length - 1].getBoundingClientRect(); return last.bottom <= f.top + 20; }), `${tag}: 홈 화면의 마지막 내용이 하단 진행 버튼 뒤에 가려짐`);
     await load(saves.retire); await look('은퇴');
@@ -90,8 +91,9 @@ module.exports = async function mobile(browser, url, R) {
     // 확인을 두 번 연달아 눌러도 다음 창의 버튼이 대신 눌리지 않는다
     await pg.evaluate(s => { localStorage.setItem('pg_career_v1', s); }, saves.event); await pg.reload(); await pg.waitForTimeout(150); await pg.click('[data-act=continue]'); await pg.waitForTimeout(400);
     const before = await pg.evaluate(() => PG.scene().type);
-    await pg.evaluate(() => { document.querySelector('.sheet [data-act=res]:not([disabled])').click(); const nx = document.querySelector('.sheet [data-act=ok]'); if (nx) nx.click(); });
-    R.ok(before === 'event' && await pg.evaluate(() => PG.scene() && PG.scene().type) === 'result', '선택 직후의 두 번째 입력이 다음 창을 넘겨 버림');
+    // 0.11.1: 처음 안내가 끝난 저장에서는 사건의 결과가 창 없이 요약에 나온다. 그 뒤에 뜬 창(있다면)이 두 번째 입력으로 닫히면 안 된다
+    const dbl = await pg.evaluate(() => { document.querySelector('.sheet [data-act=res]:not([disabled])').click(); const sc = PG.scene(), nx = document.querySelector('.sheet [data-act=ok]'); if (nx) nx.click(); return { hadNext: !!sc, same: PG.scene() === sc, type: PG.scene() && PG.scene().type, ev: !!(PG.recap() && PG.recap().ev), tut: PG.state().tut.done }; });
+    R.ok(before === 'event' && dbl.same && (dbl.tut ? dbl.ev && dbl.type !== 'result' : dbl.type === 'result'), `선택 직후의 두 번째 입력이 다음 창을 넘겨 버림 ${JSON.stringify(dbl)}`);
     R.note('두 번 눌림 방지', '진행 버튼을 연달아 눌러도 한 번만 진행, 0.45초 뒤 입력은 정상, 선택 직후의 두 번째 입력은 다음 창에 닿지 않음');
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }

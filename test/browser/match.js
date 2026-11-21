@@ -72,8 +72,10 @@ module.exports = async function match(browser, url, R) {
     R.ok(await waitFor(pg, () => PG.scene().type === 'moment' && !PG_UI.state.watch), `${w}: 관전 뒤 승부처로 넘어가지 않음`);
     await m('승부처');
     const a2 = await pg.evaluate(A11Y);
-    await pg.locator('.sheet [data-act=res]').first().click(); await pg.waitForTimeout(120); await m('승부처 결과');
-    await pg.click('.sheet [data-act=ok]');
+    await pg.locator('.sheet [data-act=res]').first().click(); await pg.waitForTimeout(120); 
+    // 0.11.1: 시리즈를 끝낸 승부처의 결과는 따로 창이 뜨지 않고 경기 결과 맨 위에 나온다. 시리즈가 이어지면 예전처럼 결과 창이 뜬다
+    if (await pg.evaluate(() => PG.scene() && PG.scene().type === 'mresult')) { await m('승부처 결과'); await pg.click('.sheet [data-act=ok]'); }
+    else R.ok(await pg.evaluate(() => PG.scene() && PG.scene().type === 'match' && !!document.querySelector('.sheet .evres')), `${w}: 승부처의 결과가 경기 결과 화면에 없음`);
     R.ok(await waitFor(pg, () => PG.scene() && PG.scene().type === 'match' && !PG_UI.state.watch && !!document.querySelector('.verdict')), `${w}: 결과 화면에 닿지 못함`);
     await m('경기 결과');
     const a3 = await pg.evaluate(A11Y), noName = [...a1.noName, ...a2.noName, ...a3.noName], low = Object.assign({}, a1.lowContrast, a2.lowContrast, a3.lowContrast);
