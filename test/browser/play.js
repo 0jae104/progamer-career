@@ -22,8 +22,8 @@ module.exports = async function play(browser, url, R) {
     R.ok(await pg.evaluate(() => PG.state().plan === 'rest' && !document.querySelector('.planlist') && document.querySelector('.planbig b').textContent.includes('휴식')), `${w}: 할 일을 두 번 눌러 바꾸지 못함`);
     // 자동 관리 켜기: 2번 누름
     await pg.click('[data-act=moneyopen]'); await m('자금·자동 관리'); const a2 = await pg.evaluate(A11Y);
-    await pg.click('[data-act=auto][data-id=counsel]');
-    R.ok(await pg.evaluate(() => PG.autoInfo().n === 1 && document.querySelector('[data-act=auto][data-id=counsel]').getAttribute('aria-pressed') === 'true' && document.querySelector('[data-act=moneyopen] em').textContent.includes('1개 켜짐') && /220만/.test(document.querySelector('#autop').textContent)), `${w}: 자동 관리를 두 번 눌러 켜지 못함`);
+    await pg.click('[data-act=shop-auto][data-id=counsel]');
+    R.ok(await pg.evaluate(() => PG.autoInfo().n === 1 && document.querySelector('[data-act=shop-auto][data-id=counsel]').getAttribute('aria-pressed') === 'true' && document.querySelector('[data-act=moneyopen] em').textContent.includes('1개 켜짐') && /220만/.test(document.querySelector('#autop').textContent)), `${w}: 자동 관리를 두 번 눌러 켜지 못함`);
     await pg.click('[data-act=moneyopen]');
     // 한 달 진행: 창 없이 요약만
     const y0 = await pg.evaluate(YM), sy = await pg.evaluate(() => { window.scrollTo(0, 60); return scrollY; });
@@ -85,7 +85,7 @@ module.exports = async function play(browser, url, R) {
     const m0 = await pg.evaluate(() => PG.state().money);
     await pg.click('[data-act=next]'); await pg.waitForTimeout(80); await clear(pg);
     R.ok(await pg.evaluate(() => !PG.lastRep() || !PG.lastRep().auto) && !/자동 관리 −/.test(await pg.evaluate(() => (document.querySelector('.recap') || {}).textContent || '')), 'C: 켜지 않았는데 자동으로 지출함');
-    await pg.click('[data-act=moneyopen]'); await pg.click('[data-act=auto][data-id=counsel]'); await pg.click('[data-act=auto][data-id=gear]');
+    await pg.click('[data-act=moneyopen]'); await pg.click('[data-act=shop-auto][data-id=counsel]'); await pg.click('[data-act=shop-auto][data-id=gear]');
     const lv0 = await pg.evaluate(() => PG.state().shop.gear), mental0 = await pg.evaluate(() => PG.state().stats.mental);
     let spent = 0, months = 0, dup = 0, neg = 0;
     for (let i = 0; i < 60 && months < 10; i++) {
@@ -102,13 +102,13 @@ module.exports = async function play(browser, url, R) {
     // 설정은 새로 고친 뒤에도 그대로, 끄면 다음 달부터 지출 없음
     await pg.reload(); await pg.waitForTimeout(250); await pg.click('[data-act=continue]'); await pg.waitForTimeout(120);
     R.ok(await pg.evaluate(() => PG.autoInfo().items.find(x => x.id === 'counsel').on && document.querySelector('[data-act=moneyopen] em').textContent.includes('켜짐')), 'C: 새로 고친 뒤 자동 관리 설정이 사라짐');
-    await clear(pg); await pg.click('[data-act=moneyopen]'); await pg.click('[data-act=auto][data-id=counsel]'); if (await pg.evaluate(() => PG.autoInfo().items.find(x => x.id === 'gear').on)) await pg.click('[data-act=auto][data-id=gear]');
+    await clear(pg); await pg.click('[data-act=moneyopen]'); await pg.click('[data-act=shop-auto][data-id=counsel]'); if (await pg.evaluate(() => PG.autoInfo().items.find(x => x.id === 'gear').on)) await pg.click('[data-act=shop-auto][data-id=gear]');
     R.ok(await pg.evaluate(() => PG.autoInfo().n === 0), 'C: 자동 관리를 끄지 못함');
     await pg.click('[data-act=next]'); await pg.waitForTimeout(60); await clear(pg);
     R.ok(await pg.evaluate(() => !PG.lastRep() || !PG.lastRep().auto), 'C: 껐는데 자동으로 지출함');
     // 잔고 부족: 남겨 둘 돈을 크게 잡으면 사지 않고 이유를 적는다
     const poor = await pg.evaluate(r => { const o = JSON.parse(r); o.money = 300; o.contract.salary = 600; return JSON.stringify(o); }, raw);
-    await load(pg, poor, 61); await pg.click('[data-act=moneyopen]'); await pg.click('[data-act=auto][data-id=counsel]');
+    await load(pg, poor, 61); await pg.click('[data-act=moneyopen]'); await pg.click('[data-act=shop-auto][data-id=counsel]');
     for (let i = 0; i < 4 && await pg.evaluate(() => PG.autoInfo().keep) !== 2000; i++) await pg.click('[data-act=alim][data-id=keep]');
     await pg.click('[data-act=moneyopen]'); const pm = await pg.evaluate(() => PG.state().money);
     await pg.click('[data-act=next]'); await pg.waitForTimeout(60); await clear(pg);

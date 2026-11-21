@@ -949,7 +949,7 @@
     offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n' }, 0, 8] },
     tryout: { p: PCTN, text: 's', vet: 'b', retry: 'b' },
     moment: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', mid: 's', sit: 's', set: 'n', bo: 'n', x: 'n', y: 'n', base: 'n', rival: 's?', pips: 's?', tac: 's?', from: 'n?', seen: 'n?', choices: [{ label: 's', p: 'n', up: 'n', down: 'n', bd: 'bd' }, 2, 3] },
-    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b', pips: 's?', tac: 's?', d: 'n?' },
+    mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b', pips: 's?', tac: 's?', d: 'n?', auto: 'b?' },
     prematch: { tour: 's', label: 's', bo: 'n', me: 's', opp: 's', meTag: 's', oppTag: 's', meColor: 's', oppColor: 's', base: 'n', cond: 'n', role: 's', rival: 's', h2h: 's', tacs: [{ id: 's', p: 'n' }, 3, 3] },
     match: { tour: 's', label: 's', bo: 'n', me: 's', opp: 's', win: 'b', x: 'n', y: 'n', meTag: 's', oppTag: 's', meColor: 's', oppColor: 's', sets: [{ w: 'b', d: 'n' }, 1, 7], from: 'n', tac: 's',
       r: 'n', k: 'n', d: 'n', a: 'n', mvp: 'b', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8], rival: 's', next: 's', seen: 'n?' },
@@ -1537,6 +1537,7 @@
           type: 'mresult', ok: d.ok, p: sc.choices[i].p, i, title: sc.title, choice: d.label, text: d.text, eff: d.s,
           tour: sc.tour, label: sc.label, set: sc.set, me: sc.me, opp: sc.opp, x: c.x, y: c.y, setWin: g.win, over: c.x >= need || c.y >= need,
         };
+        if (arg === 'auto') S.q[0].auto = true;   // 감독 판단(자동 선택)으로 고른 것임을 결과에 남긴다
         if (c.sets) { c.shown = c.sets.length; if (c.tac !== undefined) { S.q[0].pips = pips(c); S.q[0].tac = c.tac || ''; S.q[0].d = c.sets[c.sets.length - 1].d; } }
 
         break;

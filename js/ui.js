@@ -321,7 +321,7 @@
       <div class="lims"><button class="lim" data-act="alim" data-id="keep">남겨 둘 돈<b>${opt('keep', a.keep)}</b></button><button class="lim" data-act="alim" data-id="cap">한 달 자동 지출 상한<b>${opt('cap', a.cap)}</b></button></div>
       <p class="fine">매달 자동으로 나가는 돈(한 달에 한 번 항목): <b>${a.monthly ? money(a.monthly) : '없음'}</b>${a.items.some(x => x.on && !x.once && !x.max) ? ' · 단계형 항목은 돈이 모이면 한 달에 한 단계씩' : ''}</p>
       ${a.items.map(it => `<div class="shop"><div class="grow" style="flex:1"><b>${esc(it.name)}</b><span>${esc(it.desc)}</span>${it.once ? '' : `<div class="pips">${Array.from({ length: it.of }, (_, i) => `<i class="${i < it.lv ? 'on' : ''}"></i>`).join('')}</div>`}
-          <div class="shoprow"><button class="tog" data-act="auto" data-id="${esc(it.id)}" aria-pressed="${it.on}" ${it.max && !it.on ? 'disabled' : ''}>${it.once ? '매달 자동' : '모이면 자동'} ${it.on ? '켜짐' : '꺼짐'}</button>
+          <div class="shoprow"><button class="tog" data-act="shop-auto" data-id="${esc(it.id)}" aria-pressed="${it.on}" ${it.max && !it.on ? 'disabled' : ''}>${it.once ? '매달 자동' : '모이면 자동'} ${it.on ? '켜짐' : '꺼짐'}</button>
           <button data-act="buy" data-id="${esc(it.id)}" ${it.max || it.used || S.money < it.cost ? 'disabled' : ''}>${it.max ? '최대' : it.used ? '이번 달 완료' : `지금 사기 ${money(it.cost)}`}</button></div></div></div>`).join('')}</div>`;
   }
   function focusCard() {
@@ -594,11 +594,11 @@
         h = `${sc.pips != null ? arenaTop(sc, `${sc.set}세트 · ${SIT[sc.sit]}`) + arenaHead(sc, wl(sc), wl(sc).length) : `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트 · ${SIT[sc.sit]}</p>${board(sc, sc.x, sc.y)}`}
           ${stakeLine(sc)}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. 이 시리즈 결과가 상대 전적에 남는다.</p>` : ''}<p class="fine">지금 이 세트를 이길 확률은 ${esc(sc.base)}%${sc.tac && TAC(sc.tac) ? `(전략 「${esc(TAC(sc.tac).name)}」 반영)` : ''}. 선택이 성공하면 오르고 실패하면 내려간다.</p>
           ${sc.choices.map((c, i) => `<button class="choice" data-act="res" data-i="${esc(i)}"><div class="grow"><b>${riskTag(c)}${esc(c.label)}</b><small>${c.bd.map(b => `${esc(b[0])} ${b[1] >= 0 && b[0] !== '기본' ? '+' : ''}${esc(b[1])}`).join(' · ')}</small><small class="swing">성공하면 세트 승률 <em class="up">${esc(c.up)}%</em> · 실패하면 <em class="down">${esc(c.down)}%</em></small></div>${pill(c.p)}</button>`).join('')}
-          <button class="btn line" data-act="auto">감독 판단에 맡긴다 (자동 선택)</button>`; break;
+          <button class="btn line" data-act="mom-auto">감독 판단에 맡긴다 (자동 선택)</button>`; break;
       case 'mresult':
         cls = (sc.ok ? 'good' : 'bad') + (sc.pips != null ? ' arenas' : '');
         h = `${sc.pips != null ? arenaTop(sc, `${sc.set}세트`) + arenaHead(sc, wl(sc), wl(sc).length) : `<p class="eyebrow">${esc(sc.tour)} · ${esc(sc.label)} ${esc(sc.set)}세트</p>`}<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${esc(sc.p)}%</span>
-          <h2>${esc(sc.title)}</h2><p class="dim">${esc(sc.choice)}</p><p>${esc(sc.text)}</p>
+          <h2>${esc(sc.title)}</h2><p class="dim">${sc.auto ? '자동 선택(감독 판단): ' : ''}${esc(sc.choice)}</p><p>${esc(sc.text)}</p>
           <div class="chips"><span class="chip ${sc.eff > 0 ? 'up' : 'down'}">이 세트 팀 전력 ${sc.eff > 0 ? '+' : ''}${esc(sc.eff)}</span><span class="chip ${sc.setWin ? 'up' : 'down'}">${esc(sc.set)}세트 ${sc.setWin ? '승리' : '패배'}</span>${sc.d ? `<span class="chip ${sc.d > 0 ? 'up' : 'down'}">전략 ${esc(sgn(sc.d))}%p</span>` : ''}</div>
           ${sc.pips != null ? '' : board(sc, sc.x, sc.y)}<p>${sc.over ? (sc.x > sc.y ? '시리즈를 가져왔다.' : '시리즈를 내줬다.') : '경기는 계속된다.'}</p>${okBtn(sc.over ? '결과 보기' : '다음 세트로')}`; break;
       case 'result':
@@ -753,8 +753,8 @@
   try { if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('controllerchange', checkVersion); } catch (e) {}
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
-  const DEMO_OK = new Set(['res', 'ok', 'auto', 'tac', 'kick', 'wfast', 'wskip', 'snd', 'demoend', 'reload']);
-  const TAP_GUARD = new Set(['kick', 'demo', 'wskip', 'run', 'next', 'ok', 'res', 'auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
+  const DEMO_OK = new Set(['res', 'ok', 'mom-auto', 'tac', 'kick', 'wfast', 'wskip', 'snd', 'demoend', 'reload']);
+  const TAP_GUARD = new Set(['kick', 'demo', 'wskip', 'run', 'next', 'ok', 'res', 'mom-auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
@@ -850,7 +850,7 @@
       case 'moneyopen': U.moneyOpen = !U.moneyOpen; break;
       case 'logopen': U.logOpen = !U.logOpen; break;
       case 'repopen': U.repOpen = !U.repOpen; break;
-      case 'auto': { const it = G.autoInfo().items.find(x => x.id === id); if (it) { G.setAuto(id, !it.on); SND.play('tap'); } break; }
+      case 'shop-auto': { const it = G.autoInfo().items.find(x => x.id === id); if (it) { G.setAuto(id, !it.on); SND.play('tap'); } break; }
       case 'alim': { const a = G.autoInfo(), list = id === 'keep' ? a.keeps : a.caps, cur = id === 'keep' ? a.keep : a.cap; G.setAutoLimit(id, list[(list.indexOf(cur) + 1) % list.length]); break; }
       case 'buy': G.buy(id); break;
       case 'fast': G.setFast(!G.state().opt.fast); break;
@@ -864,7 +864,7 @@
       case 'ok': G.resolve(); break;
       case 'res': G.resolve(i); break;
       case 'reroll': G.resolve('reroll'); break;
-      case 'auto': G.resolve('auto'); break;
+      case 'mom-auto': if (t0 !== 'moment') return; G.resolve('auto'); break;
       case 'stay': G.resolve('stay'); break;
       case 'transfer': G.resolve('transfer'); break;
       case 'try': G.resolve('try'); break;
@@ -881,7 +881,7 @@
       if (r && r.type === 'mresult') {
         SND.play(r.ok ? 'ok' : 'fail');
         // 이 선택으로 시리즈가 끝났으면 승부처 결과 창을 따로 띄우지 않고, 그 내용을 경기 결과 화면 맨 위에 붙여 한 번에 보여 준다(확인 한 번 줄임).
-        if (r.over && r.pips != null) { U.lastM = { k: skey(r), title: r.title, text: r.text, ok: r.ok, p: r.p, choice: r.choice, setWin: r.setWin, set: r.set, d: r.d || 0 }; G.resolve(); if (!G.inDemo()) G.settle(); }
+        if (r.over && r.pips != null) { U.lastM = { k: skey(r), title: r.title, text: r.text, ok: r.ok, p: r.p, choice: (r.auto ? '자동 선택(감독 판단): ' : '') + r.choice, setWin: r.setWin, set: r.set, d: r.d || 0 }; G.resolve(); if (!G.inDemo()) G.settle(); }
       }
     }
     render();

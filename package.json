@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node test/sim.js 3000 --seed=1",
     "test:pacing": "node test/pacing.js 60",
+    "test:static": "node test/static.js",
     "test:tactics": "node test/tactics.js 400 24",
     "test:quick": "node test/sim.js 300 --seed=1",
     "test:browser": "node test/browser/run.js",
