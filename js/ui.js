@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.2';
+  const UI_VERSION = '0.11.3';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
