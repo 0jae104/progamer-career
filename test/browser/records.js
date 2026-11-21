@@ -25,7 +25,8 @@ module.exports = async function records(browser, url, R) {
 
   // A. 은퇴 → 카드 생성 → PNG 저장. 공유를 지원하지 않는 환경에서는 안내로 대체
   {
-    const { ctx, pg } = await open(browser, url); await career(pg, 'Haneul');
+    // 파일 공유를 지원하지 않는 환경을 명시적으로 만든다(윈도 크롬처럼 지원하는 브라우저에서 돌려도 같은 조건이 되게: 외부 검수에서 지적)
+    const { ctx, pg } = await open(browser, url, { init: 'try{Object.defineProperty(Navigator.prototype,"canShare",{value:undefined,configurable:true,writable:true});Object.defineProperty(Navigator.prototype,"share",{value:undefined,configurable:true,writable:true});}catch(e){}' }); await career(pg, 'Haneul');
     R.ok(await pg.locator('.retire').count() === 1 && (await pg.innerText('.retire')).includes('명예의 전당에 기록했다'), 'A: 은퇴 화면에 기록 완료 표시가 없음');
     const s0 = await snap(pg);
     await pg.locator('[data-act=endcard]').first().click();
