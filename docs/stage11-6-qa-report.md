@@ -179,4 +179,9 @@
 
 ## 10. GitHub Actions
 
-(PR을 올린 뒤 결과를 여기에 적습니다.)
+PR #23.
+
+- 커밋 `de7c443`: **실패**. https://github.com/0jae104/progamer-career/actions/runs/44978644070 — 브라우저 13묶음 가운데 `security`가 중단(나머지 12묶음과 node 검사는 통과). 원인과 수정은 5절.
+- 커밋 `2b0b8c4`(`security`의 저장 모으기 수정): **성공**(2026-11-22). https://github.com/0jae104/progamer-career/actions/runs/44979881658 — sim 1000, tactics, static, pacing, autoplay, extras, story, 브라우저 13묶음, 갱신 연쇄, `repro.js`, `repro.js plan`.
+
+이 줄을 적은 뒤의 커밋은 문서만 바꿉니다.
