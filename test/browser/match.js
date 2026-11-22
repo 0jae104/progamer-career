@@ -100,7 +100,7 @@ module.exports = async function match(browser, url, R) {
     R.ok(w1.st === eng && f1.st === eng && s1.st === eng && q1.st === eng, 'B: 관전·빠르게·바로 결과·음소거 가운데 결과가 다른 것이 있음');
     R.ok(w1.moments >= 1 && !w1.leaked && !f1.leaked && !s1.leaked, `B: 승부처를 고르기 전에 결과가 드러남 또는 승부처 없음(${w1.moments})`);
     // 소리: 켜진 상태의 큐 순서와 실제 재생 여부, 꺼진 상태의 무음
-    const cues = w1.snd.map(x => x[0]), has = c => cues.includes(c), fin = w1.sc.win ? (w1.sc.label === '결승' ? 'winbig' : 'win') : 'lose';
+    const cues = w1.snd.map(x => x[0]), has = c => cues.includes(c), mpDown = (() => { const need = (w1.sc.bo + 1) / 2; let x = 0, y = 0, mp = false; for (const st of w1.sc.sets) { if (st.w) x++; else y++; if (y === need - 1 && x < need - 1) mp = true; } return mp; })(), fin = w1.sc.win ? (w1.sc.label === '결승' ? 'winbig' : mpDown ? 'comeback' : 'win') : 'lose';   // 0.11.11: 역전승은 다른 소리
     R.ok(has('tap') && has('start') && (has('setw') || has('setl')) && has('tension') && (has('ok') || has('fail')) && cues[cues.length - 1] === fin && cues.indexOf('start') < cues.indexOf('tension') && cues.indexOf('tension') < Math.max(cues.indexOf('ok'), cues.indexOf('fail')), `B: 소리 큐 순서 ${cues.join(' ')}`);
     R.ok(w1.snd.filter(x => x[1]).length >= 5 && await pg.evaluate(() => PG_UI.snd.cues.length >= 8), `B: 실제로 재생된 큐가 적음 ${JSON.stringify(w1.snd)}`);
     R.ok(q1.snd.every(x => !x[1]) && q1.snd.length >= 5, 'B: 소리를 껐는데 재생됨');
