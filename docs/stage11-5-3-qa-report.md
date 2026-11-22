@@ -181,4 +181,4 @@ v0.11.7에서 `play.js`의 검사 하나를 320px에서만 "줄 전체가 보인
 
 ## 7. GitHub Actions
 
-(PR을 올린 뒤 결과를 여기에 적습니다.)
+PR #22, 커밋 `9dc3bdf`: **성공**(2026-11-22). https://github.com/0jae104/progamer-career/actions/runs/44968085631 — sim 1000, tactics, static, pacing, autoplay, extras, story, 브라우저 13묶음(`rival`·`apdom` 포함), 갱신 연쇄, `repro.js`, `repro.js plan`. 이 줄을 적은 뒤의 커밋은 문서만 바꿉니다.
