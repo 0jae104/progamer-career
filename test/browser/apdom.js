@@ -25,7 +25,7 @@ const HOOK = () => {
     setTimeout(() => {
       const S = PG.state(), q = s => document.querySelectorAll(s), mr = q('.stagebg .moneyrow'), hs = q('.stagebg .hstat .hs b'), pause = document.querySelector('[data-act=ap-pause]');
       const pr = pause ? pause.getBoundingClientRect() : null, hit = pr ? document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2) : null;
-      const row = { on: PG_UI.ap.on, k: r.k, stop: r.stop || '', before, money: S.money, rows: mr.length, hstat: q('.stagebg .hstat').length, btns: q('.stagebg button').length, nodes: q('.stagebg *').length,
+      const row = { on: PG_UI.ap.on, k: r.k, stop: r.stop || '', before, money: S.money, rows: mr.length, hstat: q('.stagebg .hstat').length, btns: q('.stagebg button').length - q('#fbox button').length, nodes: q('.stagebg *').length - q('#fbox, #fbox *').length,   /* 최근 진행 칸은 따로 본다 */
         docH: document.documentElement.scrollHeight, mainH: Math.round((document.querySelector('.stagebg .lower') || document.body).getBoundingClientRect().height), planTop: Math.round((document.querySelector('.stagebg .plan5') || document.body).getBoundingClientRect().top), viewH: window.innerHeight,
         shown: mr.length ? mr[mr.length - 1].querySelector('b').textContent : '', first: mr.length ? mr[0].querySelector('b').textContent : '', want: PG.fmtMoney(S.money),
         hs: [...hs].map(b => b.textContent).join(','), hsWant: hs.length ? [S.cond, S.wrist, S.trust, S.fame].map(v => String(Math.round(v))).join(',') : '',
@@ -58,6 +58,12 @@ const HOOK = () => {
       if (PG.projInfo) { const lr0 = PG.lastRep(), g0 = lr0 && (lr0.growth || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0], a0 = lr0 ? Math.floor(lr0.o0 + 1e-9) : 0, b0 = lr0 ? Math.floor(lr0.o1 + 1e-9) : 0;
         row.growOk = !!lr0 && typeof lr0.o1 === 'number' && row.line.includes(a0 !== b0 ? `OVR ${a0}→${b0}` : `OVR ${lr0.o1.toFixed(1)}`) && (!g0 || row.line.includes(`${g0[0]} ${g0[1] > 0 ? '+' : ''}${g0[1]}`)) && Math.abs(lr0.o1 - Math.round(PG.ovr() * 10) / 10) < .051;
         row.proj = !!S.proj; const ael = document.getElementById('apline'); row.lineH = ael ? Math.round(ael.getBoundingClientRect().height) : 0; if (!ael) row.growOk = null; }
+      // 최근 진행(0.11.10): 칸은 하나, 같은 일이 두 번 없고, 성장 숫자가 엔진의 요약과 같다
+      { const fb = q('#fbox'), rc = PG.recap(), fd = [...q('#fbox .fd')], keys = fd.map(e => e.dataset.k), chips = [...q('#fbox .chips.grow .chip')].map(e => e.textContent);
+        row.feedN = fb.length; row.recapN = q('.stagebg .recap').length; row.feedDup = keys.length - new Set(keys).size; row.feedLines = fd.length; row.feedH = fb.length ? Math.round(fb[0].getBoundingClientRect().height) : 0;
+        if (fb.length && rc && rc.n && typeof rc.o0 === 'number') { const a = Math.floor(rc.o0 + 1e-9), b = Math.floor(rc.o1 + 1e-9), top = rc.g.slice().sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 2).map(g => `${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]}`);
+          row.feedOk = chips[0] === (a !== b ? `OVR ${a} → ${b}` : `OVR ${b} · 다음까지 ${(Math.round((b + 1 - rc.o1) * 10) / 10).toFixed(1)}`) && top.every(t => chips.includes(t)) && chips.length === top.length + 1 && Math.abs(rc.o1 - Math.round(PG.ovr() * 10) / 10) < .051 && fb[0].textContent.includes(`${rc.w}승 ${rc.l}패`) === (rc.w + rc.l > 0) && !/평균 평점/.test(fb[0].textContent); }
+        else row.feedOk = fb.length ? null : (rc && rc.n ? false : null); }
       row.ym = S.year * 100 + S.m;
       window.__ap.push(row);
     }, 0);
@@ -123,6 +129,7 @@ function digest(log) {
     staleMoney: m.filter(x => x.first !== x.want).length, badMoney: m.filter(x => x.shown !== x.want).length, badStat: m.filter(x => x.hs !== x.hsWant).length, badOvr: m.filter(x => x.ovr !== x.ovrWant).length, badPause: m.filter(x => x.pause !== true).length, growRun: grow,
     badGoalN: m.filter(x => x.goals !== 1 || x.gbox !== 1 || x.hbox !== 1 || x.aplines !== 1 || x.apcashes !== 1).length, badGoalTxt: m.filter(x => x.goalOk !== true).length, badOrder: m.filter(x => x.order !== true || x.firstKid !== 'gbox').length, goalTexts: new Set(m.map(x => x.goalTxt)).size, maxGoalH: max(m, x => x.goalH || 0), badPlanSeen: m.filter(x => !(x.planBottom <= x.footTop + 1)).length,
     badPlan: m.filter(x => x.planOk !== true).length, badRv: m.filter(x => x.rvOk !== true).length, rvMonths: m.filter(x => x.rvWant > 0).length, rests: m.filter((x, i) => x.planNow === 'rest' && x.back && (i === 0 || m[i - 1].planNow !== 'rest')).length, backs: m.filter((x, i) => i > 0 && m[i - 1].planNow === 'rest' && m[i - 1].back && x.planNow !== 'rest' && !x.back).length,
+    badFeedN: m.filter(x => x.feedN > 1 || x.recapN > 1).length, noFeed: m.filter(x => x.feedN === 0).length, feedDup: m.reduce((a, x) => a + (x.feedDup || 0), 0), badFeed: m.filter(x => x.feedOk === false).length, maxFeedLines: max(m, x => x.feedLines || 0), maxFeedH: max(m, x => x.feedH || 0), feedTexts: new Set(m.map(x => x.feedH + '|' + x.feedLines)).size,
     badGrow: m.filter(x => x.growOk === false).length, anyProj: log.filter(x => x.proj).length, maxLineH: max(m, x => x.lineH || 0),
     rebuilt: m.filter((x, i) => i > 0 && !x.planSame).length, needless: m.filter((x, i) => i > 0 && !x.planSame && x.planNow === m[i - 1].planNow && x.back === m[i - 1].back && cont(x)).length };
 }
@@ -167,6 +174,7 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(d.needless === 0, `${c.name}: 할 일이 바뀌지 않았는데 버튼이 다시 만들어진 달 ${d.needless}개`);
     R.ok(d.badGrow === 0 && d.anyProj === 0, `${c.name}: 진행 줄의 성장 표시가 엔진의 보고와 다른 달 ${d.badGrow}개, 자동으로 산 시즌 프로젝트 ${d.anyProj}`);
     R.ok(d.maxLineH <= (c.w <= 330 ? 44 : 50), `${c.name}: 진행 줄이 너무 길어짐(높이 ${d.maxLineH}px)`);
+    R.ok(d.badFeedN === 0 && d.noFeed === 0 && d.feedDup === 0 && d.badFeed === 0 && d.maxFeedLines <= 2, `${c.name}: 최근 진행 — 칸이 둘 이상인 달 ${d.badFeedN}, 칸이 없는 달 ${d.noFeed}, 같은 일이 두 번 나온 횟수 ${d.feedDup}, 성장 숫자가 엔진과 다른 달 ${d.badFeed}, 접힌 줄 수 최대 ${d.maxFeedLines}`);
     if (c.restCase) R.ok(d.rests >= 2 && d.backs >= 2, `${c.name}: 자동 휴식 ${d.rests}번·복귀 ${d.backs}번(각 2번 이상 일어나야 검사가 된다) ${m.map(x => `${x.planNow}${x.back ? '(' + x.back + ')' : ''}`).join('→')}`);
     if (c.planAt != null) R.ok(!!r.ev.plan && r.ev.plan.seen && r.ev.plan.now === r.ev.plan.want && r.ev.plan.goals === 1 && r.ev.plan.rows === 1, `${c.name}: 달리는 중에 할 일을 한 번 눌러 바꾸지 못함 ${JSON.stringify(r.ev.plan)}`);
     R.ok(c.tabAt ? r.ev.tabs === 1 && r.ev.toMoney === 'money' : true, `${c.name}: 자금 줄을 눌러 자산 탭으로 가지 못함(${r.ev.toMoney})`);
@@ -183,7 +191,7 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(r.end.cash && r.end.cash.n < 240 && r.end.cash.gap === 0 && Math.abs(r.end.money0 + r.end.cash.sum - r.end.money) < 1e-6, `${c.name}: 처음 잔고 ${r.end.money0} + 내역 합 ${r.end.cash && r.end.cash.sum} ≠ 마지막 잔고 ${r.end.money} (빠진 변동 ${r.end.cash && r.end.cash.gap}건)`);
     if (!c.auto) R.ok(all.every(x => !x.auto && !x.repAuto), `${c.name}: 자동 관리를 껐는데 자동 지출이 있음`);
     const spent = all.reduce((a, x) => a - (x.auto || 0), 0), sal = all.reduce((a, x) => a + (x.sal || 0), 0);
-    R.note(c.name, `${d.months}개월(부분 갱신 ${d.n}달) · 시작 ${r.ev.starts}번 · 멈춤 ${r.ev.pauses} · 탭 왕복 ${r.ev.tabs} · 자금 버튼 ${d.minRows}~${d.maxRows}개 · 상태 영역 ${d.maxHstat}개 · 할 일 칸 위치 ${d.plan0}~${d.plan1}px · 버튼 ${d.minBtns}~${d.maxBtns} · 월급 합 ${sal} · 자동 지출 합 ${spent} · 잔고 ${r.end.money0} + 내역 ${JSON.stringify(r.end.cash.kinds)} = ${r.end.money} · 목표 칸 항상 1개, 요약이 바뀐 횟수 ${d.goalTexts}가지, 높이 최대 ${d.maxGoalH}px· 할 일 표시 불일치 ${d.badPlan}달(자동 휴식 ${d.rests}번·복귀 ${d.backs}번, 버튼을 다시 만든 달 ${d.rebuilt}개) · 라이벌전 줄 불일치 ${d.badRv}달(라이벌전 달 ${d.rvMonths}개)${c.restCase ? ` · 달마다 ${m.map(x => `${x.planNow}${x.back ? '←' + x.back : ''}[${x.pressed}]`).join(' ')}` : ''}${r.ev.plan ? ` · 달리는 중 할 일 ${r.ev.plan.from}→${r.ev.plan.now}(자동진행 ${r.ev.plan.on ? '계속' : '멈춤'})` : ''} · 멈춘 장면 ${JSON.stringify(r.ev.scenes)}`);
+    R.note(c.name, `${d.months}개월(부분 갱신 ${d.n}달) · 시작 ${r.ev.starts}번 · 멈춤 ${r.ev.pauses} · 탭 왕복 ${r.ev.tabs} · 자금 버튼 ${d.minRows}~${d.maxRows}개 · 상태 영역 ${d.maxHstat}개 · 할 일 칸 위치 ${d.plan0}~${d.plan1}px · 버튼 ${d.minBtns}~${d.maxBtns} · 월급 합 ${sal} · 자동 지출 합 ${spent} · 잔고 ${r.end.money0} + 내역 ${JSON.stringify(r.end.cash.kinds)} = ${r.end.money} · 목표 칸 항상 1개, 요약이 바뀐 횟수 ${d.goalTexts}가지, 높이 최대 ${d.maxGoalH}px· 최근 진행 칸 항상 1개(높이 최대 ${d.maxFeedH}px, 접힌 줄 최대 ${d.maxFeedLines}) · 할 일 표시 불일치 ${d.badPlan}달(자동 휴식 ${d.rests}번·복귀 ${d.backs}번, 버튼을 다시 만든 달 ${d.rebuilt}개) · 라이벌전 줄 불일치 ${d.badRv}달(라이벌전 달 ${d.rvMonths}개)${c.restCase ? ` · 달마다 ${m.map(x => `${x.planNow}${x.back ? '←' + x.back : ''}[${x.pressed}]`).join(' ')}` : ''}${r.ev.plan ? ` · 달리는 중 할 일 ${r.ev.plan.from}→${r.ev.plan.now}(자동진행 ${r.ev.plan.on ? '계속' : '멈춤'})` : ''} · 멈춘 장면 ${JSON.stringify(r.ev.scenes)}`);
   }
 };
 module.exports.run = run; module.exports.digest = digest; module.exports.SAVE = SAVE;

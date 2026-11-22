@@ -11,7 +11,7 @@ module.exports = async function positions(browser, url, R) {
     for (const id of Object.keys(NAMES)) {
       const b = pg.locator(`[data-act=pick][data-grp=role][data-id=${id}]`); await b.click();
       const t = await b.innerText();
-      R.ok(t.includes(NAMES[id][0]) && t.includes(NAMES[id][1]) && t.includes('장점') && t.includes('주의') && t.includes('주요 능력치') && /\d+%/.test(t) && await b.getAttribute('aria-pressed') === 'true', `${w}: ${id} 포지션 안내가 펼쳐지지 않음`);
+      R.ok(t.includes(NAMES[id][0]) && t.includes(NAMES[id][1]) && t.includes('장점') && t.includes('주의') && t.includes('주요 능력치') && !/\d+%/.test(t) && await b.getAttribute('aria-pressed') === 'true', `${w}: ${id} 포지션 안내가 펼쳐지지 않음`);
       await m('선수 등록 ' + id);
     }
     R.ok(await pg.locator('[data-grp=role][aria-pressed=true]').count() === 1 && !/선봉|유격|사수/.test(await pg.innerText('#app')), `${w}: 예전 포지션 이름이 남아 있거나 선택 표시가 여럿`);

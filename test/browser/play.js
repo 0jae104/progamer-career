@@ -125,7 +125,7 @@ module.exports = async function play(browser, url, R) {
     R.ok(await pg.evaluate(() => !!document.querySelector('.content table') && /라이벌/.test(document.querySelector('.content').textContent)), 'D: 리그 탭에 순위표와 라이벌이 없음');
     await pg.click('[data-act=tab][data-id=record]');
     const t = await pg.evaluate(() => ({ fast: PG.state().opt.fast, txt: document.querySelector('[data-act=fast]').textContent, snd: !!document.querySelector('.content [data-act=snd]'), log: document.querySelectorAll('.content .log li').length }));
-    R.ok(t.fast === false && /맡기기 꺼짐/.test(t.txt) && t.snd && t.log >= 1, `D: 기록 탭 ${JSON.stringify(t).slice(0, 160)}`);
+    R.ok(t.fast === false && /맡기기 꺼짐/.test(t.txt) && t.snd && t.log === 0, `D: 기록 탭(0.11.10: 소식 목록은 플레이 탭의 최근 진행으로 옮겼다) ${JSON.stringify(t).slice(0, 160)}`);
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
 
@@ -144,7 +144,7 @@ module.exports = async function play(browser, url, R) {
     const look = await pg.evaluate(() => document.querySelector('canvas.av.big').dataset.look);
     await pg.fill('#nick', '얼굴검사'); await pg.click('[data-act=cstep]'); await m('등록 2/2'); const a2 = await pg.evaluate(A11Y);
     const s2 = await pg.evaluate(() => ({ roles: document.querySelectorAll('[data-grp=role]').length, traits: [...document.querySelectorAll('[data-grp=trait]')].map(b => [b.dataset.id, b.getAttribute('aria-pressed'), /처음이라면/.test(b.textContent), b.querySelectorAll('.rinfo').length].join(':')).join(' '), nickKept: PG_UI.state.C.nick }));
-    R.ok(s2.roles === 5 && /brain:true:true:3/.test(s2.traits) && /grinder:false:false:3/.test(s2.traits) && /genius:false:false:3/.test(s2.traits) && s2.nickKept === '얼굴검사', `${w}: 등록 2/2 ${JSON.stringify(s2)}`);
+    R.ok(s2.roles === 5 && /brain:true:true:2/.test(s2.traits) && /grinder:false:false:2/.test(s2.traits) && /genius:false:false:2/.test(s2.traits) && s2.nickKept === '얼굴검사', `${w}: 등록 2/2 ${JSON.stringify(s2)}`);
     await pg.click('[data-act=cstep]'); R.ok(await pg.evaluate(l => document.querySelector('canvas.av.big').dataset.look === l && document.getElementById('nick').value === '얼굴검사', look), `${w}: 이전으로 돌아가자 고른 것이 사라짐`);
     await pg.click('[data-act=cstep]'); await pg.click('[data-act=start]'); await pg.waitForTimeout(200);
     R.ok(await pg.evaluate(l => PG.state().look === l && PG.state().nick === '얼굴검사' && PG.state().trait === 'brain' && JSON.parse(localStorage.getItem('pg_career_v1')).look === l, look), `${w}: 고른 얼굴이 저장되지 않음`);
@@ -344,44 +344,62 @@ module.exports = async function play(browser, url, R) {
     await m('홈(목표 펼침)');
     await pg.click('[data-act=goalopen]'); await pg.waitForTimeout(60);
     R.ok(await pg.evaluate(x => document.querySelector('.goalbtn').getAttribute('aria-expanded') === 'false' && JSON.stringify([PG.state().goal, PG.goalNow()]) === x, g0), `${w}: 접은 뒤 목표의 상태가 달라짐`);
-    // 2) 지난 진행: 같은 경기가 토너먼트 결과와 라이벌전 두 줄로 나오지 않는다. 나머지는 "자세히"에. 저장된 요약은 그대로
+    // 2) 최근 진행(0.11.10): 경기·성장·소식을 한 칸에. 같은 일은 한 번만, 크게 볼 일은 눈에 띄게, 반복되는 월간 보고는 뺀다. 저장된 요약·소식은 그대로
     const rc = await pg.evaluate(() => {
       const S = PG.state(), r = S.recap, rv = PG.rivals()[0];
       if (!rv) return null;
-      window.__rc0 = JSON.stringify(r);
-      r.mt = [{ t: '검사컵 준결승', opp: '가짜 구단 A', win: true, s: '2-1' }, { t: '검사컵 결승', opp: '가짜 구단 B', win: false, s: '1-3' }, { t: '검사컵 8강', opp: '가짜 구단 C', win: true, s: '2-0' }];
-      r.rv = [{ nick: rv.nick, opp: '가짜 구단 B', win: false, s: '검사용 한 줄.' }, { nick: rv.nick, opp: '가짜 구단 D', win: true }];
+      window.__rc0 = JSON.stringify(r); window.__log0 = JSON.stringify(S.log);
+      const y = r.y1, mm = r.m1, T = '검사컵';
+      r.mt = [{ t: T + ' 준결승', opp: '가짜 구단 A', win: true, s: '2-1' }, { t: T + ' 결승', opp: '가짜 구단 B', win: false, s: '1-3' }, { t: T + ' 8강', opp: '가짜 구단 C', win: true, s: '2-0' }, { t: '우승컵 결승', opp: '가짜 구단 E', win: true, s: '3-1' }];
+      r.rv = [{ nick: rv.nick, opp: '가짜 구단 B', win: false, s: '검사용 한 줄.' }, { nick: rv.nick, opp: '가짜 구단 D', win: true, s: '2연패를 끊었다.' }];
       r.ev = { type: 'result', title: '검사 사건', text: '가'.repeat(180), lines: ['멘탈 +1'], checked: false };
-      const keep = JSON.stringify(r); PG_UI.render();
-      const q = s => [...document.querySelectorAll(s)], shown = q('.recap .rvres').map(e => e.textContent), ev = document.querySelector('.recap .evres p:not(.sec)'), btn = document.querySelector('[data-act=recmore]');
-      return { nick: rv.nick, shown, clamp: ev.scrollHeight > ev.clientHeight + 2, btn: btn ? btn.textContent : '', rivalBtn: !!document.querySelector('.recap [data-to=rivals]'), same: JSON.stringify(S.recap) === keep, lines: q('.recap > p').length };
+      S.log.unshift(
+        { y, m: mm, msg: `${mm}월: 3승 1패, 평균 평점 6.8`, tone: '' },                 // 반복되는 월간 보고 → 뺀다
+        { y, m: mm, msg: T + ' 결승 탈락.', tone: '' },                                  // 패배 경기 줄과 같은 일 → 뺀다
+        { y, m: mm, msg: '우승컵 우승! 상금 3,000만', tone: 'gold' },                     // 크게. 같은 대회의 결승 승리 줄은 뺀다
+        { y, m: mm, msg: '검사 사건 — 방금 본 결과와 같은 글', tone: '' },                // 사건 결과와 같은 일 → 뺀다
+        { y, m: mm, msg: '가짜 구단 Z와(과) 2년 계약. 1군, 연봉 1억.', tone: 'good' },
+        { y, m: mm, msg: '[뉴스] 미드 검사, 가짜 구단 Z행 — 2년 계약', tone: 'news' },    // 같은 달의 계약 소식이 있다 → 뺀다
+        { y, m: mm, msg: '검사 소식 하나', tone: '' }, { y, m: mm, msg: '검사 소식 하나', tone: '' },   // 같은 글 두 번 → 한 번
+        { y, m: mm, msg: `${rv.nick} — 이적설이 돈다.`, tone: '' },
+        { y: y - 1, m: 5, msg: '지난해의 소식', tone: '' }, { y: y - 1, m: 5, msg: '5월: 2승 2패, 평균 평점 6.1', tone: '' });
+      const keepR = JSON.stringify(r), keepL = JSON.stringify(S.log); PG_UI.state.recMore = false; PG_UI.state.logOpen = false; PG_UI.render();
+      const q = s => [...document.querySelectorAll(s)], fb = document.getElementById('fbox'), fd = q('#fbox .fd'), ev = document.querySelector('#fbox .evres p:not(.sec)'), btn = document.querySelector('[data-act=recmore]'), ob = document.querySelector('#fbox [data-act=logopen]');
+      const kids = [...fb.querySelectorAll(':scope > *, :scope > .fds > .fd')].filter(e => !e.classList.contains('fds')).map(e => (e.classList.contains('fd') ? (e.classList.contains('big') ? 'BIG' : 'fd') : e.className.split(' ')[0]));
+      return { nick: rv.nick, n: q('#fbox').length, recaps: q('.recap').length, head: fb.querySelector('.fhead').textContent, label: fb.getAttribute('aria-label'), shown: fd.map(e => e.textContent), big: fd.filter(e => e.classList.contains('big')).map(e => e.textContent), keys: fd.map(e => e.dataset.k), kids,
+        clamp: ev.scrollHeight > ev.clientHeight + 2, btn: btn ? btn.textContent : '', old: ob ? ob.textContent : '', rivalBtn: !!document.querySelector('#fbox [data-to=rivals]'), same: JSON.stringify(S.recap) === keepR && JSON.stringify(S.log) === keepL, txt: fb.textContent,
+        chips: q('#fbox .chips.grow .chip').map(e => e.textContent), overX: document.documentElement.scrollWidth - innerWidth };
     });
-    if (R.ok(!!rc, `${w}: 라이벌이 없는 저장이라 요약 검사를 하지 못함`)) {
-      R.ok(rc.shown.length === 1 && /결승/.test(rc.shown[0]) && rc.shown[0].includes('가짜 구단 B') && rc.shown[0].includes(rc.nick) && rc.shown[0].includes('검사용 한 줄.') && rc.shown[0].includes('1-3'), `${w}: 접힌 요약의 경기 줄이 가장 중요한 한 줄(결승·라이벌)이 아니거나 합쳐지지 않음 ${JSON.stringify(rc.shown)}`);
-      R.ok(rc.clamp && /자세히 · 3건 더/.test(rc.btn) && rc.rivalBtn && rc.same && rc.lines <= 4, `${w}: 긴 사건 글이 줄지 않았거나 "자세히"·라이벌 기록 버튼이 없음 ${JSON.stringify(rc).slice(0, 300)}`);
-      await m('홈(요약 접힘)');
+    if (R.ok(!!rc, `${w}: 라이벌이 없는 저장이라 최근 진행 검사를 하지 못함`)) {
+      R.ok(rc.n === 1 && rc.recaps === 1 && rc.head === '최근 진행' && rc.label === '최근 진행' && rc.same && rc.overX <= 0, `${w}: 최근 진행 칸이 하나가 아니거나 저장된 요약·소식이 달라짐 ${JSON.stringify(rc).slice(0, 200)}`);
+      R.ok(rc.shown.length === 2 && rc.big.length === 2 && rc.big.some(x => x.includes('우승컵 우승!')) && rc.big.some(x => x.includes('2연패를 끊었다')) && rc.kids.indexOf('BIG') < rc.kids.indexOf('rline') && rc.kids.indexOf('rline') < rc.kids.indexOf('chips'), `${w}: 접힌 최근 진행은 두 줄까지이고, 우승·설욕이 진행 줄 위에 크게 보여야 한다 ${JSON.stringify([rc.shown, rc.kids])}`);
+      R.ok(/^OVR /.test(rc.chips[0] || '') && rc.chips.length <= 3, `${w}: 성장 칩의 첫 칸이 OVR 이 아님 ${JSON.stringify(rc.chips)}`);
+      R.ok(rc.clamp && /자세히 · \d+건 더/.test(rc.btn) && rc.old === '' && rc.rivalBtn, `${w}: 긴 사건 글이 줄지 않았거나 "자세히"·"지난 소식"·라이벌 기록 버튼이 없음 ${JSON.stringify([rc.clamp, rc.btn, rc.old, rc.rivalBtn])}`);
+      await m('홈(최근 진행 접힘)');
       await pg.click('[data-act=recmore]'); await pg.waitForTimeout(60);
-      const ex = await pg.evaluate(() => { const t = [...document.querySelectorAll('.recap .rvres')].map(e => e.textContent), ev = document.querySelector('.recap .evres p:not(.sec)'); return { t, full: ev.scrollHeight <= ev.clientHeight + 2, exp: document.querySelector('[data-act=recmore]').getAttribute('aria-expanded') }; });
-      R.ok(ex.t.length === 4 && ex.t.filter(x => x.includes('가짜 구단 B')).length === 1 && ex.t.some(x => x.includes('가짜 구단 A')) && ex.t.some(x => x.includes('가짜 구단 C')) && ex.t.some(x => /라이벌전/.test(x) && x.includes('가짜 구단 D')) && ex.full && ex.exp === 'true', `${w}: "자세히"를 눌렀는데 나머지 경기·라이벌전이 다 나오지 않음(서로 다른 경기는 합치지 않는다) ${JSON.stringify(ex)}`);
-      await m('홈(요약 펼침)');
-      await pg.click('.recap [data-to=rivals]'); await pg.waitForTimeout(80);
-      R.ok(await pg.evaluate(() => PG_UI.state.tab === 'league' && !!document.querySelector('.rival')), `${w}: 요약에서 라이벌 기록으로 한 번에 가지 못함`);
+      const ex = await pg.evaluate(() => { const fd = [...document.querySelectorAll('#fbox .fd')], t = fd.map(e => e.textContent), k = fd.map(e => e.dataset.k), all = document.getElementById('fbox').textContent, ev = document.querySelector('#fbox .evres p:not(.sec)'); return { t, dup: k.length - new Set(k).size, all, full: ev.scrollHeight <= ev.clientHeight + 2 }; });
+      const has = x => ex.t.filter(t => t.includes(x)).length;
+      R.ok(ex.dup === 0 && has('가짜 구단 B') === 1 && has('가짜 구단 A') === 1 && has('가짜 구단 C') === 1 && has('가짜 구단 D') === 1 && has('우승컵') === 1 && has('검사 소식 하나') === 1 && has('2년 계약') === 1 && has('이적설') === 1 && ex.full,
+        `${w}: 펼친 최근 진행에서 같은 일이 두 번 나오거나 빠진 것이 있음(결승 패배 1·우승 1·계약 1·같은 글 1) ${JSON.stringify(ex.t)}`);
+      R.ok(!/평균 평점/.test(ex.all) && !/결승 탈락/.test(ex.all) && !/\[뉴스\]/.test(ex.all) && !/방금 본 결과와 같은 글/.test(ex.all) && !/가짜 구단 E/.test(ex.all), `${w}: 반복 보고·겹치는 소식(월간 승패, 탈락, 이적 뉴스, 사건 결과, 우승한 결승의 경기 줄)이 그대로 보임: ${ex.all.slice(0, 300)}`);
+      await m('홈(최근 진행 펼침)');
+      // 지난 소식: 이 칸 안에서 펼친다. 월간 보고는 빠지고 나머지는 그대로
+      R.ok(await pg.evaluate(() => /지난 소식 \d+건/.test((document.querySelector('#fbox [data-act=logopen]') || {}).textContent || '')), `${w}: 펼친 최근 진행에 "지난 소식" 버튼이 없음`);
+      await pg.click('#fbox [data-act=logopen]'); await pg.waitForTimeout(60);
+      const ol = await pg.evaluate(() => { const li = [...document.querySelectorAll('#fbox .flog li span')].map(e => e.textContent); return { li, n: document.querySelectorAll('#fbox').length, exp: document.querySelector('#fbox [data-act=logopen]').getAttribute('aria-expanded') }; });
+      R.ok(ol.n === 1 && ol.exp === 'true' && ol.li.includes('지난해의 소식') && !ol.li.some(x => /평균 평점/.test(x)) && !ol.li.includes('검사 소식 하나'), `${w}: "지난 소식"을 펼친 목록 ${JSON.stringify(ol.li.slice(0, 6))}`);
+      await m('홈(지난 소식 펼침)');
+      await pg.click('#fbox [data-act=logopen]'); await pg.click('[data-act=recmore]'); await pg.waitForTimeout(60);
+      await pg.click('#fbox [data-to=rivals]'); await pg.waitForTimeout(80);
+      R.ok(await pg.evaluate(() => PG_UI.state.tab === 'league' && !!document.querySelector('.rival')), `${w}: 최근 진행에서 라이벌 기록으로 한 번에 가지 못함`);
+      // 기록 탭에는 소식 목록이 없다(통산·트로피·시즌 기록·기록실은 그대로)
+      await pg.click('[role=tab][data-id=record]'); await pg.waitForTimeout(60);
+      const rt = await pg.evaluate(() => { const c = document.querySelector('main.content'); return { log: c.querySelectorAll('.log').length, sec: [...c.querySelectorAll('.sec')].map(e => e.textContent), vault: c.querySelectorAll('[data-act=vault]').length, btn: !!c.querySelector('[data-act=logopen]') }; });
+      R.ok(rt.log === 0 && !rt.btn && !rt.sec.includes('소식') && rt.sec.includes('통산') && rt.sec.includes('시즌 기록') && rt.vault === 3, `${w}: 기록 탭에 소식 목록이 남아 있거나 다른 기록이 사라짐 ${JSON.stringify(rt)}`);
+      await m('기록(소식 없음)');
       await pg.click('[role=tab][data-id=home]'); await pg.waitForTimeout(60);
     }
-    // 3) 기록 탭의 소식: 같은 달·같은 글은 한 번만 보이고 저장된 소식은 그대로. 긴 글은 두 줄까지, "더 보기"로 전체
-    const lg = await pg.evaluate(() => {
-      const S = PG.state(), y = S.year, mm = PG.month().m, long = '긴 소식 ' + '나'.repeat(120);
-      S.log.unshift({ y, m: mm, msg: '검사 소식 하나', tone: '' }, { y, m: mm, msg: '검사 소식 하나', tone: '' }, { y, m: mm, msg: long, tone: '' }, { y, m: mm, msg: '검사 소식 하나', tone: 'gold' }, { y, m: mm - 1 || 12, msg: '검사 소식 하나', tone: '' });
-      const n = S.log.length; PG_UI.state.tab = 'record'; PG_UI.state.logOpen = false; PG_UI.render();
-      const li = [...document.querySelectorAll('.content .log li span')], t = li.map(e => e.textContent), lo = li.find(e => e.textContent === long);
-      return { n, after: S.log.length, same: t.filter(x => x === '검사 소식 하나').length, shown: t.length, clamp: lo ? lo.scrollHeight > lo.clientHeight + 2 : null, btn: !!document.querySelector('[data-act=logopen]'), over: document.documentElement.scrollWidth - innerWidth };
-    });
-    R.ok(lg.after === lg.n && lg.shown === 4 && lg.same === 3 && lg.clamp === true && lg.btn && lg.over <= 0, `${w}: 소식의 중복 표시·긴 글 줄임 ${JSON.stringify(lg)} (같은 달·같은 종류·같은 글 한 쌍만 한 번으로, 종류나 달이 다르면 따로)`);
-    await m('기록(소식 접힘)');
-    await pg.click('[data-act=logopen]'); await pg.waitForTimeout(60);
-    R.ok(await pg.evaluate(() => { const li = [...document.querySelectorAll('.content .log li span')], lo = li.find(e => /^긴 소식/.test(e.textContent)); return li.length > 4 && lo.scrollHeight <= lo.clientHeight + 2 && li.filter(e => e.textContent === '검사 소식 하나').length === 3; }), `${w}: "소식 더 보기"를 눌러도 전체 글이 나오지 않음`);
-    await m('기록(소식 펼침)');
-    await pg.evaluate(() => { PG.state().log.splice(0, 5); if (window.__rc0) PG.state().recap = JSON.parse(window.__rc0); PG.save(); });   // 검사용으로 넣은 것을 걷어 낸다
+    await pg.evaluate(() => { const S = PG.state(); if (window.__log0) { S.log.length = 0; for (const l of JSON.parse(window.__log0)) S.log.push(l); } if (window.__rc0) S.recap = JSON.parse(window.__rc0); PG.save(); });   // 검사용으로 넣은 것을 걷어 낸다
     // 4) 자산의 돈의 흐름: 진행한 달의 실제 내역, 새로 고친 뒤에는 없다고 적는다(숫자를 지어내지 않는다)
     await pg.click('[role=tab][data-id=money]'); await pg.waitForTimeout(60);
     const cb = await pg.evaluate(() => { const c = PG.cash(), b = document.querySelector('button.cashsum'), last = c.all[c.all.length - 1]; return { has: !!b, txt: b ? b.textContent : '', net: PG.fmtMoney(Math.abs(c.all.filter(x => x.y === last.y && x.m === last.m).reduce((a, x) => a + x.v, 0))), h: b ? b.getBoundingClientRect().height : 0 }; });
@@ -396,29 +414,31 @@ module.exports = async function play(browser, url, R) {
     R.ok(m.clean(), `${w}: 0.11.6 화면 배치 ${m.line()}`); R.note(`0.11.6 ${w}x${h}`, m.line());
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
-  // H-2. 선수 등록의 설명: 고른 항목 아래 한 줄, "자세히"로 펼침. 고르는 것을 바꾸면 요약이 따라 바뀐다. 누름 수는 그대로(세 번이면 시작)
+  // H-2. 선수 등록의 설명(0.11.10): 고른 항목 아래 쉬운 말 한 줄. 배율·비중·식 같은 내부 숫자와 "자세히"는 없다. 누름 수는 그대로(세 번이면 시작)
   for (const [w, h] of [[390, 844], [320, 568]]) {
     const { ctx, pg } = await open(browser, url, { w, h }), m = auditor(pg);
+    const tech = t => /[%×]|표준편차|배율|비중 \d|\d+\.\d+/.test(t);
     await pg.click('[data-act=create]'); await pg.waitForTimeout(80);
-    const r1 = await pg.evaluate(() => { const D = PG.D, e = document.querySelector('#pinfo-region'), kr = D.REGIONS.find(x => x.id === 'kr'), st = D.ORGS.filter(g => g.region === 'kr').map(g => g.str); return { t: e ? e.textContent : '', want: [kr.lgName, `${Math.min(...st)}~${Math.max(...st)}`, `×${kr.pay}`, `OVR ${kr.natThr}`], open: !!document.querySelector('#pinfo-region .pdet') }; });
-    R.ok(r1.want.every(x => r1.t.includes(x)) && !r1.open, `${w}: 국적의 한 줄 요약이 실제 값과 다르거나 처음부터 펼쳐져 있음 ${JSON.stringify(r1)}`);
-    await pg.click('[data-act=pick][data-grp=region][data-id=na]'); await pg.click('[data-act=cmore][data-id=region]'); await pg.waitForTimeout(60);
-    const r2 = await pg.evaluate(() => { const D = PG.D, t = document.querySelector('#pinfo-region').textContent, na = D.REGIONS.find(x => x.id === 'na'); return { t: t.slice(0, 80), na: t.includes(na.lgName) && t.includes(`×${na.pay}`), same: /능력치·한계·성장 속도를 바꾸지 않는다/.test(t), all: D.REGIONS.every(x => t.includes(`${x.name} ×${x.pay}`)), li: document.querySelectorAll('#pinfo-region .pdet li').length }; });
-    R.ok(r2.na && r2.same && r2.all && r2.li >= 5, `${w}: 국적을 바꾸고 "자세히"를 눌렀을 때의 설명 ${JSON.stringify(r2)}`);
-    await m('선수 등록 1(국적 자세히)');
+    const r1 = await pg.evaluate(() => ({ t: document.querySelector('#pinfo-region').textContent, note: PG.D.REGION_NOTE.kr, more: document.querySelectorAll('[data-act=cmore], .pdet').length }));
+    R.ok(r1.t.includes(r1.note) && /능력치를 바꾸지 않/.test(r1.t) && r1.more === 0 && !tech(r1.t), `${w}: 국적의 한 줄이 쉬운 말이 아니거나 내부 숫자가 남아 있음 ${JSON.stringify(r1)}`);
+    await pg.click('[data-act=pick][data-grp=region][data-id=na]'); await pg.waitForTimeout(60);
+    R.ok(await pg.evaluate(() => document.querySelector('#pinfo-region').textContent.includes(PG.D.REGION_NOTE.na)), `${w}: 국적을 바꿔도 설명이 따라 바뀌지 않음`);
+    await m('선수 등록 1');
     await pg.fill('#nick', '설명'); await pg.click('[data-act=cstep]'); await pg.waitForTimeout(80);
-    const r3 = await pg.evaluate(() => { const D = PG.D, ro = document.querySelector('#pinfo-role').textContent, tr = document.querySelector('#pinfo-trait').textContent, w0 = D.ROLES.find(x => x.id === 'core').w, top = D.STATS.map(s => [s.name, w0[s.id]]).sort((a, b) => b[1] - a[1])[0]; return { ro: ro.includes(`${top[0]} ${Math.round(top[1] * 100)}%`) && /고정/.test(ro), tr: /판단력 \+5/.test(tr) && /무작위/.test(tr) && /고정/.test(tr), open: document.querySelectorAll('.pdet').length }; });
-    R.ok(r3.ro && r3.tr && r3.open === 0, `${w}: 포지션·성향의 한 줄 요약 ${JSON.stringify(r3)}`);
-    await pg.click('[data-act=pick][data-grp=trait][data-id=grinder]'); await pg.click('[data-act=cmore][data-id=trait]'); await pg.waitForTimeout(60);
-    const r4 = await pg.evaluate(() => { const B = PG.D.BAL, t = document.querySelector('#pinfo-trait').textContent; return { g: t.includes(`×${B.grinderGrow}`) && t.includes(`${B.grinderCapAge}세까지`), rnd: /34~42/.test(t) && t.includes(`0~${B.capRand}`) && t.includes(`표준편차 ${B.talentSd}`), fixed: /고정인 것/.test(t) && /매번 달라지는 것/.test(t), one: document.querySelectorAll('.pdet').length }; });
-    R.ok(r4.g && r4.rnd && r4.fixed && r4.one === 1, `${w}: 성향 "자세히"의 설명이 밸런스 값과 다르거나 무작위 여부를 답하지 않음 ${JSON.stringify(r4)}`);
-    await m('선수 등록 2(성향 자세히)');
-    await pg.click('[data-act=cmore][data-id=role]'); await pg.waitForTimeout(60);
-    R.ok(await pg.evaluate(() => { const t = document.querySelector('#pinfo-role').textContent; return document.querySelectorAll('.pdet').length === 1 && /OVR = /.test(t) && /바꿀 수 없다/.test(t) && t.includes(`비중 × ${PG.D.BAL.capRole}`); }), `${w}: 포지션 "자세히"`);
-    await m('선수 등록 2(포지션 자세히)');
-    await pg.click('[data-act=start]'); await pg.waitForTimeout(200);
-    R.ok(await pg.evaluate(() => !!PG.state() && PG.state().trait === 'grinder' && PG.state().home === 'na' && PG.scene().type === 'pickOrg'), `${w}: 설명을 본 뒤 고른 대로 시작되지 않음`);
-    R.ok(m.clean(), `${w}: 선수 등록 화면 배치 ${m.line()}`); R.note(`0.11.6 선수 등록 ${w}x${h}`, m.line());
+    const r3 = await pg.evaluate(() => { const D = PG.D, on = document.querySelector('.opt.role[aria-pressed=true]').textContent, w0 = D.ROLES.find(x => x.id === 'core').w, top = D.STATS.map(s => [s.name, w0[s.id]]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+      const tr = [...document.querySelectorAll('.opt.trait')].map(b => ({ id: b.dataset.id, t: b.textContent, n: b.querySelectorAll('.rinfo').length })); return { on, top, tr, ro: document.querySelector('#pinfo-role').textContent, ti: document.querySelector('#pinfo-trait').textContent, all: document.querySelector('.app, #app').textContent, want: D.TRAITS.map(t => [t.id, t.good, t.bad]) }; });
+    R.ok(r3.top.every(n => r3.on.includes(n)) && !/\d+%/.test(r3.on) && /바꿀 수 없다/.test(r3.ro), `${w}: 포지션의 주요 능력치가 이름으로 보이지 않거나 비중(%)이 남아 있음 ${r3.on.slice(0, 120)}`);
+    R.ok(r3.tr.length === 3 && r3.tr.every(x => x.n === 2 && x.t.includes('장점') && x.t.includes('단점') && r3.want.find(t => t[0] === x.id).slice(1).every(s => x.t.includes(s)) && x.t.length < 140), `${w}: 성향마다 장점·단점 두 줄이 아님 ${JSON.stringify(r3.tr.map(x => [x.id, x.n, x.t.length]))}`);
+    R.ok(/선수마다 조금씩 다르다/.test(r3.ti) && !tech(r3.tr.map(x => x.t).join(' ') + r3.ti + r3.ro), `${w}: 성향 설명에 내부 숫자가 남아 있거나 "선수마다 다르다"는 안내가 없음`);
+    await m('선수 등록 2');
+    await pg.click('[data-act=pick][data-grp=trait][data-id=grinder]'); await pg.click('[data-act=start]'); await pg.waitForTimeout(200);
+    R.ok(await pg.evaluate(() => !!PG.state() && PG.state().trait === 'grinder' && PG.state().home === 'na' && PG.scene().type === 'pickOrg'), `${w}: 고른 대로 시작되지 않음`);
+    // 선수 탭: 능력치 옆에 비중(%)이 없고 주요 능력치 표시가 셋, 성향 카드는 한두 문장
+    await pg.evaluate(() => { let n = 0; while (PG.scene() && n++ < 40) PG.autoStep(); PG_UI.state.tab = 'player'; PG_UI.render(); });
+    const pt = await pg.evaluate(() => { const c = document.querySelector('main.content'), tr = PG.D.TRAITS.find(t => t.id === 'grinder'); return { t: c.textContent, key: c.querySelectorAll('.stat .keyst').length, vals: [...c.querySelectorAll('.stat .v')].map(e => e.textContent).join(','), real: PG.D.STATS.map(s => String(Math.floor(PG.state().stats[s.id]))).join(','), desc: c.textContent.includes(tr.desc), over: document.documentElement.scrollWidth - innerWidth }; });
+    R.ok(pt.key === 3 && pt.vals === pt.real && pt.desc && !/포지션 비중|\d+%/.test(pt.t.replace(/\d+%p?/g, x => (/^(100|\d{1,2})%$/.test(x) ? x : x)).replace(/승률[^.]*%/g, '')) && pt.over <= 0, `${w}: 선수 탭의 능력치 설명 ${JSON.stringify({ key: pt.key, vals: pt.vals, real: pt.real, desc: pt.desc })} ${(pt.t.match(/[^ ]*\d+%[^ ]*/g) || []).slice(0, 4)}`);
+    await m('선수 탭');
+    R.ok(m.clean(), `${w}: 선수 등록·선수 탭 화면 배치 ${m.line()}`); R.note(`0.11.10 선수 등록 ${w}x${h}`, m.line());
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
   // I. 0.11.9: 성장의 결과(OVR 칩·이유), 목표의 남은 조건, 자산의 반복 지출 줄·단계형 설명·시즌 프로젝트. 다섯 크기에서 배치도 본다

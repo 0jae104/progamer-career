@@ -61,6 +61,19 @@ for (const r of D.ROLES) if (!near(Object.values(r.w).reduce((x, y) => x + y, 0)
 if (seeds < 30 || spread.size < 20 || talent.size < 20) bad.push(`대조한 시드 ${seeds}개, 서로 다른 시작값 ${spread.size}종·재능 ${talent.size}종: 너무 적음`);
 const eng = fs.readFileSync(path.join(__dirname, '..', 'js', 'engine.js'), 'utf8');
 for (const [name, re] of [['천재형 19세까지 +0.15', /S\.trait === 'genius' && a <= 19\) f \+= \.15/], ['노력형 컨디션 소모 ×0.75', /c < 0 && S\.trait === 'grinder'\) c \*= \.75/], ['두뇌형 노쇠 +1년', /B\.fadeFrom \+ \(S\.trait === 'brain' \? 1 : 0\)/], ['성장 배율의 팀 전력 몫', /coachF = \.92 \+ \(org\(\)\.str - 62\) \/ 160/], ['해외 1군 제안 조건', /g\.region !== S\.home && !\(o >= 76 \|\| S\.fame >= 45\)/], ['대표팀 선발 조건', /S\.squad === 'first' && isStarter\(\) && S\.injury === 0 && ovr\(\) >= me\.natThr/]]) if (!re.test(eng)) bad.push(`엔진의 "${name}" 줄이 바뀜: 선수 등록 화면의 설명(js/ui.js pickInfo)도 고쳐야 한다`);
+// 0.11.10: 쉬운 말로 바꾼 설명. (1) 성향·리그 문장에 배율·비중 같은 내부 숫자가 없다 (2) 문장이 말하는 차이가 실제 값에 있다
+for (const t of D.TRAITS) for (const k of ['good', 'bad', 'desc']) { if (!t[k]) bad.push(`${t.id}.${k} 설명이 없음`); else if (/[%×]|\d+(\.\d+)?\s*배|\+\s*\d|−\s*\d|-\s*\d/.test(t[k]) || /\d{2,}/.test(t[k].replace(/10대|20대/g, ''))) bad.push(`${t.id}.${k}: 내부 숫자가 남아 있음 — ${t[k]}`); }
+for (const id of Object.keys(D.REGION_NOTE)) if (/[%×\d]/.test(D.REGION_NOTE[id].replace(/[12]군/g, ''))) bad.push(`리그 설명 ${id}: 숫자가 남아 있음`);
+if (/TRAIT_FX|포지션 비중 \$\{|성장 배율 =|표준편차|\* 100\)\}%`\)\.join\(' · '\)\}<\/span>/.test(ui)) bad.push('화면 코드에 성향 보정표·비중(%)·성장 배율 식이 남아 있음');
+{ const st = id => D.ORGS.filter(g => g.region === id).map(g => g.str), top = id => Math.max(...st(id)), low = id => Math.min(...st(id)), R = id => D.REGIONS.find(r => r.id === id);
+  const claims = [
+    ['한국: 팀들이 가장 강하다', ['cn', 'eu', 'na'].every(x => top('kr') > top(x) && low('kr') > low(x))],
+    ['중국: 한국 다음으로 강하고 연봉이 가장 높다', top('cn') > top('eu') && top('cn') > top('na') && ['kr', 'eu', 'na'].every(x => R('cn').pay > R(x).pay)],
+    ['유럽: 한국·중국보다 약하고 연봉은 한국보다 조금 높다', top('eu') < top('cn') && R('eu').pay > R('kr').pay && R('eu').pay < R('na').pay],
+    ['북미: 팀들이 가장 약하고 연봉은 높은 편, 대표팀은 가장 약하다', ['kr', 'cn', 'eu'].every(x => top('na') < top(x) && low('na') < low(x) && R('na').nat < R(x).nat) && R('na').pay > R('eu').pay],
+    ['성향 문장의 근거(위의 보정 대조와 같은 값): 천재형 멘탈 시작 낮음·노력형 시작 한계 가장 낮음·두뇌형 피지컬·반응속도 보정 없음', WANT.genius.st.mental < 0 && B.grinderCap < 0 && !WANT.genius.cap.sense && !WANT.brain.st.mech && !WANT.brain.cap.mech && !WANT.brain.cap.reflex && B.grinderCapYear > 0 && B.grinderGrow > 1],
+  ];
+  for (const [name, ok] of claims) if (!ok) bad.push(`설명과 실제 값이 다름: ${name}`); }
 console.log(`선수 등록 설명 대조: 시드 ${seeds}개 — 성향의 시작·한계 보정이 화면에 적은 값과 같음 · 같은 시드에서 국적만 바꾸면 능력치·한계·성장 배율이 같음 · 포지션의 차는 비중 × 45(시작)·× ${B.capRole}(한계) · 같은 선택이어도 시드마다 시작값 ${spread.size}종·숨은 재능 ${talent.size}종으로 다름`);
 if (bad.length) { for (const b of bad.slice(0, 12)) console.log('실패: ' + b); process.exit(1); }
 console.log('통과');

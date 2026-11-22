@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.9';
+  const UI_VERSION = '0.11.10';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -88,53 +88,21 @@
     const on = U.C.role === r.id;
     return `<button class="opt role" data-act="pick" data-grp="role" data-id="${esc(r.id)}" aria-pressed="${on}"><b>${esc(r.name)} <small>${esc(r.en)}</small></b><span>${esc(on ? r.easy : r.desc)}</span>${on ? `
       <span class="rinfo"><em>장점</em>${esc(r.good)}</span><span class="rinfo"><em>주의</em>${esc(r.care)}</span>
-      <span class="rinfo"><em>주요 능력치</em>${roleKeys(r).map(([st, w]) => `${esc(st.name)} ${Math.round(w * 100)}%`).join(' · ')}</span>` : ''}</button>`;
+      <span class="rinfo"><em>주요 능력치</em>${roleKeys(r).map(([st]) => esc(st.name)).join(' · ')}</span>` : ''}</button>`;
   }
   // 선수 등록(0.11.2): 두 걸음. ① 누구인가(아이디·얼굴·국적) ② 어떻게 뛰는가(포지션·성향). 얼굴은 무작위로 정해져 있어 그냥 넘어가도 된다.
   function traitOpt(t) {
     const on = U.C.trait === t.id;
     return `<button class="opt trait" data-act="pick" data-grp="trait" data-id="${esc(t.id)}" aria-pressed="${on}"><b>${esc(t.name)}${t.pick ? ' <small>처음이라면</small>' : ''}</b>
-      <span class="rinfo"><em>초반</em>${esc(t.early)}</span><span class="rinfo"><em>장기</em>${esc(t.late)}</span><span class="rinfo"><em>주의</em>${esc(t.care)}</span></button>`;
+      <span class="rinfo"><em>장점</em>${esc(t.good)}</span><span class="rinfo"><em>단점</em>${esc(t.bad)}</span></button>`;
   }
-  /* 선택의 실제 차이(0.11.6): 고른 항목 아래에 한 줄 요약, "자세히"를 누르면 규칙이 펼쳐진다.
-     숫자는 D.BAL·D.REGIONS·D.ORGS·D.ROLES 에서 읽거나, 엔진의 newGame()·ageFactor()·applyPlan() 에 적힌 값을 그대로 옮겼다
-     (test/static.js 가 엔진의 그 줄이 바뀌지 않았는지 본다). 국적은 선수의 능력치를 바꾸지 않는다. 달라지는 것은 가상 리그의 환경뿐이다. */
-  const TRAIT_FX = {   // 엔진 newGame() 의 성향 보정과 같은 값
-    genius: { start: '피지컬·반응속도 +4, 멘탈 −4', cap: '피지컬·반응속도 +5', grow: '19세까지 나이 성장 배율 +0.15' },
-    grinder: { start: '모든 능력치 +1', cap: `모두 ${D.BAL.grinderCap}. 대신 ${D.BAL.grinderCapAge}세까지 시즌이 끝날 때마다 모두 +${D.BAL.grinderCapYear}`, grow: `모든 성장 ×${D.BAL.grinderGrow}, 할 일의 컨디션 소모 25% 감소` },
-    brain: { start: '판단력 +5, 숙련 폭 +3', cap: '판단력 +6, 숙련 폭 +5, 멘탈 +2', grow: '성장 배율은 같다. 노쇠가 한 해 늦게 시작한다' },
-  };
+  /* 고른 항목 아래의 한 줄(0.11.10): 쉬운 말 한두 문장만. 배율·비중·식 같은 내부 숫자는 화면에 적지 않는다(0.11.6~0.11.9 에는 "자세히"에 있었다).
+     문장은 실제로 계산에 들어가는 차이만 말한다: 리그는 팀 전력·연봉·대표팀, 포지션은 OVR에 크게 들어가는 능력치, 성향은 시작값과 자라는 폭. */
   function pickInfo(grp) {
-    const B = D.BAL, open = U.C.more === grp, btn = `<button class="more" data-act="cmore" data-id="${grp}" aria-expanded="${open}">${open ? '접기' : '자세히'}</button>`;
-    const box = (sum, det) => `<div class="pinfo" id="pinfo-${grp}"><p class="psum">${sum}</p>${btn}${open ? `<ul class="pdet">${det.map(x => `<li>${x}</li>`).join('')}</ul>` : ''}</div>`;
-    if (grp === 'region') {
-      const r = D.REGIONS.find(x => x.id === U.C.region) || D.REGIONS[0], st = id => D.ORGS.filter(g => g.region === id).map(g => g.str), lo = id => Math.min(...st(id)), hi = id => Math.max(...st(id)), cf = v => (.92 + (v - 62) / 160).toFixed(2);
-      return box(`<b>${esc(r.name)}</b> ${esc(r.lgName)}에서 시작 · 팀 전력 ${lo(r.id)}~${hi(r.id)} · 연봉 배율 ×${esc(r.pay)} · 대표팀 선발 기준 OVR ${esc(r.natThr)}`, [
-        '국적은 <b>내 능력치·한계·성장 속도를 바꾸지 않는다.</b> 달라지는 것은 리그 환경이다.',
-        `처음 입단할 구단 세 곳이 이 리그에서 나온다. 팀 전력: ${D.REGIONS.map(x => `${esc(x.name)} ${lo(x.id)}~${hi(x.id)}`).join(' · ')}.`,
-        `팀 전력이 높으면 승격 기준도 높다(2군 콜업: OVR이 팀 전력 − ${B.toSecondGap} 이상, 1군 심사: 팀 전력 − ${B.toFirstGap} 이상). 대신 코치진이 좋아 성장이 빠르다(성장 배율 = 0.92 + (팀 전력 − 62) ÷ 160. 전력 ${lo(r.id)}인 팀 ${cf(lo(r.id))}, ${hi(r.id)}인 팀 ${cf(hi(r.id))}).`,
-        `연봉 배율(2군·1군 계약. 연습생 연봉은 어디서나 같다): ${D.REGIONS.map(x => `${esc(x.name)} ×${esc(x.pay)}`).join(' · ')}.`,
-        `대표팀: 네이션스컵에는 1군 주전이고 OVR이 기준 이상이면 뽑힌다. 선발 기준 / 대표팀 전력: ${D.REGIONS.map(x => `${esc(x.name)} ${esc(x.natThr)} / ${esc(x.nat)}`).join(' · ')}.`,
-        '나중에 다른 리그로 옮길 수 있다(해외 1군 제안은 OVR 76 이상이거나 인기 45 이상일 때 온다). 옮겨도 국적과 대표팀은 그대로다.',
-      ]);
-    }
-    if (grp === 'role') {
-      const r = D.ROLES.find(x => x.id === U.C.role) || D.ROLES[0], ws = D.STATS.map(st => [st.name, r.w[st.id]]).sort((a, b) => b[1] - a[1]);
-      return box(`<b>${esc(r.name)}</b> 비중이 고정이다: ${ws.slice(0, 3).map(x => `${esc(x[0])} ${Math.round(x[1] * 100)}%`).join(' · ')}. 비중이 큰 능력치일수록 높게 시작하고 한계도 높다`, [
-        `OVR = 여섯 능력치 × 포지션 비중의 합. ${esc(r.name)}: ${ws.map(x => `${esc(x[0])} ${Math.round(x[1] * 100)}%`).join(' · ')}.`,
-        `비중은 포지션마다 정해져 있고 커리어마다 바뀌지 않는다. 능력치마다 시작값에 비중 × 45, 한계에 비중 × ${B.capRole}이 더해진다(${esc(ws[0][0])}: 시작 +${Math.round(ws[0][1] * 45)}, 한계 +${Math.round(ws[0][1] * B.capRole)}).`,
-        '비중이 큰 능력치를 올리는 할 일을 고르면 OVR이 빨리 오른다. 포지션마다 전용 승부처가 있고, 경기 기록(킬·데스·어시스트)의 모양이 다르다.',
-        '포지션은 커리어 도중에 바꿀 수 없다.',
-      ]);
-    }
-    const t = D.TRAITS.find(x => x.id === U.C.trait) || D.TRAITS[0], f = TRAIT_FX[t.id];
-    return box(`<b>${esc(t.name)}</b> 시작 ${esc(f.start)} · 한계 ${esc(f.cap.split('.')[0])} · 성향의 보정은 고정이고, 바탕 숫자는 커리어마다 무작위다`, [
-      `<b>고정인 것(성향 보정)</b> — ${D.TRAITS.map(x => `${esc(x.name)}: 시작 ${esc(TRAIT_FX[x.id].start)} / 한계 ${esc(TRAIT_FX[x.id].cap)} / ${esc(TRAIT_FX[x.id].grow)}`).join('<br>')}`,
-      `<b>매번 달라지는 것(시작 능력치)</b> — 능력치마다 34~42 사이에서 무작위로 정해지고, 여기에 포지션 비중 × 45와 성향 보정이 더해진다. 같은 포지션·같은 성향으로 다시 시작해도 숫자가 조금씩 다르다.`,
-      `<b>매번 달라지는 것(한계)</b> — ${B.capBase} + 숨은 재능 + 능력치마다 0~${B.capRand} 무작위 + 포지션 비중 × ${B.capRole} + 성향 보정(55~99 사이). 숨은 재능은 커리어마다 한 번 정해지는 값(평균 0, 표준편차 ${B.talentSd})으로, 모든 한계에 똑같이 더해진다.`,
-      `<b>성장 속도</b> — 숨은 재능이 표준편차 1만큼 높으면 성장이 ${Math.round(B.talentGrow * 100)}% 빠르다(0.7~1.3배 사이). 나이, 팀 전력, 고른 할 일, 성향이 여기에 곱해진다.`,
-      '숨은 재능은 숫자로 보여 주지 않는다. 시작한 뒤 선수 탭에서 능력치 옆의 잠재력 글자로 짐작할 수 있다.',
-    ]);
+    const box = t => `<div class="pinfo" id="pinfo-${grp}"><p class="psum">${t}</p></div>`;
+    if (grp === 'region') { const r = D.REGIONS.find(x => x.id === U.C.region) || D.REGIONS[0]; return box(`<b>${esc(r.name)}</b>${esc(D.REGION_NOTE[r.id] || '')} 국적은 선수의 능력치를 바꾸지 않고, 나중에 다른 리그로 옮길 수 있다.`); }
+    if (grp === 'role') { const r = D.ROLES.find(x => x.id === U.C.role) || D.ROLES[0]; return box(`<b>${esc(r.name)}</b>주요 능력치가 높을수록 OVR이 높다. 포지션은 도중에 바꿀 수 없다.`); }
+    return box('같은 성향이어도 시작 능력치와 잠재력은 선수마다 조금씩 다르다.');
   }
   function vCreate() {
     if (!G.lookOk(U.C.look)) U.C.look = randLook();
@@ -418,23 +386,12 @@
      - 같은 경기가 "토너먼트 결과"와 "라이벌전" 두 줄로 나오던 것은 한 줄로 합친다(같은 상대·같은 승패일 때만. 다른 경기는 합치지 않는다).
      - 나머지 경기, 라이벌 소식(기록 탭의 소식과 같은 글), 사건 결과의 긴 글은 "자세히"를 눌러야 나온다. 지우는 것은 없다.
      - 자금은 엔진이 적어 둔 실제 내역이 있을 때 순변동으로, 없으면(새로 고친 뒤) 저장된 월급·자동 관리 합으로 적는다. */
-  function recapLines(r) {
-    const S = G.state(), rs = G.rivals(), by = n => rs.find(x => x.nick === n), rv = (r.rv || []).slice(), out = [];
-    for (const v of r.mt || []) {
-      const k = rv.findIndex(x => x.opp === v.opp && !!x.win === !!v.win), m = k >= 0 ? rv.splice(k, 1)[0] : null, x = m && by(m.nick);
-      out.push({ big: /결승/.test(v.t) && !/준결승/.test(v.t) ? 2 : m ? 1 : 0, rival: !!m, html: `<p class="rvres ${v.win ? 'w' : 'l'}"><b>${esc(v.t)}</b> ${m ? `라이벌 ${esc(m.nick)}의 ` : ''}${esc(v.opp)}에 ${esc(v.s)} ${v.win ? '승리' : '패배'}${x ? ` · 통산 ${esc(x.w)}승 ${esc(x.l)}패` : ''}${m && m.s ? ` — ${esc(m.s)}` : ''}</p>` });
-    }
-    for (const v of rv) { const x = by(v.nick); out.push({ big: 1, rival: true, html: `<p class="rvres ${v.win ? 'w' : 'l'}"><b>라이벌전</b> ${esc(v.nick)}의 ${esc(v.opp)}에 ${v.win ? '승리' : '패배'}${x ? ` · 통산 ${esc(x.w)}승 ${esc(x.l)}패` : ''}${v.s ? ` — ${esc(v.s)}` : ''}</p>` }); }
-    const lo = r.y0 * 100 + r.m0, hi = r.y1 * 100 + r.m1, seen = {};
-    const news = !r.n ? [] : S.log.filter(l => { const t = l.y * 100 + l.m; if (t < lo || t > hi || seen[l.msg]) return false; const hit = rs.some(x => l.msg.startsWith(x.nick + ' — ')); if (hit) seen[l.msg] = 1; return hit; }).slice(0, 2);
-    return { lines: out, news };
-  }
   /* 성장의 결과(0.11.9): 엔진이 월간 보고에 적은 실제 값만 쓴다.
      - OVR 칩: 정수가 바뀌었으면 "OVR 65 → 66", 아니면 "OVR 65 · 다음까지 0.4"(실제 남은 값).
      - 거의 오르지 않은 달에는 이유 한 줄. 이유는 엔진이 성장 공식에서 실제로 작았던 항으로 고른다(why). */
   const WHY = {
     rest: '이번 달은 쉬어서 능력치가 거의 오르지 않았다.',
-    cap: '주요 능력치가 한계에 가까워 성장이 느리다. 한계는 선수 탭에서 볼 수 있고, 자산 탭의 시즌 프로젝트(집중 캠프)로 올릴 수 있다.',
+    cap: '주요 능력치가 한계에 가까워 성장이 느리다. 자산 탭의 집중 캠프로 한계를 올릴 수 있다.',
     age: '나이 때문에 성장이 느려지는 시기다.',
     plan: '이번 달 할 일은 이 포지션의 주요 능력치를 거의 올리지 않는다.',
   };
@@ -451,25 +408,82 @@
     const g = (lr.growth || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0], a = Math.floor(lr.o0 + 1e-9), b = Math.floor(lr.o1 + 1e-9);
     return `${g ? `${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]} · ` : ''}${a !== b ? `OVR ${a}→${b}` : `OVR ${lr.o1.toFixed(1)}`}${lr.why === 'cap' ? ' · 한계 근접' : ''}`;
   }
-  function recapCard() {
-    const r = G.recap(), lr = G.lastRep(); if (!r || (!r.n && !r.ev && !STOP[r.stop])) return '';
-    const more = !!U.recMore, e = r.ev, long = !!e && String(e.text || '').length > 70;
+  /* 최근 진행(0.11.10): 홈의 진행 요약과 기록 탭의 소식을 한 칸으로 합쳤다. 기록 탭의 소식 목록은 없앴고, 지난 소식은 이 칸의 "지난 소식"에서 본다.
+     저장된 소식(S.log)과 요약(S.recap)은 그대로다. 보여 주는 방법만 바꿨다.
+     - 순서: (멈춘 이유) → 중요한 일(우승·수상·콜업·계약·라이벌전·토너먼트) → 진행 줄 → 성장(OVR 칩이 먼저, 그다음 가장 크게 변한 능력치 둘) → 이유.
+     - 같은 일을 두 번 보여 주지 않는다:
+         · 매달의 "N월: x승 y패, 평균 평점" 소식은 진행 줄의 승패와 같은 내용이라 이 칸에서 뺀다.
+         · "○○ 탈락." 소식은 같은 대회의 패배 경기 줄이 있으면 뺀다. 우승 소식이 있으면 그 대회의 결승 승리 줄을 뺀다.
+         · 이적 뉴스 한 줄은 같은 달의 계약 소식이 있으면 뺀다. 방금 본 사건 결과와 같은 소식도 뺀다.
+         · 같은 달·같은 종류·글자까지 같은 소식은 한 번만.
+     - 상자(#fbox)는 하나이고 자동진행은 안쪽의 글이 달라진 달에만 바꾼다. 달마다 새 칸을 붙이지 않는다. */
+  const ROUTINE = /^\d+월: \d+승 \d+패/;
+  function feedLogs(S) {
+    const seen = {}, deal = {};
+    for (const l of S.log) if (l.tone === 'good' && /계약\./.test(l.msg)) deal[l.y * 100 + l.m] = 1;
+    return S.log.filter(l => { const k = `${l.y}|${l.m}|${l.tone}|${l.msg}`; if (seen[k] || ROUTINE.test(l.msg) || (l.tone === 'news' && deal[l.y * 100 + l.m])) return false; seen[k] = 1; return true; });
+  }
+  function feedItems(r, logs) {
+    const S = G.state(), rs = G.rivals(), by = n => rs.find(x => x.nick === n), rv = (r.rv || []).slice(), out = [], lo = r.y0 * 100 + r.m0, hi = r.y1 * 100 + r.m1;
+    const inR = logs.filter(l => { const t = l.y * 100 + l.m; return t >= lo && t <= hi; });
+    const won = inR.filter(l => l.tone === 'gold' && /우승/.test(l.msg));
+    for (const v of r.mt || []) {
+      const k = rv.findIndex(x => x.opp === v.opp && !!x.win === !!v.win), m = k >= 0 ? rv.splice(k, 1)[0] : null, x = m && by(m.nick), fin = /결승/.test(v.t) && !/준결승/.test(v.t);
+      if (fin && v.win && won.some(l => l.msg.includes(v.t.split(' ')[0]))) continue;   // 우승 소식이 같은 일을 말한다
+      const back = !!(m && m.s && v.win && /갚았다|끊었다|재회에서 이겼다/.test(m.s));
+      out.push({ w: (fin && v.win) || back ? 5 : fin || m ? 4 : v.win ? 3 : 2, cls: `${v.win ? 'w' : 'l'}${(fin && v.win) || back ? ' big' : ''}`,   // 결승 패배(준우승)는 중요하지만 우승·설욕보다 앞서지 않는다
+        rival: !!m, mt: v.t, key: `mt|${v.t}|${v.opp}|${v.s}`,
+        html: `<b>${esc(v.t)}</b> ${m ? `라이벌 ${esc(m.nick)}의 ` : ''}${esc(v.opp)}에 ${esc(v.s)} ${v.win ? '승리' : '패배'}${x ? ` · 통산 ${esc(x.w)}승 ${esc(x.l)}패` : ''}${m && m.s ? ` — ${esc(m.s)}` : ''}` });
+    }
+    // 같은 라이벌과 여러 번 맞붙은 구간은 한 줄로 모은다("3번 맞붙어 1승 2패"). 마지막 맞대결의 한 줄만 붙인다
+    const grp = [];
+    for (const v of rv) { const g = grp.find(x => x.nick === v.nick && x.opp === v.opp); if (g) { g.n++; g.w += v.win ? 1 : 0; g.last = v; if (v.s) g.s = v.s; } else grp.push({ nick: v.nick, opp: v.opp, n: 1, w: v.win ? 1 : 0, last: v, s: v.s || '' }); }
+    for (const g of grp) {
+      const x = by(g.nick), win = g.last.win, s1 = g.n === 1 ? g.s : (g.last.s || ''), back = !!(s1 && win && /갚았다|끊었다|재회에서 이겼다/.test(s1));
+      out.push({ w: back ? 5 : 4, cls: `${(g.n === 1 ? win : g.w * 2 > g.n) ? 'w' : (g.n > 1 && g.w * 2 === g.n ? '' : 'l')}${back ? ' big' : ''}`, rival: true, key: `rv|${g.nick}|${g.opp}`,
+        html: `<b>라이벌전</b> ${esc(g.nick)}의 ${esc(g.opp)}${g.n === 1 ? `에 ${win ? '승리' : '패배'}` : `와(과) ${esc(g.n)}번 맞붙어 ${esc(g.w)}승 ${esc(g.n - g.w)}패`}${x ? ` · 통산 ${esc(x.w)}승 ${esc(x.l)}패` : ''}${s1 ? ` — ${esc(s1)}` : ''}` });
+    }
+    const lost = (r.mt || []).filter(v => !v.win).map(v => v.t);
+    for (const l of inR) {
+      if (/ 탈락\.$/.test(l.msg) && lost.some(t => l.msg.startsWith(t))) continue;                 // 패배 경기 줄이 같은 일을 말한다
+      if (r.ev && r.ev.title && l.msg.startsWith(r.ev.title + ' — ')) continue;                    // 방금 본 사건 결과와 같다
+      const rival = rs.some(x => l.msg.startsWith(x.nick + ' — ')), ev = !rival && / — /.test(l.msg) && !l.tone;
+      const w = l.tone === 'gold' ? 6 : l.tone === 'good' ? (/성장 카드/.test(l.msg) ? 2 : 4) : l.tone === 'bad' ? 3 : l.tone === 'news' ? 3 : rival || ev ? 1 : 2;
+      out.push({ w, cls: `${l.tone === 'gold' ? 'big gold' : l.tone === 'good' ? 'good' : l.tone === 'bad' ? 'l' : ''}`, rival, key: `log|${l.y}|${l.m}|${l.tone}|${l.msg}`, html: `${rival ? '<b>라이벌 소식</b> ' : l.tone === 'gold' ? '<b>★</b> ' : ''}${esc(l.msg)}` });
+    }
+    return { items: out.map((x, i) => Object.assign(x, { i })).sort((a, b) => b.w - a.w || a.i - b.i), lo };
+  }
+  let FEED_HTML = '';
+  function recapCard() { FEED_HTML = feedIn(); return FEED_HTML ? `<section class="recap feed" id="fbox" aria-label="최근 진행">${FEED_HTML}</section>` : ''; }
+  function feedIn() {
+    const r = G.recap(), lr = G.lastRep(), S = G.state(), has = !!r && !!(r.n || r.ev || STOP[r.stop]), logs = feedLogs(S);
+    if (!has) return '';   // 아직 진행한 달이 없으면 칸을 만들지 않는다(첫 화면을 늘리지 않는다). 지난 소식은 한 달을 진행하면 이 칸에서 볼 수 있다
+    const more = !!U.recMore, e = has ? r.ev : null, long = !!e && String(e.text || '').length > 70, head = '';   // 제목 줄을 따로 두지 않는다(진행 줄의 앞머리가 "최근 진행"이다). 칸의 이름은 aria-label 에 있다
     const evHtml = e ? `<div class="evres ${e.checked ? (e.ok ? 'ok' : 'no') : ''} ${more ? '' : 'clamp'}"><p class="sec">${e.checked ? `${e.ok ? '성공' : '실패'} · ${esc(e.p)}% — ` : ''}${esc(e.title)}</p><p>${esc(e.text)}</p>${e.lines.length ? `<div class="chips">${e.lines.map(l => `<span class="chip ${/[-]\d|하락/.test(l) ? 'down' : 'up'}">${esc(l)}</span>`).join('')}</div>` : ''}</div>` : '';
-    const stop = STOP[r.stop] ? `<p class="stopwhy" role="status">${esc(STOP[r.stop])}</p>` : '';
+    const stop = has && STOP[r.stop] ? `<p class="stopwhy" role="status">${esc(STOP[r.stop])}</p>` : '';
     const moreBtn = n => `<button class="more" data-act="recmore" aria-expanded="${more}">${more ? '간단히' : n ? `자세히 · ${esc(n)}건 더` : '자세히'}</button>`;
-    if (!r.n) return `<div class="recap" aria-live="polite">${stop}${evHtml}${long ? `<div class="morerow">${moreBtn(0)}</div>` : ''}</div>`;
+    const F = has && r.n ? feedItems(r, logs) : { items: [], lo: 1e9 }, old = logs.filter(l => l.y * 100 + l.m < F.lo), oldOpen = !!U.logOpen;
+    const oldBtn = old.length ? `<button class="more" data-act="logopen" aria-expanded="${oldOpen}">${oldOpen ? '지난 소식 접기' : `지난 소식 ${esc(old.length)}건`}</button>` : '';
+    const oldList = oldOpen && old.length && (more || !has || !r.n) ? `<ul class="log flog">${old.slice(0, 20).map(l => `<li class="${esc(l.tone)}"><time>${esc(l.y)}년차 ${esc(l.m)}월</time><span>${esc(l.msg)}</span></li>`).join('')}</ul>` : '';
+    const line = x => `<p class="fd rvres ${x.cls}" data-k="${esc(x.key)}">${x.html}</p>`;
+    if (!has || !r.n) return `<p class="rline"><b class="fhead">최근 진행</b></p>${stop}${evHtml}${long || oldBtn ? `<div class="morerow">${long ? moreBtn(0) : ''}${oldBtn}</div>` : ''}${oldList}`;
     const range = r.n > 1 ? `${r.y0 !== r.y1 ? r.y0 + '년차 ' : ''}${r.m0}월~${r.y0 !== r.y1 ? r.y1 + '년차 ' : ''}${r.m1}월` : `${r.m1}월`, dc = r.cond1 - r.cond0;
-    const top = r.g.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2), au = r.au || [], S = G.state(), C = G.cash();   // 0.11.9: 가장 크게 변한 두 가지 + OVR
+    const top = r.g.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2), au = r.au || [], C = G.cash();
     const oc = ovrChip(r.o0, r.o1), whyTxt = lr && lr.why && WHY[lr.why] && typeof r.o0 === 'number' && r.o1 - r.o0 < .15 * r.n ? WHY[lr.why] : '';
-    const old = ` · 월급 +${money(r.sal)}${r.spent ? ` · 자동 관리 −${money(r.spent)}` : ''}`;
-    const cashTxt = r.n === 1 && C.known && !C.gap ? ` · 자금 ${msgn(C.net)} (${esc(cashParts(C.month))})` : old + (r.ap && AP.m0 != null && r.n > 1 ? ` · 잔고 ${money(AP.m0)} → ${money(S.money)}` : '');
-    const R = recapLines(r), key = R.lines.slice().sort((a, b) => b.big - a.big)[0], rest = R.lines.filter(x => x !== key), hidden = rest.length + R.news.length + (long ? 1 : 0), anyRival = R.lines.some(x => x.rival) || R.news.length > 0;
-    return `<div class="recap" aria-live="polite">${stop}${evHtml}<p class="rline"><b>${esc(range)}${r.ap ? ` 자동진행(${esc(r.n)}개월)` : ' 진행'}</b>${r.w + r.l ? ` · ${esc(r.w)}승 ${esc(r.l)}패` : ''}${cashTxt}${r.skip ? ` · 자동 건너뜀 ${esc(r.skip)}건` : ''} · 컨디션 ${dc > 0 ? '+' : ''}${esc(dc)}</p>
-      ${top.length || oc ? `<div class="chips">${top.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${esc(g[0])} ${g[1] > 0 ? '+' : ''}${esc(g[1])}</span>`).join('')}${oc}</div>` : ''}${whyTxt ? `<p class="why">${esc(whyTxt)}</p>` : ''}
-      ${key ? key.html : ''}${more ? rest.map(x => x.html).join('') + R.news.map(l => `<p class="rvnews"><b>라이벌 소식</b> ${esc(l.msg)}</p>`).join('') : ''}
-      <div class="morerow">${hidden ? moreBtn(hidden - (long ? 1 : 0)) : ''}${anyRival ? '<button class="more" data-act="tab" data-id="league" data-to="rivals">라이벌 기록 보기 ›</button>' : ''}${au.length ? `<button class="more" data-act="auopen" aria-expanded="${!!U.auOpen}">${U.auOpen ? '자동 선택 접기' : `자동 선택 ${esc(r.aun || au.length)}건`}</button>` : ''}${lr ? `<button class="more" data-act="repopen" aria-expanded="${!!U.repOpen}">${U.repOpen ? '결과 접기' : `${esc(r.m1)}월 결과 자세히`}</button>` : ''}</div>
+    const oldCash = ` · 월급 +${money(r.sal)}${r.spent ? ` · 자동 관리 −${money(r.spent)}` : ''}`;
+    const cashTxt = r.n === 1 && C.known && !C.gap ? ` · 자금 ${msgn(C.net)} (${esc(cashParts(C.month))})` : r.ap && AP.m0 != null && r.n > 1 ? ` · 자금 ${msgn(S.money - AP.m0)}` : oldCash;   // 여러 달: 순변동만(내역은 자산 탭의 돈의 흐름과 "결과 자세히"에 있다)
+    // 접힌 동안: 중요한 일 두 줄까지, 줄마다 두 줄 높이까지. 그 가운데 크게 볼 일(무게 4 이상)은 진행 줄보다 위에 둔다
+    const bigs = F.items.filter(x => x.w >= 4).slice(0, 2), shown = bigs.length ? bigs : F.items.filter(x => x.w >= 2).slice(0, 1),   // 큰 일이 있으면 그것만(둘까지), 없으면 그다음 것 하나
+      rest = F.items.filter(x => !shown.includes(x)), hi = shown.filter(x => x.w >= 4), lowS = shown.filter(x => x.w < 4);
+    const hidden = rest.length, anyRival = F.items.some(x => x.rival);
+    return `${head}${stop}${evHtml}<div class="fds ${more ? '' : 'clamp'}">${hi.map(line).join('')}</div>
+      <p class="rline"><b class="fhead">최근 진행</b> <b>${esc(range)}${r.ap ? ` 자동진행(${esc(r.n)}개월)` : ''}</b>${r.w + r.l ? ` · ${esc(r.w)}승 ${esc(r.l)}패` : ''}${cashTxt}${r.skip ? ` · 자동 건너뜀 ${esc(r.skip)}건` : ''} · 컨디션 ${dc > 0 ? '+' : ''}${esc(dc)}</p>
+      ${top.length || oc ? `<div class="chips grow">${oc}${top.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${esc(g[0])} ${g[1] > 0 ? '+' : ''}${esc(g[1])}</span>`).join('')}</div>` : ''}${whyTxt ? `<p class="why">${esc(whyTxt)}</p>` : ''}
+      <div class="fds ${more ? '' : 'clamp'}">${lowS.map(line).join('')}${more ? rest.map(line).join('') : ''}</div>
+      <div class="morerow">${hidden || long || old.length ? moreBtn(hidden) : ''}${more ? oldBtn : ''}${anyRival ? '<button class="more" data-act="tab" data-id="league" data-to="rivals">라이벌 기록 보기 ›</button>' : ''}${au.length ? `<button class="more" data-act="auopen" aria-expanded="${!!U.auOpen}">${U.auOpen ? '자동 선택 접기' : `자동 선택 ${esc(r.aun || au.length)}건`}</button>` : ''}${lr ? `<button class="more" data-act="repopen" aria-expanded="${!!U.repOpen}">${U.repOpen ? '결과 접기' : `${esc(r.m1)}월 결과 자세히`}</button>` : ''}</div>
+      ${oldList}
       ${U.auOpen && au.length ? `<ul class="aulist">${au.slice().reverse().map(x => `<li><b>자동 선택 · ${esc(AU_KIND[x.k] || '선택')}</b> ${esc(x.t)} → ${esc(x.c)}${x.r ? `<small>${esc(x.r)}</small>` : ''}</li>`).join('')}</ul>${(r.aun || 0) > au.length ? '<p class="fine">최근 것만 보인다. 전체는 기록 탭의 "최근 자동 선택"에 있다.</p>' : ''}` : ''}
-      ${lr && U.repOpen ? `<div class="repbody"><p class="eyebrow">${esc(lr.title)} · ${esc(lr.plan)}</p>${monthBody(lr)}</div>` : ''}</div>`;
+      ${lr && U.repOpen ? `<div class="repbody"><p class="eyebrow">${esc(lr.title)} · ${esc(lr.plan)}</p>${monthBody(lr)}</div>` : ''}`;
   }
   /* 자산 탭(0.11.4): 위에서부터 요약(켜진 수·매달 나가는 돈) → 한도 두 개 → 매달 반복 항목(펼쳐 둠) → 단계형 투자(접어 둠).
      항목은 한 줄(이름·상태 / 자동 스위치 / 사기)이고 설명은 이름을 눌렀을 때만 펼친다. 가격·조건·효과·자동 관리 규칙은 그대로다.
@@ -607,11 +621,11 @@ ${tip('goal')}
     return mi.type === 'nations' && S.year % 2 ? '리그 휴식기' : '진출 팀만 출전한다';
   }
   function tStats(S) {
-    const perks = D.CARDS.filter(c => c.perk && S.perks.includes(c.perk));
+    const perks = D.CARDS.filter(c => c.perk && S.perks.includes(c.perk)), key = roleKeys(G.role()).map(x => x[0].id);   // 0.11.10: 비중(%) 대신 "주요 능력치" 표시
     return `<div><p class="sec">능력치 <span class="chip">오른쪽 글자는 잠재력</span></p>
-      ${D.STATS.map(s => `<div class="stat"><span class="nm">${esc(s.name)}</span><div class="bar"><i style="width:${Math.floor(S.stats[s.id])}%"></i></div><span class="v">${Math.floor(S.stats[s.id])}</span><span class="pot ${G.pot(s.id)}">${G.pot(s.id)}</span><small>${esc(s.tip)} · 포지션 비중 ${Math.round(G.role().w[s.id] * 100)}%</small></div>`).join('')}</div>
+      ${D.STATS.map(s => `<div class="stat"><span class="nm">${esc(s.name)}</span><div class="bar"><i style="width:${Math.floor(S.stats[s.id])}%"></i></div><span class="v">${Math.floor(S.stats[s.id])}</span><span class="pot ${G.pot(s.id)}">${G.pot(s.id)}</span><small>${esc(s.tip)}${key.includes(s.id) ? ' · <b class="keyst">주요 능력치</b>' : ''}</small></div>`).join('')}</div>
       ${(() => { const r = G.role(); return `<div class="card guide"><b>${esc(r.name)} 가이드</b><br><span class="dim">${esc(r.easy)}</span>
-        <ul class="oinfo"><li>OVR에 크게 들어가는 능력치: ${roleKeys(r).map(([st, w]) => `${esc(st.name)} ${Math.round(w * 100)}% (지금 ${Math.floor(S.stats[st.id])})`).join(' · ')}</li>
+        <ul class="oinfo"><li>OVR에 크게 들어가는 능력치: ${roleKeys(r).map(([st]) => `${esc(st.name)} ${Math.floor(S.stats[st.id])}`).join(' · ')}</li>
         <li>이 포지션의 OVR을 빨리 올리는 계획: ${rolePlans(r).map(p => esc(p.name)).join(', ')}</li><li>주의: ${esc(r.care)}</li></ul></div>`; })()}
       <div><p class="sec">특성</p>${perks.length ? `<div class="stack">${perks.map(c => `<div class="card"><b>${esc(c.name)}</b><br><span class="dim">${esc(c.desc)}</span></div>`).join('')}</div>` : '<p class="dim">시즌이 끝날 때마다 성장 카드를 한 장 고른다.</p>'}</div>
       <div class="card"><b>${D.TRAITS.find(t => t.id === S.trait).name}</b><br><span class="dim">${D.TRAITS.find(t => t.id === S.trait).desc}</span></div>`;
@@ -643,12 +657,9 @@ ${tip('goal')}
       <div class="card"><b>올해 일정</b><br><span class="dim">2~4월 스프링 → 5월 미드시즌 컵 → 6~8월 서머 → 9월 네이션스컵(짝수 연차) → 10월 월드 파이널 → 11월 시상식·스토브리그</span></div>`;
   }
   function tRecord(S) {
-    const c = S.car, al = G.autoLog(), seen = {};
-    // 표시만 줄인다(0.11.6): 같은 연차·같은 달·같은 종류·글자까지 같은 소식은 한 번만. 저장된 소식(S.log)은 건드리지 않는다
-    const logs = S.log.filter(l => { const k = `${l.y}|${l.m}|${l.tone}|${l.msg}`; if (seen[k]) return false; seen[k] = 1; return true; });
-    return `<div><p class="sec">소식</p><ul class="log ${U.logOpen ? '' : 'clamp'}">${logs.slice(0, U.logOpen ? 20 : 4).map(l => `<li class="${esc(l.tone)}"><time>${esc(l.y)}년차 ${esc(l.m)}월</time><span>${esc(l.msg)}</span></li>`).join('') || '<li class="dim">아직 소식이 없다.</li>'}</ul>
-        ${logs.length > 4 || logs.slice(0, 4).some(l => String(l.msg).length > 38) ? `<button class="more" data-act="logopen" aria-expanded="${!!U.logOpen}">${U.logOpen ? '접기' : logs.length > 4 ? '소식 더 보기' : '소식 전체 글 보기'}</button>` : ''}</div>
-      ${al.length ? `<details class="aulog"><summary>최근 자동 선택 ${esc(al.length)}건</summary><ul class="aulist">${al.map(x => `<li><b>${esc(x.y)}년차 ${esc(x.m)}월 · ${esc(AU_KIND[x.k] || '선택')}</b> ${esc(x.t)} → ${esc(x.c)}</li>`).join('')}</ul></details>` : ''}
+    const c = S.car, al = G.autoLog();
+    // 0.11.10: 소식 목록은 플레이 탭의 "최근 진행"으로 옮겼다(저장된 소식은 그대로). 여기에는 통산 기록만 둔다
+    return `${al.length ? `<details class="aulog"><summary>최근 자동 선택 ${esc(al.length)}건</summary><ul class="aulist">${al.map(x => `<li><b>${esc(x.y)}년차 ${esc(x.m)}월 · ${esc(AU_KIND[x.k] || '선택')}</b> ${esc(x.t)} → ${esc(x.c)}</li>`).join('')}</ul></details>` : ''}
       ${(() => { const gl = G.goalLog(); return gl.length ? `<details class="aulog"><summary>시즌 목표 — ${gl.filter(x => x.ok === 1).length}번 달성 / ${gl.length}번</summary><ul class="aulist">${gl.slice().reverse().map(x => `<li><b>${esc(x.y)}년차</b> ${esc(x.t)} — ${x.ok === 1 ? '달성' : x.ok === 0 ? '미달성' : '판정 없음'}</li>`).join('')}</ul></details>` : ''; })()}
       <div><p class="sec">통산</p><div class="kv"><div><span>1군 경기</span><b>${esc(c.g)}</b></div><div><span>평균 평점</span><b>${c.g ? f1(c.rs / c.g) : '-'}</b></div><div><span>경기 MVP</span><b>${esc(c.mvp)}</b></div></div></div>
       <div><p class="sec">트로피·수상</p>${c.titles.length + c.awards.length ? `<div class="chips">${c.titles.map(t => `<span class="chip gold">${esc(t.y)}년차 ${esc(t.name)}</span>`).join('')}${c.awards.map(a => `<span class="chip">${esc(a.y)}년차 ${esc(a.name)}</span>`).join('')}</div>` : '<p class="dim">아직 비어 있다.</p>'}</div>
@@ -957,7 +968,7 @@ ${tip('goal')}
     const S = G.state();
     if (AP.on || !S || S.over || U.view !== 'game' || G.inDemo() || G.scene() || !S.tut.done) return;
     if (!G.autoStart()) { checkStale(); return render(); }
-    AP.on = true; AP.n = 0; AP.m0 = S.money; AP.cash = `잔고 ${money(S.money)}`; U.recMore = false; U.apOpen = false; U.repOpen = false; U.auOpen = false; U.tab = 'home'; SND.play('tap'); render(); apKick();
+    AP.on = true; AP.n = 0; AP.m0 = S.money; AP.cash = `잔고 ${money(S.money)}`; U.recMore = false; U.apOpen = false; U.repOpen = false; U.auOpen = false; U.logOpen = false; U.tab = 'home'; SND.play('tap'); render(); apKick();
   }
   function apKick() { clearTimeout(AP.t); AP.t = setTimeout(apTick, window.__pgApMs != null ? window.__pgApMs : G.apInfo().spd === 'fast' ? 40 : 260); }
   function apStop(why) { if (!AP.on) return; AP.on = false; clearTimeout(AP.t); AP.t = 0; G.autoStop(why); render(); }
@@ -973,12 +984,15 @@ ${tip('goal')}
     // 달마다 화면 전체를 다시 그리지 않는다: 진행 줄과 위쪽 숫자만 바꾼다
     const S = G.state(), el = document.getElementById('apline'), ec = document.getElementById('apcash'), hb = document.getElementById('hbox'), gb = document.getElementById('gbox'), pb = document.getElementById('pbox'), ov = app.querySelector('.lower .ovr b');
     AP.cash = cashMonth(G.cash().all.filter(x => x.seq > q0), S);
-    if (!el || !ec || !hb || !gb || !pb || app.querySelectorAll('#hbox, #gbox, #pbox, .stagebg .moneyrow, .stagebg .hstat, .stagebg .goal, .stagebg .plan5').length !== 7 || app.querySelectorAll('.stagebg .rvcard').length > 1) render();   // 하나라도 없거나 여럿이면 통째로 다시 그린다
+    if (!el || !ec || !hb || !gb || !pb || app.querySelectorAll('#hbox, #gbox, #pbox, .stagebg .moneyrow, .stagebg .hstat, .stagebg .goal, .stagebg .plan5').length !== 7 || app.querySelectorAll('.stagebg .rvcard').length > 1 || app.querySelectorAll('#fbox, .stagebg .recap').length > 1) render();   // 하나라도 없거나 여럿이면 통째로 다시 그린다
     else {
       el.textContent = apLine(S); ec.textContent = AP.cash; hb.innerHTML = hstatIn(S); if (ov) ov.textContent = Math.floor(G.ovr());
       const gh = goalIn(); if (gh !== GOAL_HTML) { GOAL_HTML = gh; gb.innerHTML = gh; }   // 목표의 진척: 글이 달라진 달에만 안쪽을 바꾼다
       // 이번 달 할 일(0.11.8): 엔진이 자동 휴식으로 바꿨거나 되돌린 달에만 안쪽을 바꾼다. 그 밖의 달에는 버튼을 건드리지 않는다
       const ph = planIn(S); if (ph !== PLAN_HTML) { PLAN_HTML = ph; pb.innerHTML = ph; }
+      // 최근 진행(0.11.10): 하나뿐인 칸의 안쪽을 새 결과로 바꾼다. 칸이 아직 없으면(첫 달) 본문 맨 끝에 하나 만든다
+      const fh = feedIn(), fb = document.getElementById('fbox');
+      if (fh !== FEED_HTML) { FEED_HTML = fh; if (fb && fh) fb.innerHTML = fh; else if (fb) fb.remove(); else if (fh) app.querySelector('main.content').insertAdjacentHTML('beforeend', `<section class="recap feed" id="fbox" aria-label="최근 진행">${fh}</section>`); }
       // 이번 달 라이벌전: 대진이 달라진 달에만 줄을 넣거나 빼거나 바꾼다(할 일 바로 다음 자리)
       const rh = rivalLine(); if (rh !== RV_HTML) { RV_HTML = rh; const old = app.querySelector('.stagebg .rvcard'); if (old) old.remove(); if (rh) pb.insertAdjacentHTML('afterend', rh); }
     }
@@ -1170,7 +1184,7 @@ ${tip('goal')}
       case 'projopen': U.projOpen = !U.projOpen; break;
       case 'proj': if (G.buyProj(id)) U.projOpen = true; break;
       case 'recmore': U.recMore = !U.recMore; break;
-      case 'cmore': U.C.more = U.C.more === id ? '' : id; break;
+
       case 'auopen': U.auOpen = !U.auOpen; break;
       case 'logopen': U.logOpen = !U.logOpen; break;
       case 'repopen': U.repOpen = !U.repOpen; break;
