@@ -4,7 +4,7 @@
 // git 이력(전체 복제)과 openssl 이 필요하다. 없으면 건너뛴다. 배포 서버(GitHub Pages)의 캐시 동작까지 흉내 내지는 않는다.
 const fs = require('fs'), path = require('path'), { execSync } = require('child_process');
 const { ROOT, serve, copySite, tmpDir, launch, reporter, open, RUNTIME } = require('./lib');
-const REV = { '0.6.0': 'c3b5a73', '0.7.0': 'c8da66c', '0.8.0': 'c95209c', '0.9.0': '68eb987', '0.10.0': 'd02c088', '0.10.1': 'b96d97d', '0.10.2': '857ea53', '0.11.0': 'e6086bc', '0.11.1': 'a3e1926', '0.11.2': '91090c1', '0.11.3': '0031727', '0.11.4': 'a39de95', '0.11.5': 'cb31d1a', '0.11.6': '4c14f12' };
+const REV = { '0.6.0': 'c3b5a73', '0.7.0': 'c8da66c', '0.8.0': 'c95209c', '0.9.0': '68eb987', '0.10.0': 'd02c088', '0.10.1': 'b96d97d', '0.10.2': '857ea53', '0.11.0': 'e6086bc', '0.11.1': 'a3e1926', '0.11.2': '91090c1', '0.11.3': '0031727', '0.11.4': 'a39de95', '0.11.5': 'cb31d1a', '0.11.6': '4c14f12', '0.11.7': '41c2caf' };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const put = (dir, from) => { for (const f of RUNTIME) { const d = path.join(dir, f); if (fs.existsSync(path.join(from, f))) { fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(from, f), d); } else if (fs.existsSync(d)) fs.unlinkSync(d); } };
 (async () => {
@@ -123,6 +123,13 @@ const put = (dir, from) => { for (const f of RUNTIME) { const d = path.join(dir,
     R.ok(s.ver === '0.11.6' && s.marks && s.marks.ui === '0.11.6' && !s.mixed && s.title, `v0.11.5 → v0.11.6: 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
     R.ok(await waitFor(pg, async () => same((await state(pg)).caches, ['pg-career-0.11.6'])), 'v0.11.6: 보관본 정리');
     R.ok(same(await pg.evaluate(() => ['pg_career_v1', 'pg_hall_v1', 'pg_legacy_v1', 'pg_ach_v1'].map(k => localStorage.getItem(k))), d7), 'v0.11.6: 갱신만으로 저장이 달라짐');
+  }
+  // 2-13) v0.11.7 배포(목표를 자금 아래로)
+  if (!['0.10.0', '0.10.1', '0.10.2', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.11.4', '0.11.5', '0.11.6', '0.11.7'].includes(now)) {
+    put(site, src['0.11.7']); await pg.reload(); await pg.waitForTimeout(600); s = await state(pg);
+    R.ok(s.ver === '0.11.7' && s.marks && s.marks.ui === '0.11.7' && !s.mixed && s.title, `v0.11.6 → v0.11.7: 한 벌로 열리지 않음 ${JSON.stringify(s)}`);
+    R.ok(await waitFor(pg, async () => same((await state(pg)).caches, ['pg-career-0.11.7'])), 'v0.11.7: 보관본 정리');
+    R.ok(same(await pg.evaluate(() => ['pg_career_v1', 'pg_hall_v1', 'pg_legacy_v1', 'pg_ach_v1'].map(k => localStorage.getItem(k))), d7), 'v0.11.7: 갱신만으로 저장이 달라짐');
   }
   // 3) 지금 버전 배포
   put(site, src[now]); await pg.reload(); await pg.waitForTimeout(600); s = await state(pg);

@@ -28,3 +28,4 @@ jobs:
       - run: node test/browser/run.js
       - run: node test/browser/update-chain.js
       - run: node test/browser/repro.js
+      - run: node test/browser/repro.js plan

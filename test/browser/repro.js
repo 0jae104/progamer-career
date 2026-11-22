@@ -4,7 +4,20 @@
 const { execSync } = require('child_process');
 const { ROOT, serve, launch, tmpDir, open } = require('./lib');
 const { run, digest, SAVE } = require('./apdom');
+/* 0.11.8: node test/browser/repro.js plan — v0.11.7(41c2caf)에서 "자동진행 중 자동 휴식에 들어가도 홈의 이번 달 할 일이 그대로"인 결함을 재현한다 */
+async function planRepro() {
+  const dir = tmpDir('repro-plan'); execSync(`git -C "${ROOT}" archive 41c2caf | tar -x -C "${dir}"`, { stdio: 'pipe', shell: '/bin/sh' });
+  const srv = await serve(dir), browser = await launch();
+  const mk = await open(browser, srv.url), raw = await mk.pg.evaluate(SAVE, [3, 'first']), ver = await mk.pg.evaluate(() => PG.VERSION); await mk.ctx.close();
+  const r = await run(browser, srv.url, raw, { w: 390, h: 844, want: 8, plan: 'scrim', rest: true, seed: 21, script: [{ at: 1, cond: 22, wrist: 90 }, { at: 3, cond: 96, wrist: 90 }, { at: 6, cond: 90, wrist: 24 }] }), d = digest(r.log), m = r.log.filter(x => x.k && !x.stop && x.on);
+  console.log(`v${ver} 390×844 자동진행 ${d.months}개월(스크림에서 시작, 컨디션·손목을 정해 둔 값으로 낮춤): 화면의 이번 달 할 일이 실제와 다른 달 ${d.badPlan}개 · 라이벌전 줄이 이번 달 대진과 다른 달 ${d.badRv}개`);
+  for (const x of m.filter(x => x.planOk !== true).slice(0, 4)) console.log(`  ${x.ym}: 실제 ${x.planNow}(돌아갈 일 ${x.back || '-'}) / 화면에 눌린 버튼 ${x.pressed} / 설명 "${x.planTxt}"`);
+  await browser.close(); await srv.close();
+  console.log(d.badPlan > 0 ? `재현됨: v${ver}에서는 자동 휴식에 들어가도 화면의 할 일이 바뀌지 않는다` : `재현되지 않음(v${ver})`);
+  process.exit(d.badPlan > 0 ? 0 : 1);
+}
 (async () => {
+  if (process.argv[2] === 'plan') return planRepro();
   const REV = process.argv[2] || 'cb31d1a', dir = tmpDir('repro');
   execSync(`git -C "${ROOT}" archive ${REV} | tar -x -C "${dir}"`, { stdio: 'pipe', shell: '/bin/sh' });
   const srv = await serve(dir), browser = await launch();

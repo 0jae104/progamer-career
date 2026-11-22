@@ -19,6 +19,8 @@ const HOOK = () => {
   window.__ap = [];
   const f = PG.autoMonth;
   PG.autoMonth = function () {
+    const sc = (window.__script || []).find(x => x.at === window.__calls); window.__calls = (window.__calls || 0) + 1;
+    if (sc && !PG.scene()) { const S0 = PG.state(); if (sc.cond != null) S0.cond = sc.cond; if (sc.wrist != null) S0.wrist = sc.wrist; }
     const before = PG.state().money, seq = PG.cash ? PG.cash().seq : null, r = f.apply(this, arguments);
     setTimeout(() => {
       const S = PG.state(), q = s => document.querySelectorAll(s), mr = q('.stagebg .moneyrow'), hs = q('.stagebg .hstat .hs b'), pause = document.querySelector('[data-act=ap-pause]');
@@ -43,6 +45,15 @@ const HOOK = () => {
         const main = document.querySelector('main.content'); row.firstKid = main && main.firstElementChild ? main.firstElementChild.id : '';
         row.goalH = Math.round(gEl.getBoundingClientRect().height); row.planBottom = Math.round(p5.getBoundingClientRect().bottom); row.footTop = Math.round(document.querySelector('.foot').getBoundingClientRect().top);
       }
+      // 이번 달 할 일(0.11.8): 눌린 버튼·이름·자동 휴식 안내가 엔진의 지금 할 일과 같은지. 라이벌전 줄도 엔진의 이번 달 대진과 같은지
+      const pb = [...q('.stagebg .plan5 button')], on = pb.filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.id), fxEl = document.querySelector('.stagebg .planfx'), fxT = fxEl ? fxEl.textContent : '';
+      const A = PG.apInfo(), cur = PG.D.PLANS.find(x => x.id === S.plan), bk = A.back && S.plan === 'rest' ? PG.D.PLANS.find(x => x.id === A.back) : null;
+      row.planNow = S.plan; row.back = A.back || ''; row.pressed = on.join(','); row.planTxt = fxT.replace(/\s+/g, ' ').slice(0, 70);
+      row.planOk = on.length === 1 && on[0] === S.plan && fxT.includes(cur.name) && fxT.includes(cur.desc) && (bk ? /자동 휴식 중/.test(fxT) && fxT.includes(bk.name) : !/자동 휴식 중/.test(fxT));
+      if (!window.__pb) window.__pb = pb[0]; row.planSame = window.__pb === pb[0]; window.__pb = pb[0];   // 같은 버튼 요소인지(다시 만들어졌는지)
+      const fxs = PG.rivalFixtures(), rc = q('.stagebg .rvcard'), rt = rc.length ? (rc[0].getAttribute('aria-label') || '') : '';
+      row.rvWant = fxs.length; row.rvCards = rc.length; row.rvOk = fxs.length ? rc.length === 1 && fxs.every(f => rt.includes(f.nick) && rt.includes(`통산 ${f.w}승 ${f.l}패`)) : rc.length === 0;
+      row.cond = Math.round(S.cond); row.wrist = Math.round(S.wrist); row.fresh = !!window.__fresh; window.__fresh = false;   // fresh = 이 달 앞에서 자동진행을 (다시) 시작했다: 화면을 통째로 그린 직후
       row.ym = S.year * 100 + S.m;
       window.__ap.push(row);
     }, 0);
@@ -56,7 +67,7 @@ const go = async pg => {
   await clear(pg);
   if (await pg.evaluate(() => PG.state().over)) return false;
   if (await pg.evaluate(() => PG_UI.state.tab !== 'home')) await pg.click('[role=tab][data-id=home]');
-  await pg.click('[data-act=ap-go]'); await pg.waitForTimeout(40);
+  await pg.evaluate(() => { window.__fresh = true; }); await pg.click('[data-act=ap-go]'); await pg.waitForTimeout(40);
   if (await pg.$('.sheet [data-act=ap-start]')) await pg.click('.sheet [data-act=ap-start]');
   return true;
 };
@@ -67,6 +78,7 @@ async function run(browser, url, raw, o) {
   await pg.evaluate(x => { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); localStorage.setItem('pg_career_v1', x); }, raw);
   await pg.reload(); await pg.waitForTimeout(250); await pg.click('[data-act=continue]'); await pg.waitForTimeout(150);
   await pg.evaluate(a => { PG.seed(a.seed || 5); if (a.auto) { for (const id of a.auto) PG.setAuto(id, true); } if (a.give) { PG.state().money += a.give; PG.save(); } }, { seed: o.seed, auto: o.auto, give: o.give || 0 });
+  await pg.evaluate(a => { window.__script = a.script || []; window.__calls = 0; if (a.plan) PG.setPlan(a.plan); if (a.rest != null) PG.setAp('rest', a.rest); if (a.injury0) { PG.state().injury = 0; } }, { script: o.script, plan: o.plan, rest: o.rest, injury0: o.script ? 1 : 0 });
   await pg.evaluate(HOOK);
   if (o.goalOpen) { await pg.click('[data-act=goalopen]'); await pg.waitForTimeout(40); }
   const money0 = await pg.evaluate(() => PG.state().money);
@@ -101,10 +113,13 @@ async function run(browser, url, raw, o) {
 function digest(log) {
   const m = log.filter(x => x.k && !x.stop && x.on);   // 달이 넘어갔고 계속 달리는 중(부분 갱신이 일어난 달)
   const max = (a, f) => a.reduce((v, x) => Math.max(v, f(x)), 0);
+  const cont = x => { const i = log.indexOf(x), p = log[i - 1]; return !x.fresh && !!p && p.k > 0 && !p.stop && p.on; };   // 앞 달도 멈추지 않고 달린 달(그 사이에 화면을 통째로 다시 그리지 않았다)
   let grow = 0, run = 0; for (let i = 1; i < m.length; i++) { if (m[i].planTop > m[i - 1].planTop) { run++; grow = Math.max(grow, run); } else run = 0; }
   return { plan0: m.length ? m[0].planTop : 0, plan1: m.length ? Math.max(...m.map(x => x.planTop)) : 0, n: m.length, months: log.reduce((a, x) => a + x.k, 0), maxRows: max(m, x => x.rows), maxHstat: max(m, x => x.hstat), minRows: m.reduce((v, x) => Math.min(v, x.rows), 99), maxMainH: max(m, x => x.mainH), minMainH: m.reduce((v, x) => Math.min(v, x.mainH), 1e9), maxDocH: max(m, x => x.docH), maxBtns: max(m, x => x.btns), minBtns: m.reduce((v, x) => Math.min(v, x.btns), 1e9), maxNodes: max(m, x => x.nodes), minNodes: m.reduce((v, x) => Math.min(v, x.nodes), 1e9),
     staleMoney: m.filter(x => x.first !== x.want).length, badMoney: m.filter(x => x.shown !== x.want).length, badStat: m.filter(x => x.hs !== x.hsWant).length, badOvr: m.filter(x => x.ovr !== x.ovrWant).length, badPause: m.filter(x => x.pause !== true).length, growRun: grow,
-    badGoalN: m.filter(x => x.goals !== 1 || x.gbox !== 1 || x.hbox !== 1 || x.aplines !== 1 || x.apcashes !== 1).length, badGoalTxt: m.filter(x => x.goalOk !== true).length, badOrder: m.filter(x => x.order !== true || x.firstKid !== 'gbox').length, goalTexts: new Set(m.map(x => x.goalTxt)).size, maxGoalH: max(m, x => x.goalH || 0), badPlanSeen: m.filter(x => !(x.planBottom <= x.footTop + 1)).length };
+    badGoalN: m.filter(x => x.goals !== 1 || x.gbox !== 1 || x.hbox !== 1 || x.aplines !== 1 || x.apcashes !== 1).length, badGoalTxt: m.filter(x => x.goalOk !== true).length, badOrder: m.filter(x => x.order !== true || x.firstKid !== 'gbox').length, goalTexts: new Set(m.map(x => x.goalTxt)).size, maxGoalH: max(m, x => x.goalH || 0), badPlanSeen: m.filter(x => !(x.planBottom <= x.footTop + 1)).length,
+    badPlan: m.filter(x => x.planOk !== true).length, badRv: m.filter(x => x.rvOk !== true).length, rvMonths: m.filter(x => x.rvWant > 0).length, rests: m.filter((x, i) => x.planNow === 'rest' && x.back && (i === 0 || m[i - 1].planNow !== 'rest')).length, backs: m.filter((x, i) => i > 0 && m[i - 1].planNow === 'rest' && m[i - 1].back && x.planNow !== 'rest' && !x.back).length,
+    rebuilt: m.filter((x, i) => i > 0 && !x.planSame).length, needless: m.filter((x, i) => i > 0 && !x.planSame && x.planNow === m[i - 1].planNow && x.back === m[i - 1].back && cont(x)).length };
 }
 module.exports = async function apdom(browser, url, R) {
   const mk = await open(browser, url), first = await mk.pg.evaluate(SAVE, [3, 'first']), second = await mk.pg.evaluate(SAVE, [4, 'second']); await mk.ctx.close();
@@ -116,6 +131,9 @@ module.exports = async function apdom(browser, url, R) {
     { name: '390×844 2군 24개월(목표를 펼쳐 둔 채로)', raw: second, w: 390, h: 844, want: 24, goalOpen: true, pauseAt: 0, tabAt: 7, seed: 15 },
     { name: '320×568 2군 12개월(목표를 펼쳐 둔 채로)', raw: second, w: 320, h: 568, want: 12, goalOpen: true, seed: 16 },
     { name: '375×812 2군 12개월(자동 관리 끔)', raw: second, w: 375, h: 812, want: 12, pauseAt: 0, tabAt: 3, seed: 13 },
+    // 정해 둔 값(0.11.8): 스크림으로 시작해 컨디션을 낮춰 자동 휴식 → 회복시켜 복귀 → 손목을 낮춰 다시 휴식 → 복귀. 난수에 맡기지 않는다
+    { name: '390×844 1군 자동 휴식·복귀(정해 둔 값)', raw: first, w: 390, h: 844, want: 14, plan: 'scrim', rest: true, seed: 21, restCase: true, script: [{ at: 1, cond: 22, wrist: 90 }, { at: 3, cond: 96, wrist: 90 }, { at: 6, cond: 90, wrist: 24 }, { at: 8, cond: 96, wrist: 92 }, { at: 10, cond: 30, wrist: 90 }, { at: 12, cond: 97, wrist: 92 }] },
+    { name: '320×568 1군 자동 휴식·복귀(정해 둔 값, 분석에서 시작)', raw: first, w: 320, h: 568, want: 12, plan: 'review', rest: true, seed: 22, restCase: true, script: [{ at: 1, cond: 18, wrist: 88 }, { at: 3, cond: 95, wrist: 90 }, { at: 5, cond: 92, wrist: 20 }, { at: 7, cond: 96, wrist: 91 }] },
     { name: '430×932 1군 6개월(자동 관리 켬)', raw: first, w: 430, h: 932, want: 6, auto: AUTO.slice(0, 3), seed: 14 },
   ];
   for (const c of cases) {
@@ -137,6 +155,11 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(d.badOrder === 0, `${c.name}: 순서가 자금 → 목표 → 이번 달 할 일이 아닌 달 ${d.badOrder}개`);
     if (c.goalOpen) R.ok(m.every(x => x.goalOpen === 'true' && x.bars === x.barsWant && x.bars > 0), `${c.name}: 펼쳐 둔 목표가 달리는 중에 접히거나 막대가 사라짐`);
     else { R.ok(m.every(x => x.goalOpen === 'false' && x.bars === 0), `${c.name}: 접어 둔 목표가 달리는 중에 펼쳐짐`); R.ok(d.badPlanSeen === 0 && d.maxGoalH <= (c.w <= 320 ? 112 : 90), `${c.name}: 접힌 목표 때문에 할 일 다섯 칸이 첫 화면 밖으로 나간 달 ${d.badPlanSeen}개(목표 높이 최대 ${d.maxGoalH}px)`); }
+    // 이번 달 할 일(0.11.8): 달마다 눌린 버튼 하나 = 엔진의 지금 할 일, 설명과 자동 휴식 안내도 같다. 라이벌전 줄 = 엔진의 이번 달 대진
+    R.ok(d.badPlan === 0, `${c.name}: 화면의 이번 달 할 일이 실제와 다른 달 ${d.badPlan}개 ${JSON.stringify(m.filter(x => x.planOk !== true).slice(0, 3).map(x => `실제 ${x.planNow}(돌아갈 일 ${x.back || '-'}) / 화면 ${x.pressed} "${x.planTxt}"`))}`);
+    R.ok(d.badRv === 0, `${c.name}: 화면의 라이벌전 줄이 이번 달 대진과 다른 달 ${d.badRv}개(라이벌전이 있는 달 ${d.rvMonths}개) ${JSON.stringify(m.filter(x => x.rvOk !== true).slice(0, 3).map(x => `대진 ${x.rvWant} / 줄 ${x.rvCards}`))}`);
+    R.ok(d.needless === 0, `${c.name}: 할 일이 바뀌지 않았는데 버튼이 다시 만들어진 달 ${d.needless}개`);
+    if (c.restCase) R.ok(d.rests >= 2 && d.backs >= 2, `${c.name}: 자동 휴식 ${d.rests}번·복귀 ${d.backs}번(각 2번 이상 일어나야 검사가 된다) ${m.map(x => `${x.planNow}${x.back ? '(' + x.back + ')' : ''}`).join('→')}`);
     if (c.planAt != null) R.ok(!!r.ev.plan && r.ev.plan.seen && r.ev.plan.now === r.ev.plan.want && r.ev.plan.goals === 1 && r.ev.plan.rows === 1, `${c.name}: 달리는 중에 할 일을 한 번 눌러 바꾸지 못함 ${JSON.stringify(r.ev.plan)}`);
     R.ok(c.tabAt ? r.ev.tabs === 1 && r.ev.toMoney === 'money' : true, `${c.name}: 자금 줄을 눌러 자산 탭으로 가지 못함(${r.ev.toMoney})`);
     R.ok(c.pauseAt != null ? r.ev.pauses === 1 : true, `${c.name}: 멈춤·재개를 해 보지 못함`);
@@ -152,7 +175,7 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(r.end.cash && r.end.cash.n < 240 && r.end.cash.gap === 0 && Math.abs(r.end.money0 + r.end.cash.sum - r.end.money) < 1e-6, `${c.name}: 처음 잔고 ${r.end.money0} + 내역 합 ${r.end.cash && r.end.cash.sum} ≠ 마지막 잔고 ${r.end.money} (빠진 변동 ${r.end.cash && r.end.cash.gap}건)`);
     if (!c.auto) R.ok(all.every(x => !x.auto && !x.repAuto), `${c.name}: 자동 관리를 껐는데 자동 지출이 있음`);
     const spent = all.reduce((a, x) => a - (x.auto || 0), 0), sal = all.reduce((a, x) => a + (x.sal || 0), 0);
-    R.note(c.name, `${d.months}개월(부분 갱신 ${d.n}달) · 시작 ${r.ev.starts}번 · 멈춤 ${r.ev.pauses} · 탭 왕복 ${r.ev.tabs} · 자금 버튼 ${d.minRows}~${d.maxRows}개 · 상태 영역 ${d.maxHstat}개 · 할 일 칸 위치 ${d.plan0}~${d.plan1}px · 버튼 ${d.minBtns}~${d.maxBtns} · 월급 합 ${sal} · 자동 지출 합 ${spent} · 잔고 ${r.end.money0} + 내역 ${JSON.stringify(r.end.cash.kinds)} = ${r.end.money} · 목표 칸 항상 1개, 요약이 바뀐 횟수 ${d.goalTexts}가지, 높이 최대 ${d.maxGoalH}px${r.ev.plan ? ` · 달리는 중 할 일 ${r.ev.plan.from}→${r.ev.plan.now}(자동진행 ${r.ev.plan.on ? '계속' : '멈춤'})` : ''} · 멈춘 장면 ${JSON.stringify(r.ev.scenes)}`);
+    R.note(c.name, `${d.months}개월(부분 갱신 ${d.n}달) · 시작 ${r.ev.starts}번 · 멈춤 ${r.ev.pauses} · 탭 왕복 ${r.ev.tabs} · 자금 버튼 ${d.minRows}~${d.maxRows}개 · 상태 영역 ${d.maxHstat}개 · 할 일 칸 위치 ${d.plan0}~${d.plan1}px · 버튼 ${d.minBtns}~${d.maxBtns} · 월급 합 ${sal} · 자동 지출 합 ${spent} · 잔고 ${r.end.money0} + 내역 ${JSON.stringify(r.end.cash.kinds)} = ${r.end.money} · 목표 칸 항상 1개, 요약이 바뀐 횟수 ${d.goalTexts}가지, 높이 최대 ${d.maxGoalH}px· 할 일 표시 불일치 ${d.badPlan}달(자동 휴식 ${d.rests}번·복귀 ${d.backs}번, 버튼을 다시 만든 달 ${d.rebuilt}개) · 라이벌전 줄 불일치 ${d.badRv}달(라이벌전 달 ${d.rvMonths}개)${c.restCase ? ` · 달마다 ${m.map(x => `${x.planNow}${x.back ? '←' + x.back : ''}[${x.pressed}]`).join(' ')}` : ''}${r.ev.plan ? ` · 달리는 중 할 일 ${r.ev.plan.from}→${r.ev.plan.now}(자동진행 ${r.ev.plan.on ? '계속' : '멈춤'})` : ''} · 멈춘 장면 ${JSON.stringify(r.ev.scenes)}`);
   }
 };
 module.exports.run = run; module.exports.digest = digest; module.exports.SAVE = SAVE;
