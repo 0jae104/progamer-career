@@ -54,6 +54,10 @@ const HOOK = () => {
       const fxs = PG.rivalFixtures(), rc = q('.stagebg .rvcard'), rt = rc.length ? (rc[0].getAttribute('aria-label') || '') : '';
       row.rvWant = fxs.length; row.rvCards = rc.length; row.rvOk = fxs.length ? rc.length === 1 && fxs.every(f => rt.includes(f.nick) && rt.includes(`통산 ${f.w}승 ${f.l}패`)) : rc.length === 0;
       row.cond = Math.round(S.cond); row.wrist = Math.round(S.wrist); row.fresh = !!window.__fresh; window.__fresh = false;   // fresh = 이 달 앞에서 자동진행을 (다시) 시작했다: 화면을 통째로 그린 직후
+      // 0.11.9: 진행 줄의 성장 토막이 엔진의 방금 보고(lastRep)와 같은지, 시즌 프로젝트를 자동으로 사지 않았는지
+      if (PG.projInfo) { const lr0 = PG.lastRep(), g0 = lr0 && (lr0.growth || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0], a0 = lr0 ? Math.floor(lr0.o0 + 1e-9) : 0, b0 = lr0 ? Math.floor(lr0.o1 + 1e-9) : 0;
+        row.growOk = !!lr0 && typeof lr0.o1 === 'number' && row.line.includes(a0 !== b0 ? `OVR ${a0}→${b0}` : `OVR ${lr0.o1.toFixed(1)}`) && (!g0 || row.line.includes(`${g0[0]} ${g0[1] > 0 ? '+' : ''}${g0[1]}`)) && Math.abs(lr0.o1 - Math.round(PG.ovr() * 10) / 10) < .051;
+        row.proj = !!S.proj; const ael = document.getElementById('apline'); row.lineH = ael ? Math.round(ael.getBoundingClientRect().height) : 0; if (!ael) row.growOk = null; }
       row.ym = S.year * 100 + S.m;
       window.__ap.push(row);
     }, 0);
@@ -119,6 +123,7 @@ function digest(log) {
     staleMoney: m.filter(x => x.first !== x.want).length, badMoney: m.filter(x => x.shown !== x.want).length, badStat: m.filter(x => x.hs !== x.hsWant).length, badOvr: m.filter(x => x.ovr !== x.ovrWant).length, badPause: m.filter(x => x.pause !== true).length, growRun: grow,
     badGoalN: m.filter(x => x.goals !== 1 || x.gbox !== 1 || x.hbox !== 1 || x.aplines !== 1 || x.apcashes !== 1).length, badGoalTxt: m.filter(x => x.goalOk !== true).length, badOrder: m.filter(x => x.order !== true || x.firstKid !== 'gbox').length, goalTexts: new Set(m.map(x => x.goalTxt)).size, maxGoalH: max(m, x => x.goalH || 0), badPlanSeen: m.filter(x => !(x.planBottom <= x.footTop + 1)).length,
     badPlan: m.filter(x => x.planOk !== true).length, badRv: m.filter(x => x.rvOk !== true).length, rvMonths: m.filter(x => x.rvWant > 0).length, rests: m.filter((x, i) => x.planNow === 'rest' && x.back && (i === 0 || m[i - 1].planNow !== 'rest')).length, backs: m.filter((x, i) => i > 0 && m[i - 1].planNow === 'rest' && m[i - 1].back && x.planNow !== 'rest' && !x.back).length,
+    badGrow: m.filter(x => x.growOk === false).length, anyProj: log.filter(x => x.proj).length, maxLineH: max(m, x => x.lineH || 0),
     rebuilt: m.filter((x, i) => i > 0 && !x.planSame).length, needless: m.filter((x, i) => i > 0 && !x.planSame && x.planNow === m[i - 1].planNow && x.back === m[i - 1].back && cont(x)).length };
 }
 module.exports = async function apdom(browser, url, R) {
@@ -145,7 +150,8 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(d.badMoney === 0 && d.staleMoney === 0, `${c.name}: 화면의 자금이 실제 자금과 다른 달 ${d.badMoney}개(첫 줄이 낡은 달 ${d.staleMoney}개)`);
     R.ok(d.badStat === 0 && d.badOvr === 0, `${c.name}: 화면의 상태·OVR이 실제와 다른 달 ${d.badStat}·${d.badOvr}개`);
     R.ok(d.badPause === 0, `${c.name}: 멈춤 버튼이 가려지거나 화면 밖인 달 ${d.badPause}개`);
-    R.ok(d.maxBtns - d.minBtns <= 2 && d.maxNodes - d.minNodes <= 16, `${c.name}: 달리는 중 버튼·요소 수가 크게 변함(라이벌전 줄처럼 달에 따라 있고 없는 것만 허용)(버튼 ${d.minBtns}~${d.maxBtns}, 요소 ${d.minNodes}~${d.maxNodes})`);
+    R.ok(d.maxBtns - d.minBtns <= 2 && d.maxNodes - d.minNodes <= (c.goalOpen ? 24 : 16),   // 목표를 펼쳐 두면 목표의 종류에 따라 조건 막대 수가 달라진다
+      `${c.name}: 달리는 중 버튼·요소 수가 크게 변함(라이벌전 줄처럼 달에 따라 있고 없는 것만 허용)(버튼 ${d.minBtns}~${d.maxBtns}, 요소 ${d.minNodes}~${d.maxNodes})`);
     R.ok(d.growRun <= 1 && d.plan1 - d.plan0 <= (c.goalOpen ? 60 : 24) && d.maxMainH - d.minMainH <= 24, `${c.name}: 달리는 중 이번 달 할 일 칸이 아래로 밀림(${d.plan0}→${d.plan1}px, 이어서 밀린 달 ${d.growRun}, 위 칸 높이 ${d.minMainH}~${d.maxMainH}px)`);
     if (!c.goalOpen) R.ok(d.plan1 < c.h - 150, `${c.name}: 이번 달 할 일 칸이 화면 아래쪽으로 밀려남(${d.plan1}px / 화면 ${c.h}px)`);
     R.ok(m.every(x => x.plan === 5), `${c.name}: 이번 달 할 일 다섯 칸이 사라진 달이 있음`);
@@ -159,6 +165,8 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(d.badPlan === 0, `${c.name}: 화면의 이번 달 할 일이 실제와 다른 달 ${d.badPlan}개 ${JSON.stringify(m.filter(x => x.planOk !== true).slice(0, 3).map(x => `실제 ${x.planNow}(돌아갈 일 ${x.back || '-'}) / 화면 ${x.pressed} "${x.planTxt}"`))}`);
     R.ok(d.badRv === 0, `${c.name}: 화면의 라이벌전 줄이 이번 달 대진과 다른 달 ${d.badRv}개(라이벌전이 있는 달 ${d.rvMonths}개) ${JSON.stringify(m.filter(x => x.rvOk !== true).slice(0, 3).map(x => `대진 ${x.rvWant} / 줄 ${x.rvCards}`))}`);
     R.ok(d.needless === 0, `${c.name}: 할 일이 바뀌지 않았는데 버튼이 다시 만들어진 달 ${d.needless}개`);
+    R.ok(d.badGrow === 0 && d.anyProj === 0, `${c.name}: 진행 줄의 성장 표시가 엔진의 보고와 다른 달 ${d.badGrow}개, 자동으로 산 시즌 프로젝트 ${d.anyProj}`);
+    R.ok(d.maxLineH <= (c.w <= 330 ? 44 : 50), `${c.name}: 진행 줄이 너무 길어짐(높이 ${d.maxLineH}px)`);
     if (c.restCase) R.ok(d.rests >= 2 && d.backs >= 2, `${c.name}: 자동 휴식 ${d.rests}번·복귀 ${d.backs}번(각 2번 이상 일어나야 검사가 된다) ${m.map(x => `${x.planNow}${x.back ? '(' + x.back + ')' : ''}`).join('→')}`);
     if (c.planAt != null) R.ok(!!r.ev.plan && r.ev.plan.seen && r.ev.plan.now === r.ev.plan.want && r.ev.plan.goals === 1 && r.ev.plan.rows === 1, `${c.name}: 달리는 중에 할 일을 한 번 눌러 바꾸지 못함 ${JSON.stringify(r.ev.plan)}`);
     R.ok(c.tabAt ? r.ev.tabs === 1 && r.ev.toMoney === 'money' : true, `${c.name}: 자금 줄을 눌러 자산 탭으로 가지 못함(${r.ev.toMoney})`);

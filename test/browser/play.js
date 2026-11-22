@@ -421,4 +421,72 @@ module.exports = async function play(browser, url, R) {
     R.ok(m.clean(), `${w}: 선수 등록 화면 배치 ${m.line()}`); R.note(`0.11.6 선수 등록 ${w}x${h}`, m.line());
     R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
   }
+  // I. 0.11.9: 성장의 결과(OVR 칩·이유), 목표의 남은 조건, 자산의 반복 지출 줄·단계형 설명·시즌 프로젝트. 다섯 크기에서 배치도 본다
+  for (const [w, h] of [[320, 568], [375, 667], [390, 664], [390, 844], [430, 932]]) {
+    const { ctx, pg } = await open(browser, url, { w, h, init: 'window.__pgApMs = 15;' }), m = auditor(pg);
+    await load(pg, raw, 61);
+    await pg.evaluate(() => { PG.setAuto('counsel', true); PG.setAuto('physio', true); PG.setPlan('scrim'); PG.state().cond = 85; PG.state().wrist = 85; });
+    const taps0 = await pg.evaluate(() => document.querySelectorAll('.veil').length);
+    await pg.click('[data-act=next]'); await pg.waitForTimeout(150); await clear(pg);
+    // 1) 한 달 뒤 요약: 가장 크게 변한 능력치 두 개 이하 + OVR 칩. 값은 엔진의 보고와 같다
+    const g1 = await pg.evaluate(() => {
+      const lr = PG.lastRep(), r = PG.recap(), chips = [...document.querySelectorAll('.recap .chips .chip')].map(e => e.textContent), oc = document.querySelector('.recap .chip.ovrc'), a = Math.floor(lr.o0 + 1e-9), b = Math.floor(lr.o1 + 1e-9);
+      const top = (lr.growth || []).slice().sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 2).map(g => `${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]}`), foot = document.querySelector('.foot').getBoundingClientRect().top;
+      return { chips, oc: oc ? oc.textContent : '', wantOvr: a !== b ? `OVR ${a} → ${b}` : `OVR ${b} · 다음까지 ${(Math.round((b + 1 - lr.o1) * 10) / 10).toFixed(1)}`, top, real: Math.abs(lr.o1 - Math.round(PG.ovr() * 10) / 10) < .051, r: [r.o0, r.o1, lr.o0, lr.o1], why: (document.querySelector('.recap .why') || {}).textContent || '', lrWhy: lr.why || '',
+        plan: document.querySelector('.plan5').getBoundingClientRect().bottom <= foot + 1, next: !!document.querySelector('[data-act=next]:not([disabled])'), lines: document.querySelectorAll('.recap > p').length, veils: document.querySelectorAll('.veil').length };
+    });
+    R.ok(g1.oc === g1.wantOvr && g1.real && g1.r[0] === g1.r[2] && g1.r[1] === g1.r[3] && g1.top.every(t => g1.chips.includes(t)) && g1.chips.length <= 3, `${w}×${h}: 한 달 요약의 성장 칩이 엔진의 보고와 다름 ${JSON.stringify(g1)}`);
+    R.ok(g1.plan && g1.next && g1.veils === taps0 && g1.lines <= 4 && (g1.lrWhy ? g1.why.length > 0 : g1.why === ''), `${w}×${h}: 성장 표시 때문에 할 일·진행 버튼이 가려지거나 창이 늘거나 이유 줄이 엔진과 다름 ${JSON.stringify(g1).slice(0, 200)}`);
+    await m('홈(성장 칩)');
+    // 2) 거의 오르지 않은 달의 이유: 한계에 붙인 선수 → "한계", 쉰 달 → "쉬어서". 엔진이 고른 이유와 같은 글이어야 한다
+    await pg.evaluate(() => { const S = PG.state(); for (const k in S.stats) S.stats[k] = S.caps[k] - .2; S.cond = 85; S.wrist = 85; PG.setPlan('scrim'); PG.save(); });
+    await pg.click('[data-act=next]'); await pg.waitForTimeout(150); await clear(pg);
+    const g2 = await pg.evaluate(() => ({ lr: PG.lastRep().why, why: (document.querySelector('.recap .why') || {}).textContent || '', n: document.querySelectorAll('.recap .why').length, over: document.documentElement.scrollWidth - innerWidth }));
+    R.ok(g2.lr === 'cap' && /한계에 가까워/.test(g2.why) && g2.n === 1 && g2.over <= 0, `${w}×${h}: 한계에 막힌 달의 이유 ${JSON.stringify(g2)}`);
+    await m('홈(이유: 한계)');
+    await pg.evaluate(() => { PG.setPlan('rest'); }); await pg.click('[data-act=next]'); await pg.waitForTimeout(150); await clear(pg);
+    const g3 = await pg.evaluate(() => ({ lr: PG.lastRep().why, why: (document.querySelector('.recap .why') || {}).textContent || '' }));
+    R.ok(g3.lr === 'rest' && /쉬어서/.test(g3.why), `${w}×${h}: 쉰 달의 이유 ${JSON.stringify(g3)}`);
+    // "○월 결과 자세히"에도 같은 OVR 칩과 이유가 한 번씩
+    await pg.click('[data-act=repopen]'); await pg.waitForTimeout(60);
+    R.ok(await pg.evaluate(() => document.querySelectorAll('.repbody .chip.ovrc').length === 1 && document.querySelectorAll('.repbody .why').length === 1), `${w}×${h}: 결과 자세히에 OVR 칩·이유가 없음`);
+    await m('홈(결과 자세히)'); await pg.click('[data-act=repopen]');
+    // 3) 목표 요약의 남은 조건: 엔진의 goal() 에서 아직 못 채운 첫 조건과 같다(폭 380px 이하에서는 요약이 길어지지 않게 접혀 있고, 펼치면 막대로 보인다)
+    await pg.evaluate(() => { PG.setPlan('scrim'); });
+    const g4 = await pg.evaluate(() => { const g = PG.goal(), miss = g.items.find(i => !i.ok), e = document.querySelector('.goalbtn .gap'), vis = !!e && getComputedStyle(e).display !== 'none'; return { miss: miss ? [miss.label, miss.cur, miss.need, !!miss.low] : null, txt: e ? e.textContent : '', vis, h: Math.round(document.querySelector('.goalbtn').getBoundingClientRect().height), n: document.querySelectorAll('.goal').length }; });
+    R.ok(g4.n === 1 && (g4.miss ? (g4.miss[3] ? g4.txt === `${g4.miss[1]}위→${g4.miss[2]}위` : g4.txt === `${g4.miss[0]} ${Math.round((g4.miss[2] - g4.miss[1]) * 10) / 10} 부족`) : g4.txt === '') && (w <= 380 ? !g4.vis : !g4.miss || g4.vis) && g4.h <= (w <= 320 ? 90 : 84), `${w}×${h}: 목표 요약의 남은 조건 ${JSON.stringify(g4)}`);
+    // 4) 자산 탭: 월급 − 반복 지출 줄(실제 값), 단계형의 지금 → 다음, 시즌 프로젝트
+    await pg.click('.stagebg .moneyrow'); await pg.waitForTimeout(80);
+    const a1 = await pg.evaluate(() => { const S = PG.state(), a = PG.autoInfo(), sal = Math.round(S.contract.salary / 10), p = document.querySelector('.payline'), pj = document.querySelector('.projsum'); return { pay: p ? p.textContent : '', sal: PG.fmtMoney(sal), mon: PG.fmtMoney(a.monthly), net: PG.fmtMoney(Math.abs(sal - a.monthly)), warn: !!p && p.classList.contains('warn'), wantWarn: a.monthly > sal, pj: pj ? pj.textContent : '', pjH: pj ? Math.round(pj.getBoundingClientRect().height) : 0, pjOpen: pj && pj.getAttribute('aria-expanded'), rows: document.querySelectorAll('.prow').length, order: [...document.querySelector('main.content').children].map(e => e.className.split(' ')[0]) }; });
+    R.ok(a1.pay.includes(a1.sal) && a1.pay.includes(a1.mon) && a1.pay.includes(a1.net) && a1.warn === a1.wantWarn, `${w}×${h}: 월급 − 반복 지출 줄이 실제 값과 다름 ${JSON.stringify(a1).slice(0, 240)}`);
+    R.ok(/시즌 프로젝트/.test(a1.pj) && /아직 고르지 않음/.test(a1.pj) && a1.pjOpen === 'false' && a1.rows === 0 && a1.pjH >= 44 && a1.order.indexOf('autop') < a1.order.indexOf('projbox') && a1.order.indexOf('projbox') < a1.order.indexOf(a1.order.find(x => /cash/.test(x))), `${w}×${h}: 시즌 프로젝트가 접힌 한 줄이 아니거나 자리가 다름 ${JSON.stringify(a1).slice(0, 300)}`);
+    await m('자산(접힘)');
+    // 반복 지출이 월급보다 크면 경고
+    const a2 = await pg.evaluate(() => { const S = PG.state(), keep = S.contract.salary; S.contract.salary = 1000; PG_UI.render(); const p = document.querySelector('.payline'), r = { warn: p.classList.contains('warn'), txt: p.textContent }; S.contract.salary = keep; PG_UI.render(); return r; });
+    R.ok(a2.warn && /월급보다 크다/.test(a2.txt), `${w}×${h}: 반복 지출이 월급보다 큰데 경고가 없음 ${JSON.stringify(a2)}`);
+    await pg.click('[data-act=shopgrp]'); await pg.click('[data-act=shop-info][data-id=gear]'); await pg.waitForTimeout(60);
+    const a3 = await pg.evaluate(() => { const lv = PG.state().shop.gear, t = [...document.querySelectorAll('.sdesc')].map(e => e.textContent).join(' '); return { ok: t.includes(`성장 +${lv * 5}%`) && t.includes(`다음 단계 +${(lv + 1) * 5}%`), cap: /한계에 가까워/.test(t), near: PG.growInfo().ratio.mech >= .95 && PG.growInfo().ratio.reflex >= .95 }; });
+    R.ok(a3.ok && a3.cap === a3.near, `${w}×${h}: 장비의 지금 → 다음 단계 설명 ${JSON.stringify(a3)}`);
+    await m('자산(장비 설명)'); await pg.click('[data-act=shop-info][data-id=gear]'); await pg.click('[data-act=shopgrp]');
+    // 시즌 프로젝트: 펼치면 두 가지, 값·효과·대가가 엔진과 같다. 컨디션이 낮으면 못 누르고 이유가 보인다
+    await pg.evaluate(() => { PG.state().cond = 30; PG.state().money = 99999; PG_UI.render(); }); await pg.click('[data-act=projopen]'); await pg.waitForTimeout(60);
+    const p1 = await pg.evaluate(() => { const I = PG.projInfo(), rows = [...document.querySelectorAll('.prow')]; return { n: rows.length, ok: rows.every((r, i) => r.textContent.includes(I.opts[i].name) && r.textContent.includes(I.opts[i].gain) && r.textContent.includes(I.opts[i].price) && r.querySelector('button').textContent === PG.fmtMoney(I.opts[i].cost)), dis: rows.every(r => r.querySelector('button').disabled), why: rows[0].textContent, btnH: Math.min(...rows.map(r => r.querySelector('button').getBoundingClientRect().height)), over: document.documentElement.scrollWidth - innerWidth }; });
+    R.ok(p1.n === 2 && p1.ok && p1.dis && /컨디션 45 이상/.test(p1.why) && p1.btnH >= 44 && p1.over <= 0, `${w}×${h}: 시즌 프로젝트를 펼친 모습 ${JSON.stringify(p1).slice(0, 260)}`);
+    await m('자산(프로젝트 펼침, 컨디션 낮음)');
+    const before = await pg.evaluate(() => { const S = PG.state(); S.cond = 80; for (const k in S.caps) S.caps[k] = Math.min(S.caps[k], 90); PG_UI.render(); const I = PG.projInfo();   /* 한계가 99에 걸리지 않게 낮춰 두고 잰다 */ return { money: S.money, caps: Object.assign({}, S.caps), cond: S.cond, cost: I.opts[0].cost, gain: I.opts[0].gain, seq: PG.cash().seq }; });
+    await pg.focus('[data-act=proj][data-id=camp]'); await pg.keyboard.press('Enter'); await pg.waitForTimeout(100);
+    const p2 = await pg.evaluate(b => { const S = PG.state(), led = PG.cash().all.filter(x => x.seq > b.seq), t = document.querySelector('.projsum').textContent; return { money: S.money === b.money - b.cost, cond: S.cond === b.cond - 20, capUp: Object.keys(S.caps).filter(k => Math.abs(S.caps[k] - b.caps[k] - 1) < 1e-9).length, capSame: Object.keys(S.caps).filter(k => S.caps[k] === b.caps[k]).length, sum: t, hasGain: t.includes('집중 캠프 완료') && t.includes(b.gain), rows: document.querySelectorAll('.prow').length, led: led.length === 1 && led[0].k === 'proj' && led[0].v === -b.cost, veil: !!document.querySelector('.veil'), moneyTxt: document.querySelector('.moneyline b').textContent === PG.fmtMoney(S.money), saved: /"proj"/.test(localStorage.getItem('pg_career_v1')) }; }, before);
+    R.ok(p2.money && p2.cond && p2.capUp === 2 && p2.capSame === 4 && p2.hasGain && p2.rows === 0 && p2.led && !p2.veil && p2.moneyTxt && p2.saved, `${w}×${h}: 집중 캠프를 한 뒤의 상태·표시 ${JSON.stringify(p2)}`);
+    await m('자산(프로젝트 완료)');
+    // 돈의 흐름에 "시즌 프로젝트"로 적히고, 새로 고쳐도 올해는 다시 고를 수 없다
+    await pg.click('[data-act=cashopen]'); await pg.waitForTimeout(60);
+    R.ok(await pg.evaluate(() => /시즌 프로젝트 −/.test([...document.querySelectorAll('.cashrow')].map(e => e.textContent).join(' '))), `${w}×${h}: 돈의 흐름에 시즌 프로젝트 지출이 없음`);
+    await pg.reload(); await pg.waitForTimeout(250); await pg.click('[data-act=continue]'); await pg.waitForTimeout(150); await pg.click('[role=tab][data-id=money]'); await pg.waitForTimeout(60);
+    R.ok(await pg.evaluate(() => /집중 캠프 완료/.test(document.querySelector('.projsum').textContent) && !PG.projInfo().opts.some(o => o.ok) && PG.buyProj('fan') === false), `${w}×${h}: 새로 고친 뒤 프로젝트를 또 고를 수 있음`);
+    // 홈으로: 순서와 개수는 그대로
+    await pg.click('[role=tab][data-id=home]'); await pg.waitForTimeout(60);
+    R.ok(await pg.evaluate(() => { const k = [...document.querySelector('main.content').children].map(e => e.id || e.className.split(' ')[0]).filter(x => x !== 'warn'); return k[0] === 'gbox' && k[1] === 'pbox' && document.querySelectorAll('.stagebg .moneyrow, .stagebg .goal, .stagebg .plan5').length === 3; }), `${w}×${h}: 홈의 순서·개수가 달라짐`);
+    R.ok(m.clean(), `${w}×${h}: 0.11.9 화면 배치 ${m.line()}`); R.note(`0.11.9 ${w}x${h}`, m.line());
+    R.ok(!pg.errs.length, `스크립트 오류 ${pg.errs}`); await ctx.close();
+  }
 };

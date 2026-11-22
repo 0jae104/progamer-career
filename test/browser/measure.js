@@ -3,8 +3,8 @@
 // PC 헤드리스 크롬의 폰 크기 에뮬레이션이다. 실제 폰이 아니고, 사람이 편하다고 느끼는지는 재지 못한다. git 이력이 필요하다.
 const { execSync } = require('child_process'), fs = require('fs'), path = require('path');
 const { ROOT, serve, tmpDir, launch, open } = require('./lib');
-const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'docs', 'qa-logs', 'stage11-5-3', 'shots'));
-const VERS = [['v0.11.4', 'a39de95'], ['v0.11.5', 'cb31d1a'], ['v0.11.6', '4c14f12'], ['v0.11.7', '41c2caf'], ['지금', null]];
+const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'docs', 'qa-logs', 'stage11-6', 'shots'));
+const VERS = [['v0.11.4', 'a39de95'], ['v0.11.5', 'cb31d1a'], ['v0.11.6', '4c14f12'], ['v0.11.7', '41c2caf'], ['v0.11.8', '80472df'], ['지금', null]];
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const dirs = [];
@@ -17,7 +17,7 @@ const VERS = [['v0.11.4', 'a39de95'], ['v0.11.5', 'cb31d1a'], ['v0.11.6', '4c14f
   await mk.ctx.close(); await s0.close();
   if (!saves.rv || !saves.plain) { console.log('실패: 검사용 저장을 만들지 못함'); process.exit(1); }
   for (let v = 0; v < VERS.length; v++) {
-    const name = VERS[v][0], tag = name === '지금' ? 'v0.11.8' : name, srv = await serve(dirs[v]);
+    const name = VERS[v][0], tag = name === '지금' ? 'v0.11.9' : name, srv = await serve(dirs[v]);
     for (const [w, h] of [[320, 568], [375, 812], [390, 844], [430, 932]]) {
       const { ctx, pg } = await open(browser, srv.url, { w, h });
       const load = async raw => { await pg.evaluate(r => { localStorage.clear(); localStorage.setItem('pg_tut_v1', '1'); localStorage.setItem('pg_opt_v1', '{"snd":0}'); localStorage.setItem('pg_career_v1', r); }, raw); await pg.reload(); await pg.waitForTimeout(300); await pg.addStyleTag({ content: '#toast{display:none!important}' }); await pg.click('[data-act=continue]'); await pg.waitForTimeout(400); };
