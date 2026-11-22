@@ -94,7 +94,7 @@ async function run(browser, url, raw, o) {
   const money0 = await pg.evaluate(() => PG.state().money);
   const ev = { starts: 0, pauses: 0, tabs: 0, scenes: {} };
   let guard = 0, paused = false, tabbed = false, planned = false;
-  while (await months(pg) < o.want && guard++ < 200) {
+  while ((await months(pg) < o.want || (o.planAt != null && !planned && guard < 90)) && guard++ < 200) {   // 0.11.11: 달리는 중에 누를 틈이 없었으면(시작하자마자 경기·결산에서 멈춘 경우) 몇 달 더 가며 다시 해 본다
     if (!await go(pg)) break; ev.starts++;
     const n0 = await months(pg);
     if (o.pauseAt != null && !paused && n0 >= o.pauseAt) {   // 달리는 중에 멈춤을 누르고 다시 시작한다
@@ -103,7 +103,7 @@ async function run(browser, url, raw, o) {
     }
     if (o.planAt != null && !planned && n0 >= o.planAt) {   // 달리는 중에 이번 달 할 일을 한 번 눌러 바꾼다
       await pg.waitForFunction(n => window.__ap.reduce((a, x) => a + x.k, 0) > n || !PG_UI.ap.on, n0, { timeout: 30000 });
-      const pr = await pg.evaluate(() => { if (!PG_UI.ap.on) return null; const cur = PG.state().plan, b = [...document.querySelectorAll('.stagebg .plan5 button')].find(x => x.dataset.id !== cur && !x.disabled && x.getAttribute('aria-pressed') !== 'true'); if (!b) return null; const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const seen = r.bottom <= document.querySelector('.foot').getBoundingClientRect().top + 1 && !!hit && (hit === b || b.contains(hit)); b.click(); return { from: cur, want: b.dataset.id, now: PG.state().plan, seen, on: PG_UI.ap.on, goals: document.querySelectorAll('.stagebg .goal').length, rows: document.querySelectorAll('.stagebg .moneyrow').length }; });
+      const pr = await pg.evaluate(() => { const T = (window.__planTries = window.__planTries || []); if (!PG_UI.ap.on) { T.push('멈춤:' + ((PG.state().recap || {}).stop || '') + '/' + (PG.scene() ? PG.scene().type : '')); return null; } const cur = PG.state().plan, b = [...document.querySelectorAll('.stagebg .plan5 button')].find(x => x.dataset.id !== cur && !x.disabled && x.getAttribute('aria-pressed') !== 'true'); if (!b) { T.push('버튼 없음:' + [...document.querySelectorAll('.stagebg .plan5 button')].map(x => x.dataset.id + (x.disabled ? 'x' : '')).join(',') + '/부상 ' + PG.state().injury); return null; } const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const seen = r.bottom <= document.querySelector('.foot').getBoundingClientRect().top + 1 && !!hit && (hit === b || b.contains(hit)); b.click(); return { from: cur, want: b.dataset.id, now: PG.state().plan, seen, on: PG_UI.ap.on, goals: document.querySelectorAll('.stagebg .goal').length, rows: document.querySelectorAll('.stagebg .moneyrow').length }; });
       if (pr) { planned = true; ev.plan = pr; }
     }
     await stopped(pg); await pg.waitForTimeout(30);
@@ -115,9 +115,9 @@ async function run(browser, url, raw, o) {
   }
   await pg.waitForTimeout(40);
   const log = await pg.evaluate(() => window.__ap), end = await pg.evaluate(() => ({ rows: document.querySelectorAll('.stagebg .moneyrow').length, goals: document.querySelectorAll('.stagebg .goal').length, hstat: document.querySelectorAll('.stagebg .hstat').length, over: PG.state().over, ver: PG.VERSION, err: window.__pgApError || window.__pgRenderError || '', money: PG.state().money, cash: PG.cash ? (c => ({ n: c.all.length, sum: c.all.reduce((a, x) => a + x.v, 0), gap: c.all.filter(x => x.gap).length, kinds: c.all.reduce((o, x) => (o[x.k] = (o[x.k] || 0) + x.v, o), {}) }))(PG.cash()) : null }));
-  end.money0 = money0;
+  end.money0 = money0; const tries = await pg.evaluate(() => (window.__planTries || []).slice(0, 12));
   const errs = pg.errs.slice(); await ctx.close();
-  return { log, ev, end, errs };
+  return { log, ev, end, errs, tries };
 }
 // 기록에서 숫자를 뽑는다
 function digest(log) {
@@ -176,7 +176,7 @@ module.exports = async function apdom(browser, url, R) {
     R.ok(d.maxLineH <= (c.w <= 330 ? 44 : 50), `${c.name}: 진행 줄이 너무 길어짐(높이 ${d.maxLineH}px)`);
     R.ok(d.badFeedN === 0 && d.noFeed === 0 && d.feedDup === 0 && d.badFeed === 0 && d.maxFeedLines <= 2, `${c.name}: 최근 진행 — 칸이 둘 이상인 달 ${d.badFeedN}, 칸이 없는 달 ${d.noFeed}, 같은 일이 두 번 나온 횟수 ${d.feedDup}, 성장 숫자가 엔진과 다른 달 ${d.badFeed}, 접힌 줄 수 최대 ${d.maxFeedLines}`);
     if (c.restCase) R.ok(d.rests >= 2 && d.backs >= 2, `${c.name}: 자동 휴식 ${d.rests}번·복귀 ${d.backs}번(각 2번 이상 일어나야 검사가 된다) ${m.map(x => `${x.planNow}${x.back ? '(' + x.back + ')' : ''}`).join('→')}`);
-    if (c.planAt != null) R.ok(!!r.ev.plan && r.ev.plan.seen && r.ev.plan.now === r.ev.plan.want && r.ev.plan.goals === 1 && r.ev.plan.rows === 1, `${c.name}: 달리는 중에 할 일을 한 번 눌러 바꾸지 못함 ${JSON.stringify(r.ev.plan)}`);
+    if (c.planAt != null) R.ok(!!r.ev.plan && r.ev.plan.seen && r.ev.plan.now === r.ev.plan.want && r.ev.plan.goals === 1 && r.ev.plan.rows === 1, `${c.name}: 달리는 중에 할 일을 한 번 눌러 바꾸지 못함 ${JSON.stringify(r.ev.plan)} ${JSON.stringify(r.tries)}`);
     R.ok(c.tabAt ? r.ev.tabs === 1 && r.ev.toMoney === 'money' : true, `${c.name}: 자금 줄을 눌러 자산 탭으로 가지 못함(${r.ev.toMoney})`);
     R.ok(c.pauseAt != null ? r.ev.pauses === 1 : true, `${c.name}: 멈춤·재개를 해 보지 못함`);
     R.ok(!r.errs.length && !r.end.err, `${c.name}: 스크립트 오류 ${r.errs} ${r.end.err}`);

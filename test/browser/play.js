@@ -465,8 +465,14 @@ module.exports = async function play(browser, url, R) {
     R.ok(g2.lr === 'cap' && /한계에 가까워/.test(g2.why) && g2.n === 1 && g2.over <= 0, `${w}×${h}: 한계에 막힌 달의 이유 ${JSON.stringify(g2)}`);
     await m('홈(이유: 한계)');
     await pg.evaluate(() => { PG.setPlan('rest'); }); await pg.click('[data-act=next]'); await pg.waitForTimeout(150); await clear(pg);
-    const g3 = await pg.evaluate(() => ({ lr: PG.lastRep().why, why: (document.querySelector('.recap .why') || {}).textContent || '' }));
-    R.ok(g3.lr === 'rest' && /쉬어서/.test(g3.why), `${w}×${h}: 쉰 달의 이유 ${JSON.stringify(g3)}`);
+    const g3 = await pg.evaluate(() => ({ lr: PG.lastRep().why, why: (document.querySelector('.recap .why') || {}).textContent || '', dbg: [(document.querySelector('.recap') || {}).innerText, PG.state().recap && [PG.state().recap.n, PG.state().recap.o0, PG.state().recap.o1], PG.lastRep().o0, PG.lastRep().o1] }));
+    // 이유 줄은 화면에 보이는 OVR 이 거의 오르지 않았을 때만 붙는다(0.15 미만). 쉬는 달에 사건으로 능력치가 올라 OVR 이 눈에 띄게 변했으면 붙지 않는다(0.11.11: 사건의 순서가 달라져 이 경우가 검사에 걸렸다)
+    const flat3 = g3.dbg[3] - g3.dbg[2] < .15;
+    R.ok(g3.lr === 'rest' && (flat3 ? /쉬어서/.test(g3.why) : g3.why === ''), `${w}×${h}: 쉰 달의 이유 ${JSON.stringify(g3)}`);
+    if (!flat3) {   // 그 경우에도 "쉬어서" 문구 자체는 본다: 같은 요약에서 OVR 변화만 작게 고쳐 다시 그린다(저장하지 않는다)
+      const g4 = await pg.evaluate(() => { const S = PG.state(), keep = S.recap.o1; S.recap.o1 = S.recap.o0 + .05; PG_UI.render(); const t = (document.querySelector('.recap .why') || {}).textContent || ''; S.recap.o1 = keep; PG_UI.render(); return t; });
+      R.ok(/쉬어서/.test(g4), `${w}×${h}: 쉰 달의 이유 문구가 나오지 않음 ${g4}`);
+    }
     // "○월 결과 자세히"에도 같은 OVR 칩과 이유가 한 번씩
     await pg.click('[data-act=repopen]'); await pg.waitForTimeout(60);
     R.ok(await pg.evaluate(() => document.querySelectorAll('.repbody .chip.ovrc').length === 1 && document.querySelectorAll('.repbody .why').length === 1), `${w}×${h}: 결과 자세히에 OVR 칩·이유가 없음`);

@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.10';
+  const UI_VERSION = '0.11.11';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -182,7 +182,28 @@
   }
   function endDemo(msg) { stopWatch(); G.demoEnd(); U.view = 'title'; U.tab = 'home'; U.tac = ''; U.akey = ''; U.arenaShown = ''; if (msg) U.notice = msg; }
   function stopWatch() { if (U.watch) { clearTimeout(U.watch.t); U.watch = null; } }
-  const finalCue = sc => (sc.type === 'match' ? (sc.win ? (sc.label === '결승' ? 'winbig' : 'win') : 'lose') : 'tension');
+  /* 경기의 모양(0.11.11): 이미 정해진 세트 기록에서만 읽는다. 역전승 = 상대가 먼저 매치 포인트(한 세트만 더 따면 끝)를 잡았는데 이긴 경기.
+     결과를 바꾸지 않고, 결과 화면의 제목과 소리를 고르는 데만 쓴다. */
+  function drama(sc) {
+    const need = (sc.bo + 1) / 2, sets = sc.sets || []; let x = 0, y = 0, mp = false;
+    for (const st of sets) { if (st.w) x++; else y++; if (y === need - 1 && x < need - 1) mp = true; }
+    if (sc.win) return mp && need >= 2 ? ['역전승', '벼랑 끝에서 뒤집었다.'] : y === need - 1 && need >= 2 ? ['접전 끝 승리', '마지막 세트까지 갔다.'] : y === 0 && need >= 2 ? ['완승', '한 세트도 내주지 않았다.'] : ['승리', ''];
+    return x === need - 1 && need >= 2 ? ['석패', '마지막 세트에서 갈렸다.'] : ['패배', ''];
+  }
+  const bigWin = sc => sc.type === 'match' && sc.win && (sc.label === '결승' || drama(sc)[0] === '역전승' || !!sc.rival);
+  const finalCue = sc => (sc.type === 'match' ? (sc.win ? (sc.label === '결승' ? 'winbig' : drama(sc)[0] === '역전승' ? 'comeback' : 'win') : 'lose') : 'tension');
+  /* 경기장 밖의 순간(0.11.11): 우승 알림·콜업·수상·나쁜 소식·시즌 결산·OVR 이 오른 달에 짧은 소리 하나. 장면이 바뀐 첫 그림에서 한 번만.
+     자동진행이 달리는 동안에는 내지 않는다(자동진행은 이런 장면에서 멈추고, 멈춘 뒤의 첫 그림에서 난다). 소리를 꺼 두면 아무것도 나지 않는다. */
+  function sceneCue(S, sc) {
+    const k = sc && S ? [sc.type, sc.title || '', S.year, S.m, S.q.length, S.stat ? S.stat.turns : 0].join('|') : '';
+    if (k === U.cueKey) return; U.cueKey = k; U.fxScene = '';
+    if (!sc || AP.on) return;
+    let c = '';
+    if (sc.type === 'info') c = sc.cele === 1 ? 'champ' : /콜업/.test(sc.title) ? 'callup' : sc.tone === 'gold' ? 'award' : sc.tone === 'bad' ? 'bad' : '';
+    else if (sc.type === 'season') c = 'season';
+    else if (sc.type === 'month' && typeof sc.o0 === 'number' && typeof sc.o1 === 'number' && Math.floor(sc.o1 + 1e-9) > Math.floor(sc.o0 + 1e-9)) c = 'up';
+    if (c) { SND.play(c); U.fxScene = k; }
+  }
   // 장면이 바뀌었을 때 한 번: 아직 보여 주지 않은 세트가 있으면 관전을 시작하고, 없으면 그 장면의 소리만 낸다.
   // 장면에 seen 표시가 남으므로(엔진의 watched) 다시 그리거나 새로 고쳐도 같은 연출이 두 번 나오지 않는다.
   function arenaSync(sc) {
@@ -194,7 +215,7 @@
     if ((sc.type === 'match' || (sc.type === 'moment' && sc.pips != null)) && !sc.seen) {
       const n = wl(sc).length, from = Math.max(0, Math.min(n, sc.from | 0));
       if (from < n) { U.watch = { k, i: from, n, fast: false, t: setTimeout(tickWatch, 650) }; return; }
-      SND.play(finalCue(sc)); G.watched();
+      SND.play(finalCue(sc)); U.fxOnce = skey(sc); G.watched();
     }
   }
   function tickWatch() {
@@ -207,7 +228,7 @@
     }
     endWatch(sc);
   }
-  function endWatch(sc) { stopWatch(); SND.play(finalCue(sc)); G.watched(); render(); }
+  function endWatch(sc) { stopWatch(); SND.play(finalCue(sc)); U.fxOnce = skey(sc); G.watched(); render(); }
   // 다른 탭(또는 예전 버전의 탭)이 저장을 바꿨을 때: 이 탭의 오래된 상태로 덮어쓰지 않도록 멈추고 새로 고침을 안내한다.
   function vStale() {
     return `<div class="veil"><section class="sheet bad" role="alertdialog" aria-modal="true" aria-label="다른 탭에서 진행됨" tabindex="-1"><h2>다른 탭에서 진행됐다</h2>
@@ -753,6 +774,15 @@ ${tip('goal')}
       win: t => { [523, 659, 784].forEach((f, i) => tone(t + i * .12, f, .2, 'triangle', .18)); tone(t + .36, 1047, .5, 'triangle', .2); },
       winbig: t => { noise(t + .3, 1.1, .1, 1400); [523, 659, 784, 1047].forEach((f, i) => tone(t + i * .12, f, .22, 'triangle', .18)); tone(t + .5, 1319, .7, 'triangle', .2); tone(t + .5, 659, .7, 'sine', .12); },   // 결승 승리
       lose: t => { tone(t, 262, .3, 'sine', .16); tone(t + .26, 196, .55, 'sine', .16); },
+      // 0.11.11 순간의 소리: 모두 1초 안쪽, 외부 음원 없이 합성
+      comeback: t => { tone(t, 196, .16, 'sawtooth', .08); [392, 523, 659, 784, 1047].forEach((f, i) => tone(t + .14 + i * .09, f, .2, 'triangle', .18)); tone(t + .62, 1319, .45, 'triangle', .18); },   // 역전승: 낮게 시작해 치고 올라간다
+      champ: t => { noise(t, .9, .07, 2200); [659, 784, 1047, 1319].forEach((f, i) => tone(t + i * .1, f, .3, 'triangle', .16)); tone(t + .42, 1568, .5, 'sine', .12); },                                  // 우승 알림: 트로피가 오를 때
+      callup: t => { tone(t, 392, .12, 'triangle', .16); tone(t + .11, 523, .12, 'triangle', .16); tone(t + .22, 784, .34, 'triangle', .18); },                                                            // 콜업: 밝은 세 음
+      move: t => { noise(t, .35, .07, 600); tone(t + .05, 330, .14, 'triangle', .15); tone(t + .19, 494, .3, 'triangle', .17); },                                                                          // 이적: 문이 열리는 느낌의 두 음
+      award: t => { tone(t, 784, .14, 'triangle', .15); tone(t + .12, 988, .14, 'triangle', .15); tone(t + .24, 1175, .4, 'triangle', .16); },                                                             // 수상
+      up: t => { tone(t, 659, .08, 'triangle', .12); tone(t + .07, 880, .16, 'triangle', .13); },                                                                                                           // OVR 이 오른 달: 아주 짧게
+      season: t => { tone(t, 262, .5, 'sine', .1); tone(t + .02, 330, .5, 'sine', .09); tone(t + .04, 392, .6, 'sine', .09); },                                                                             // 시즌 결산: 조용한 화음
+      bad: t => tone(t, 220, .32, 'sine', .14, 165),                                                                                                                                                         // 강등·부상·방출
     };
     function play(name) {
       const now = Date.now(); let played = false;
@@ -803,8 +833,10 @@ ${tip('goal')}
   }
   function vPrematch(sc) {
     const need = (sc.bo + 1) / 2;
+    // 이 경기가 왜 큰 경기인지(0.11.11): 결승·국제전·대표팀·라이벌전 꼬리표와, 엔진이 실제 기록으로 만든 한 줄(sc.why). 평범한 경기에는 꼬리표가 없다
+    const tags = [sc.label === '결승' ? '결승' : '', sc.kind === 'intl' ? '국제전' : sc.kind === 'nations' ? '국가대표' : '', sc.rival ? '라이벌전' : ''].filter(Boolean);
     return `${arenaTop(sc)}${arenaHead(sc, '', 0)}
-      <p class="stake"><b>${esc(sc.bo)}전 ${esc(need)}선승</b>${sc.label === '결승' ? '이기면 우승이다.' : '지면 이 대회는 여기서 끝난다.'}</p>
+      <p class="stake${tags.length ? ' bigm' : ''}">${tags.map(x => `<i class="mtag">${esc(x)}</i>`).join('')}<b>${esc(sc.bo)}전 ${esc(need)}선승</b>${sc.why ? esc(sc.why) : sc.label === '결승' ? '이기면 우승이다.' : '지면 이 대회는 여기서 끝난다.'}</p>
       <div class="chips"><span class="chip">${esc(sc.role)} 출전</span><span class="chip ${sc.cond >= 70 ? 'up' : sc.cond < 50 ? 'down' : ''}">컨디션 ${esc(sc.cond)}</span><span class="chip ${sc.base >= 55 ? 'up' : sc.base <= 45 ? 'down' : ''}">전력으로 본 세트 승률 ${esc(sc.base)}%</span>${sc.prep ? `<span class="chip up">분석 자료 · 전력 +${esc(D.BAL.prepStr)}</span>` : ''}</div>
       ${sc.rival ? `<p class="rvnote">상대 팀에 ${esc(sc.rival)}. ${esc(sc.h2h)}${sc.h2h ? '.' : ''}${sc.story ? ` ${esc(sc.story)}` : ''}</p>` : ''}
       <h2>어떻게 싸울까</h2>
@@ -828,9 +860,10 @@ ${tip('goal')}
     const line = !k ? '전략 없이 치렀다. 세트 승률에 보정은 없었다.'
       : `전략이 유리하게 작용한 세트 ${plus.length}개(그중 ${plus.filter(x => x.w).length}승), 불리하게 작용한 세트 ${minus.length}개(그중 ${minus.filter(x => !x.w).length}패).`;
     const lm = U.lastM && U.lastM.k === skey(sc) ? U.lastM : null;
+    const dr = drama(sc), fx = U.fxOnce === skey(sc) && bigWin(sc); U.fxOnce = '';   // 큰 승리의 반짝임은 결과가 처음 그려질 때 한 번만(0.7초, 누르는 것을 막지 않는다)
     return `${arenaTop(sc, '결과')}${arenaHead(sc, wl(sc), sc.sets.length)}
       ${lm ? `<div class="evres ${lm.ok ? 'ok' : 'no'}"><p class="sec">승부처 ${lm.ok ? '성공' : '실패'} · ${esc(lm.p)}% — ${esc(lm.choice)}</p><p>${esc(lm.text)}</p><div class="chips"><span class="chip ${lm.setWin ? 'up' : 'down'}">${esc(lm.set)}세트 ${lm.setWin ? '승리' : '패배'}</span>${lm.d ? `<span class="chip ${lm.d > 0 ? 'up' : 'down'}">전략 ${esc(sgn(lm.d))}%p</span>` : ''}</div></div>` : ''}
-      <div class="verdict ${sc.win ? 'w' : 'l'}"><b>${sc.win ? '승리' : '패배'}</b><span>${esc(sc.x)}:${esc(sc.y)} · ${esc(sc.next)}</span></div>
+      <div class="verdict ${sc.win ? 'w' : 'l'}${bigWin(sc) ? ' big' : ''}${fx ? ' fx' : ''}"><b>${esc(dr[0])}</b><span>${esc(sc.x)}:${esc(sc.y)}${dr[1] ? ` · ${esc(dr[1])}` : ''} · ${esc(sc.next)}</span></div>
       ${causeLines(sc, k)}
       <div class="chips">${sc.sets.map((x, i) => `<span class="chip ${x.d > 0 ? 'up' : x.d < 0 ? 'down' : ''}">${i + 1}세트 ${x.w ? '승' : '패'}${k ? ' · ' + esc(sgn(x.d)) + '%p' : ''}</span>`).join('')}</div>
       ${k ? `<p class="fine">${esc(line)}</p>` : ''}
@@ -886,6 +919,7 @@ ${tip('goal')}
         h = `${sc.checked ? `<span class="stamp ${sc.ok ? 'ok' : 'no'}">${sc.ok ? '성공' : '실패'} · ${esc(sc.p)}%</span>` : ''}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>
           <div class="chips">${sc.lines.map(l => `<span class="chip ${/[-]\d|하락/.test(l) ? 'down' : 'up'}">${esc(l)}</span>`).join('')}</div>${okBtn()}`; break;
       case 'month':
+        if (U.fxScene && U.fxScene === U.cueKey) { cls += ' fxup'; U.fxScene = ''; }   // OVR 이 오른 달의 첫 그림: 칩이 한 번 커졌다 돌아온다
         h = `<p class="eyebrow">${esc(sc.title)} · ${esc(sc.plan)}</p><h2>${esc(sc.sub)}</h2>${tip('report', sc)}${monthBody(sc)}${okBtn()}`; break;
       case 'info':
         if (sc.cele) cls += ' cele' + (sc.cele === 1 ? ' play' : '');
@@ -893,10 +927,10 @@ ${tip('goal')}
           ${sc.cele ? `<p class="eyebrow champ">CHAMPIONS</p><h2>${esc(sc.text)}</h2>${sc.news ? `<p class="news"><b>뉴스</b>${esc(sc.news)}</p>` : ''}` : `${sc.news ? `<p class="news"><b>뉴스</b>${esc(sc.news)}</p>` : ''}<h2>${esc(sc.title)}</h2><p>${esc(sc.text)}</p>`}${sc.lines.length ? `<div class="chips">${sc.lines.map(l => `<span class="chip ${sc.tone === 'gold' ? 'gold' : ''}">${esc(l)}</span>`).join('')}</div>` : ''}${okBtn()}`; break;
       case 'season':
         h = `<p class="eyebrow">SEASON ${esc(sc.year)}</p><h2>${esc(sc.year)}년차 결산</h2><p>${esc(sc.org)} ${G.SQUAD[sc.squad]} · ${esc(sc.age)}세 · OVR ${esc(sc.ovr)}</p>
-          <div class="kv"><div><span>경기</span><b>${esc(sc.g)}</b></div><div><span>승</span><b>${esc(sc.w)}</b></div><div><span>평균 평점</span><b>${sc.g ? f1(sc.avg) : '-'}</b></div></div>
-          <div class="chips">${sc.titles.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.awards.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.mvp ? `<span class="chip">경기 MVP ${esc(sc.mvp)}회</span>` : ''}${!sc.titles.length && !sc.awards.length ? '<span class="chip">무관</span>' : ''}</div>
+          ${sc.story && sc.story.length ? `<ul class="sstory" aria-label="이 시즌에 있었던 일">${sc.story.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+          <div class="chips"><span class="chip">${sc.g ? `${esc(sc.g)}경기 ${esc(sc.w)}승 · 평균 평점 ${f1(sc.avg)}` : '출전 경기 없음'}</span>${sc.titles.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.awards.map(t => `<span class="chip gold">${esc(t)}</span>`).join('')}${sc.mvp ? `<span class="chip">경기 MVP ${esc(sc.mvp)}회</span>` : ''}${!sc.titles.length && !sc.awards.length ? '<span class="chip">무관</span>' : ''}</div>
           ${sc.goal ? `<div class="evres ${sc.goal.ok === 1 ? 'ok' : sc.goal.ok === 0 ? 'no' : ''}"><p class="sec">올해 목표 — ${esc(sc.goal.t)} · ${sc.goal.ok === 1 ? '달성' : sc.goal.ok === 0 ? '미달성' : '판정 없음'}</p><p>${esc(sc.goal.why)}</p></div>` : ''}
-          ${sc.goals && sc.goals.length ? `<p class="sec">다음 시즌의 목표를 하나 고른다</p><p class="fine">기록에 남는 다짐이다. 능력치나 승률은 바뀌지 않는다. 고르면 스토브리그로 넘어간다.</p>${sc.goals.map((g, i) => `<button class="choice" data-act="goal" data-i="${esc(i)}"><div class="grow"><b>${esc(g.t)}</b><small>${esc(g.d)}</small></div></button>`).join('')}` : okBtn('스토브리그로')}`; break;
+          ${sc.goals && sc.goals.length ? `<p class="sec">다음 시즌의 목표를 하나 고른다</p><p class="fine">기록에 남는 다짐이다. 능력치나 승률은 바뀌지 않는다.</p>${sc.next ? `<p class="snext">${esc(sc.next)}</p>` : ''}${sc.goals.map((g, i) => `<button class="choice" data-act="goal" data-i="${esc(i)}"><div class="grow"><b>${esc(g.t)}</b><small>${esc(g.d)}</small></div></button>`).join('')}` : `${sc.next ? `<p class="snext">${esc(sc.next)}</p>` : ''}${okBtn('스토브리그로')}`}`; break;
       case 'cards':
         h = `<p class="eyebrow">OFF-SEASON</p><h2>성장 카드</h2><p>비시즌 동안 무엇을 얻었을까. 한 장을 고른다.</p>
           ${sc.cards.map((id, i) => { const c = D.CARDS.find(x => x.id === id); return `<button class="gcard r${esc(c.r)}" data-act="res" data-i="${esc(i)}"><small>${D.RARITY[c.r]}</small><b>${esc(c.name)}</b><span>${esc(c.desc)}</span></button>`; }).join('')}
@@ -1018,6 +1052,7 @@ ${tip('goal')}
     const y = window.scrollY;
     if (U.view === 'game' && !S) U.view = 'title';
     arenaSync(U.view === 'game' && S ? G.scene() : null);
+    sceneCue(S, U.view === 'game' && S ? G.scene() : null);
     // 키보드 사용자를 위해, 다시 그린 뒤에도 방금 누른 버튼에 포커스를 돌려준다.
     const a = document.activeElement, fk = a && app.contains(a) && a.dataset && a.dataset.act ? [a.dataset.act, a.dataset.id || '', a.dataset.i || '', a.dataset.grp || ''] : (a && a.id === 'nick' ? 'nick' : null);
     const prevScene = U.sceneKey;
@@ -1044,7 +1079,7 @@ ${tip('goal')}
       if (r.top < 0 || r.bottom > lim) tp.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
     if (sc && sc.cele === 1) G.celePlayed();               // 우승 연출은 한 번만. 다시 열면 같은 내용이 연출 없이 나온다
-    toastAch();
+    if (U.moved) { const mv = U.moved; U.moved = null; toastMove(mv[0], mv[1]); } else toastAch();
   }
   // 도전 과제 달성 알림: 화면 위쪽에 잠깐 뜨는 한 줄. 진행을 막지 않는다.
   let toastEl = null, toastTimer = 0;
@@ -1057,6 +1092,12 @@ ${tip('goal')}
     if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'toast'; toastEl.setAttribute('role', 'status'); toastEl.setAttribute('aria-live', 'polite'); document.body.appendChild(toastEl); toastEl.addEventListener('click', () => toastEl.classList.remove('on')); }
     toastEl.textContent = '도전 과제 달성 — ' + names.slice(0, 3).join(', ') + (names.length > 3 ? ` 외 ${names.length - 3}개` : '');
     toastEl.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('on'), 5000);
+  }
+  // 이적이 확정된 순간(0.11.11): 위쪽 알림 한 줄(3초, 누르면 닫힘)과 짧은 소리. 확인 버튼은 없다.
+  function toastMove(name, squad) {
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'toast'; toastEl.setAttribute('role', 'status'); toastEl.setAttribute('aria-live', 'polite'); document.body.appendChild(toastEl); toastEl.addEventListener('click', () => toastEl.classList.remove('on')); }
+    toastEl.textContent = `이적 확정 — ${name} ${squad}`;
+    toastEl.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('on'), 3000);
   }
   function readImport(file) {
     if (!file) return;
@@ -1217,8 +1258,7 @@ ${tip('goal')}
       case 'stay': G.resolve('stay'); break;
       case 'transfer': G.resolve('transfer'); break;
       case 'try': G.resolve('try'); break;
-      case 'accept': G.resolve({ i, act: 'accept' }); break;
-      case 'nego': G.resolve({ i, act: 'nego' }); break;
+      case 'accept': case 'nego': { const o0 = G.state().org; G.resolve({ i, act: a }); const s1 = G.state(); if (s1 && o0 && s1.org !== o0 && D.ORG[s1.org]) { SND.play('move'); U.moved = [D.ORG[s1.org].name, G.SQUAD[s1.squad] || '']; } break; }
       case 'retire': if (U.confirm === 'retire') { U.confirm = ''; G.resolve('retire'); } else U.confirm = 'retire'; break;
       case 'wipe': if (U.confirm === 'wipe') { G.wipe(); return go('title'); } U.confirm = 'wipe'; break;
     }

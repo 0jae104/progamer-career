@@ -223,4 +223,69 @@ const toIdle = () => { let n = 0; while (n++ < 4000 && !(G.state().org && G.stat
   { const o = JSON.parse(raw); delete o.proj; mem[KEY] = JSON.stringify(o); G._seen(); if (G.load() !== 'ok' || G.state().proj || !G.projInfo().opts.every(x => x.why !== 'done')) fail('프로젝트가 없는 저장에서 이미 산 것으로 보임(소급 적용)'); }
   console.log(`성장 표시·시즌 프로젝트: 월간 보고 ${reps}개의 OVR 변화와 이유(${Object.entries(whys).map(x => x.join(' ')).join(', ')}) 대조 · 집중 캠프는 ${top.join('·')} 한계 +${P.camp.cap}·컨디션 ${P.camp.cond}, 팬 캠페인은 인기 식대로·컨디션 ${P.fan.cond} · 한 시즌 한 번(다시 열어도) · 난수 안 씀 · 자동으로 사지 않음 · 이상한 값 6종 버림`);
 }
+// ---- 0.11.11) 사건 반복 줄이기 · 시즌의 장면 · 큰 경기의 한 줄 ----
+{
+  let evs = 0, months = 0, near12 = 0, again = 0, seasons = 0, lines = 0, three = 0, finals = 0, whyN = 0, onceBad = 0, titleSeason = 0;
+  for (let c = 0; c < 36; c++) {
+    fresh(11100 + c, { region: ['kr', 'cn', 'eu', 'na'][c % 4], role: ['van', 'rov', 'core', 'gun', 'sup'][c % 5], trait: ['genius', 'grinder', 'brain'][c % 3] });
+    const cnt = {}, last = {}; let turn = 0, n = 0;
+    while (!G.state().over && n++ < 40000) {
+      const S = G.state(), sc = G.scene();
+      if (sc && !sc.__t) {
+        sc.__t = 1;
+        if (sc.type === 'month') { months++; turn++; }
+        if (sc.type === 'event') {
+          evs++; const ev = D.EVENTS.find(e => e.id === sc.ev), k = cnt[sc.ev] || 0;
+          if (ev.once && k) onceBad++;
+          if (sc.ev in last && turn - last[sc.ev] <= 12) near12++;
+          // 두 번째부터는 again 의 글을 차례로 쓴다(선택지 수는 같다)
+          if (ev.again && typeof ev.text === 'string') { const want = k > 0 ? ev.again[(k - 1) % ev.again.length] : ev.text; if (sc.text !== want) fail(`사건 ${sc.ev}의 ${k + 1}번째 글이 예상과 다름: ${sc.text}`); if (k > 0) again++; }
+          if (sc.choices.length !== ev.c.length) fail('사건의 선택지 수가 달라짐');
+          cnt[sc.ev] = k + 1; last[sc.ev] = turn;
+          const h = S.evh && S.evh[sc.ev]; if (!h || h[0] !== cnt[sc.ev]) fail(`사건 기록(evh)이 실제 횟수와 다름: ${sc.ev} ${JSON.stringify(h)} / ${cnt[sc.ev]}`);
+        }
+        if (sc.type === 'season') {
+          seasons++; const st = sc.story;
+          if (!Array.isArray(st) || st.length < 1 || st.length > 3) fail('시즌 결산의 문장이 1~3개가 아님: ' + JSON.stringify(st));
+          for (const t of st) { lines++; if (typeof t !== 'string' || t.length < 8 || t.length > 70 || /\(으\)로|을\(를\)|와\(과\)|undefined|NaN/.test(t)) fail('시즌 결산의 문장이 이상함: ' + t); }
+          if (new Set(st).size !== st.length) fail('시즌 결산에 같은 문장이 두 번: ' + JSON.stringify(st));
+          if (st.length === 3) three++;
+          // 우승한 해에는 우승 문장이 반드시 들어간다(가장 무거운 일이므로). 문장 속 숫자는 실제 기록과 같다
+          if (sc.titles.length) { titleSeason++; if (!st.some(t => /우승을 차지했다|금메달을 목에 걸었다/.test(t))) fail('우승한 시즌인데 결산 문장에 우승이 없음: ' + JSON.stringify([sc.titles, st])); }
+          else if (st.some(t => /우승을 차지했다|금메달을 목에 걸었다/.test(t))) fail('우승이 없는 시즌인데 우승 문장이 있음: ' + JSON.stringify(st));
+          const om = st.map(t => /OVR이 (\d+)에서 (\d+)/.exec(t)).find(Boolean), H = S.hist;
+          if (om && !(H.length >= 2 && +om[1] === H[H.length - 2].ovr && +om[2] === H[H.length - 1].ovr)) fail('결산 문장의 OVR이 시즌 기록과 다름: ' + om[0]);
+          if (typeof sc.next !== 'string' || !sc.next) fail('결산에 다음 시즌 한 줄이 없음');
+        }
+        if (sc.type === 'prematch') {
+          const fin = sc.label === '결승';
+          if (!['playoff', 'intl', 'nations'].includes(sc.kind)) fail('경기 준비에 대회 종류가 없음');
+          if (fin || sc.kind !== 'playoff') { whyN++; if (!sc.why) fail('큰 경기인데 걸린 것 한 줄이 없음'); } else if (sc.why) fail('평범한 플레이오프 경기에 큰 경기 문구가 붙음: ' + sc.why);
+          if (fin) {
+            finals++; const tier = sc.kind === 'nations' ? 'nations' : sc.kind === 'intl' ? (/월드/.test(sc.tour) ? 'world' : 'mid') : S.squad === 'first' ? 'dom' : 'second';
+            const have = S.car.titles.filter(t => t.tier === tier).length, m = /통산 (\d+)번째/.exec(sc.why);
+            if (sc.kind !== 'intl' && (have ? !(m && +m[1] === have + 1) : !/첫/.test(sc.why))) fail(`결승의 한 줄이 통산 우승 수와 다름: ${sc.why} / 지금까지 ${have}회`);
+          }
+        }
+      }
+      G.autoStep();
+    }
+  }
+  if (onceBad) fail('한 번뿐인 사건이 두 번 나옴');
+  const per100 = evs / months * 100;
+  if (per100 < 40 || per100 > 50) fail(`사건이 나오는 빈도가 범위를 벗어남: 100달당 ${per100.toFixed(1)}건(무게는 고르는 것만 바꾼다. v0.11.10은 44~45건)`);
+  if (near12 / 36 > .9) fail(`같은 사건이 12달 안에 다시 나오는 일이 많음: 커리어당 ${(near12 / 36).toFixed(2)}번`);
+  if (!again || !finals || !titleSeason) fail('검사할 표본이 없음(반복 사건·결승·우승 시즌)');
+  // 사건 기록이 없는 예전 저장, 이상한 값이 든 저장
+  fresh(11190); toIdle(); G.save();
+  for (const bad of [undefined, 'x', [1, 2], { ladder: 'a', nope: [1, 2], patch: [2, 9] }, { ladder: [-1, 3] }]) {
+    const o = JSON.parse(mem[KEY]); if (bad === undefined) delete o.evh; else o.evh = bad; o.yr.hl = bad === undefined ? undefined : [{ m: 3, w: 5, t: 'x'.repeat(300) }, { m: 'a', w: 1, t: 'b' }, 7, null];
+    mem[KEY] = JSON.stringify(o); G._seen(); if (G.load() !== 'ok') fail('사건 기록이 이상한 저장을 열지 못함: ' + JSON.stringify(bad));
+    const S = G.state(); if (!S.evh || Array.isArray(S.evh) || Object.keys(S.evh).some(k => !D.EVENTS.some(e => e.id === k) || !(S.evh[k][0] >= 0))) fail('이상한 사건 기록을 버리지 않음: ' + JSON.stringify(S.evh));
+    if (S.yr.hl && S.yr.hl.some(x => typeof x.t !== 'string' || x.t.length > 120 || !Number.isFinite(x.m))) fail('이상한 시즌 장면을 버리지 않음');
+    let n = 0; while (!G.state().over && n++ < 40000) G.autoStep(); if (!G.state().over) fail('이상한 사건 기록을 고친 뒤 은퇴까지 가지 못함');
+    fresh(11190); toIdle(); G.save();
+  }
+  console.log(`사건·시즌의 장면: 36커리어 사건 ${evs}건(100달당 ${per100.toFixed(1)}건) · 같은 사건이 12달 안에 다시 ${(near12 / 36).toFixed(2)}번/커리어 · 두 번째 이후의 다른 글 ${again}번 확인 · 사건 기록과 실제 횟수 일치 | 시즌 ${seasons}개의 문장 ${lines}줄(세 줄인 시즌 ${three}개), 우승 시즌 ${titleSeason}개에 우승 문장, OVR 숫자 일치 | 큰 경기 ${whyN}번의 한 줄(결승 ${finals}번은 통산 우승 수와 대조) | 사건 기록이 없거나 이상한 저장 5종을 열어 은퇴까지`);
+}
 console.log('통과');
