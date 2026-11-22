@@ -541,3 +541,16 @@ p.cashsum.none { font-size: 13px; line-height: 1.5; color: var(--dim); }
 @media (max-width: 350px) { #apline { font-size: 13px; letter-spacing: -.2px; } }
 @media (max-width: 380px) { .gsum em.gap { display: none; } }
 @media (min-width: 381px) and (max-width: 419px) { .gsum em.gcnt.hasgap { display: none; } }   /* 이 폭에서는 남은 조건이 달성 수 자리를 대신한다(둘 다 두면 한 줄이 넘친다) */   /* 좁은 화면: 진행 줄이 한 줄에 들어가게, 목표 요약은 전처럼 두 줄로(남은 조건은 펼치면 보인다) */
+
+/* ---------- 0.11.10 최근 진행 · 쉬운 설명 ---------- */
+.stat small .keyst { color: var(--cy); font-weight: 700; }
+.rline b.fhead { color: var(--dim); font-size: 12px; font-weight: 700; margin-right: 6px; }
+.fds { display: flex; flex-direction: column; gap: 6px; } .fds:empty { display: none; }
+.fds.clamp .fd { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.recap.feed .morerow { gap: 6px; }
+/* 한 줄씩의 일: 보통은 차분하게, 크게 볼 일(우승·수상·설욕·결승)은 금색 띠로 눈에 띄게 */
+.fd { font-size: 14px; line-height: 1.5; font-weight: 500; overflow-wrap: anywhere; color: var(--text); } .fd b { color: var(--gold); margin-right: 4px; }
+.fd.w { color: var(--ok); } .fd.l { color: var(--bad); } .fd.good { color: var(--ok); }
+.fd.big { font-size: 15px; font-weight: 700; padding: 6px 10px; background: rgba(255, 200, 80, .08); border-left: 3px solid var(--gold); } .fd.big.gold { color: var(--gold); }
+.chips.grow .chip.ovrc { font-weight: 700; }
+.flog li { font-size: 13px; }

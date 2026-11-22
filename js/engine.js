@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.9';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.10';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
