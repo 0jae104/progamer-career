@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.8';
+  const UI_VERSION = '0.11.9';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -410,7 +410,7 @@
           ${sc.fans && sc.fans.length ? `<div class="fans"><p class="sec">팬 반응</p>${sc.fans.map(x => `<p><span class="chip v${esc(x.v)}">${D.FAN_VOICE[x.v]}</span>${esc(x.t)}</p>`).join('')}</div>` : ''}
           ${sc.eval && sc.eval.rivals ? `<p class="fine">동기 순위 · ${sc.eval.rivals.map(v => `${esc(v.nick)} ${esc(v.rank)}위 (평점 ${f1(v.r)})`).join(' · ')}</p>` : ''}
           ${sc.notes.map(n => `<p>${esc(n)}</p>`).join('')}${autoLine(sc.auto)}
-          <div class="chips">${sc.growth.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${esc(g[0])} ${g[1] > 0 ? '+' : ''}${esc(g[1])}</span>`).join('')}<span class="chip">OVR ${esc(sc.ovr)}</span><span class="chip">월급 +${money(sc.salary)}</span></div>`;
+          <div class="chips">${sc.growth.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${esc(g[0])} ${g[1] > 0 ? '+' : ''}${esc(g[1])}</span>`).join('')}${ovrChip(sc.o0, sc.o1) || `<span class="chip">OVR ${esc(sc.ovr)}</span>`}<span class="chip">월급 +${money(sc.salary)}</span></div>${sc.why && WHY[sc.why] ? `<p class="why">${esc(WHY[sc.why])}</p>` : ''}`;
   }
   // 진행 요약의 라이벌 줄(0.11.4): 엔진이 기록한 사실만 쓴다. 라이벌전 결과(r.rv)에 지금의 통산 전적을 붙이고,
   // 진행한 달에 소식 목록(S.log)에 남은 라이벌의 일(콜업·이적·부상·복귀·우승·은퇴·대회 맞대결)을 최대 두 줄 보여 준다. 없으면 아무것도 그리지 않는다.
@@ -429,6 +429,28 @@
     const news = !r.n ? [] : S.log.filter(l => { const t = l.y * 100 + l.m; if (t < lo || t > hi || seen[l.msg]) return false; const hit = rs.some(x => l.msg.startsWith(x.nick + ' — ')); if (hit) seen[l.msg] = 1; return hit; }).slice(0, 2);
     return { lines: out, news };
   }
+  /* 성장의 결과(0.11.9): 엔진이 월간 보고에 적은 실제 값만 쓴다.
+     - OVR 칩: 정수가 바뀌었으면 "OVR 65 → 66", 아니면 "OVR 65 · 다음까지 0.4"(실제 남은 값).
+     - 거의 오르지 않은 달에는 이유 한 줄. 이유는 엔진이 성장 공식에서 실제로 작았던 항으로 고른다(why). */
+  const WHY = {
+    rest: '이번 달은 쉬어서 능력치가 거의 오르지 않았다.',
+    cap: '주요 능력치가 한계에 가까워 성장이 느리다. 한계는 선수 탭에서 볼 수 있고, 자산 탭의 시즌 프로젝트(집중 캠프)로 올릴 수 있다.',
+    age: '나이 때문에 성장이 느려지는 시기다.',
+    plan: '이번 달 할 일은 이 포지션의 주요 능력치를 거의 올리지 않는다.',
+  };
+  function ovrChip(o0, o1) {
+    if (typeof o0 !== 'number' || typeof o1 !== 'number') return '';
+    const a = Math.floor(o0 + 1e-9), b = Math.floor(o1 + 1e-9);
+    if (a !== b) return `<span class="chip ovrc ${b > a ? 'up' : 'down'}">OVR ${esc(a)} → ${esc(b)}</span>`;
+    const left = Math.round((b + 1 - o1) * 10) / 10;
+    return `<span class="chip ovrc">OVR ${esc(b)} · 다음까지 ${esc(left.toFixed(1))}</span>`;
+  }
+  // 자동진행의 진행 줄에 붙는 한 토막: 가장 크게 변한 능력치와 OVR. 지나간 달을 쌓지 않는다
+  function growShort(lr) {
+    if (!lr || typeof lr.o1 !== 'number') return '';
+    const g = (lr.growth || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0], a = Math.floor(lr.o0 + 1e-9), b = Math.floor(lr.o1 + 1e-9);
+    return `${g ? `${g[0]} ${g[1] > 0 ? '+' : ''}${g[1]} · ` : ''}${a !== b ? `OVR ${a}→${b}` : `OVR ${lr.o1.toFixed(1)}`}${lr.why === 'cap' ? ' · 한계 근접' : ''}`;
+  }
   function recapCard() {
     const r = G.recap(), lr = G.lastRep(); if (!r || (!r.n && !r.ev && !STOP[r.stop])) return '';
     const more = !!U.recMore, e = r.ev, long = !!e && String(e.text || '').length > 70;
@@ -437,12 +459,13 @@
     const moreBtn = n => `<button class="more" data-act="recmore" aria-expanded="${more}">${more ? '간단히' : n ? `자세히 · ${esc(n)}건 더` : '자세히'}</button>`;
     if (!r.n) return `<div class="recap" aria-live="polite">${stop}${evHtml}${long ? `<div class="morerow">${moreBtn(0)}</div>` : ''}</div>`;
     const range = r.n > 1 ? `${r.y0 !== r.y1 ? r.y0 + '년차 ' : ''}${r.m0}월~${r.y0 !== r.y1 ? r.y1 + '년차 ' : ''}${r.m1}월` : `${r.m1}월`, dc = r.cond1 - r.cond0;
-    const top = r.g.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3), au = r.au || [], S = G.state(), C = G.cash();
+    const top = r.g.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2), au = r.au || [], S = G.state(), C = G.cash();   // 0.11.9: 가장 크게 변한 두 가지 + OVR
+    const oc = ovrChip(r.o0, r.o1), whyTxt = lr && lr.why && WHY[lr.why] && typeof r.o0 === 'number' && r.o1 - r.o0 < .15 * r.n ? WHY[lr.why] : '';
     const old = ` · 월급 +${money(r.sal)}${r.spent ? ` · 자동 관리 −${money(r.spent)}` : ''}`;
     const cashTxt = r.n === 1 && C.known && !C.gap ? ` · 자금 ${msgn(C.net)} (${esc(cashParts(C.month))})` : old + (r.ap && AP.m0 != null && r.n > 1 ? ` · 잔고 ${money(AP.m0)} → ${money(S.money)}` : '');
     const R = recapLines(r), key = R.lines.slice().sort((a, b) => b.big - a.big)[0], rest = R.lines.filter(x => x !== key), hidden = rest.length + R.news.length + (long ? 1 : 0), anyRival = R.lines.some(x => x.rival) || R.news.length > 0;
     return `<div class="recap" aria-live="polite">${stop}${evHtml}<p class="rline"><b>${esc(range)}${r.ap ? ` 자동진행(${esc(r.n)}개월)` : ' 진행'}</b>${r.w + r.l ? ` · ${esc(r.w)}승 ${esc(r.l)}패` : ''}${cashTxt}${r.skip ? ` · 자동 건너뜀 ${esc(r.skip)}건` : ''} · 컨디션 ${dc > 0 ? '+' : ''}${esc(dc)}</p>
-      ${top.length ? `<div class="chips">${top.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${esc(g[0])} ${g[1] > 0 ? '+' : ''}${esc(g[1])}</span>`).join('')}</div>` : ''}
+      ${top.length || oc ? `<div class="chips">${top.map(g => `<span class="chip ${g[1] > 0 ? 'up' : 'down'}">${esc(g[0])} ${g[1] > 0 ? '+' : ''}${esc(g[1])}</span>`).join('')}${oc}</div>` : ''}${whyTxt ? `<p class="why">${esc(whyTxt)}</p>` : ''}
       ${key ? key.html : ''}${more ? rest.map(x => x.html).join('') + R.news.map(l => `<p class="rvnews"><b>라이벌 소식</b> ${esc(l.msg)}</p>`).join('') : ''}
       <div class="morerow">${hidden ? moreBtn(hidden - (long ? 1 : 0)) : ''}${anyRival ? '<button class="more" data-act="tab" data-id="league" data-to="rivals">라이벌 기록 보기 ›</button>' : ''}${au.length ? `<button class="more" data-act="auopen" aria-expanded="${!!U.auOpen}">${U.auOpen ? '자동 선택 접기' : `자동 선택 ${esc(r.aun || au.length)}건`}</button>` : ''}${lr ? `<button class="more" data-act="repopen" aria-expanded="${!!U.repOpen}">${U.repOpen ? '결과 접기' : `${esc(r.m1)}월 결과 자세히`}</button>` : ''}</div>
       ${U.auOpen && au.length ? `<ul class="aulist">${au.slice().reverse().map(x => `<li><b>자동 선택 · ${esc(AU_KIND[x.k] || '선택')}</b> ${esc(x.t)} → ${esc(x.c)}${x.r ? `<small>${esc(x.r)}</small>` : ''}</li>`).join('')}</ul>${(r.aun || 0) > au.length ? '<p class="fine">최근 것만 보인다. 전체는 기록 탭의 "최근 자동 선택"에 있다.</p>' : ''}` : ''}
@@ -460,12 +483,32 @@
     return `<div class="srow"><button class="sname" data-act="shop-info" data-id="${esc(it.id)}" aria-expanded="${open}"><b>${esc(it.name)}</b><span>${esc(st)}</span></button>
       <button class="tog" data-act="shop-auto" data-id="${esc(it.id)}" aria-pressed="${it.on}" aria-label="${esc(it.name)} ${it.once ? '매달 자동' : '모이면 자동'} ${it.on ? '켜짐' : '꺼짐'}" ${it.max && !it.on ? 'disabled' : ''}>자동 ${it.on ? '켜짐' : '꺼짐'}</button>
       <button class="sbuy" data-act="buy" data-id="${esc(it.id)}" aria-label="${esc(it.name)} ${it.max ? '최대 단계' : it.used ? '이번 달 완료' : `지금 사기 ${esc(money(it.cost))}`}" ${it.max || it.used || S.money < it.cost ? 'disabled' : ''}>${it.max ? '최대' : it.used ? '완료' : '사기'}</button></div>
-      ${open ? `<p class="sdesc">${esc(it.desc)}${esc(fact)}${it.once ? '' : ' 자동을 켜면 돈이 모였을 때 한 달에 한 단계씩 산다.'}${!it.max && !it.used && S.money < it.cost ? ' 지금은 자금이 모자라다.' : ''}</p>` : ''}`;
+      ${open ? `<p class="sdesc">${esc(it.desc)}${esc(fact)}${it.once ? '' : esc(tierFact(it))}${it.once ? '' : ' 자동을 켜면 돈이 모였을 때 한 달에 한 단계씩 산다.'}${!it.max && !it.used && S.money < it.cost ? ' 지금은 자금이 모자라다.' : ''}</p>` : ''}`;
+  }
+  /* 시즌 프로젝트(0.11.9): 자산 탭의 접힌 한 줄. 누르면 두 가지 가운데 하나를 고를 수 있다. 고르지 않아도 된다(자동으로 사지 않는다).
+     값·효과·대가·살 수 없는 이유는 엔진의 projInfo() 그대로다. */
+  const PROJ_WHY = { cond: n => `컨디션 ${n} 이상일 때 할 수 있다`, money: () => '자금이 모자라다', max: () => '이미 한계가 최대다', done: () => '', over: () => '' };
+  function projBox(S) {
+    const I = G.projInfo(); if (!I) return '';
+    const open = !!U.projOpen, top = D.STATS.slice().sort((a, b) => D.ROLES.find(r => r.id === S.role).w[b.id] - D.ROLES.find(r => r.id === S.role).w[a.id]).slice(0, 2).map(x => x.name).join('·');
+    const head = I.done ? `<b>시즌 프로젝트</b> ${esc(I.y)}년차 ${esc(I.done.t)} 완료 — ${esc(I.done.d)}` : `<b>시즌 프로젝트</b> ${esc(I.y)}년차 · 아직 고르지 않음 <em>(한 시즌에 하나, 선택)</em>`;
+    return `<div class="projbox"><button class="projsum" data-act="projopen" aria-expanded="${open}"><span>${head}</span><i aria-hidden="true">${open ? '접기' : I.done ? '내용' : '고르기'}</i></button>
+      ${open ? (I.done ? `<p class="sdesc">${esc(I.done.t)}에 ${money(I.done.c || 0)}을 썼다. ${I.done.id === 'camp' ? '오른 한계는 남는다(나이에 따른 노쇠는 전처럼 깎는다). 한계가 오르면 그 능력치가 다시 자랄 자리가 생긴다.' : '오른 인기는 해마다 조금씩 식는다. 인기는 방송 수입, 연봉 제안, 협상, 해외 제안에 쓰인다.'} 다음 프로젝트는 다음 시즌에 고를 수 있다.</p>`
+        : `${I.opts.map(o => `<div class="prow"><div class="pinfo2"><b>${esc(o.name)}</b><span>${esc(o.gain)} · ${esc(o.price)}</span><small>${o.id === 'camp' ? `${esc(top)} — 이 두 능력치가 한계에 막혔을 때 다시 자랄 자리를 만든다. 능력치가 바로 오르지는 않는다.` : '인기는 방송 수입과 다음 연봉 제안을 올린다. 능력치는 오르지 않는다.'}${o.why && PROJ_WHY[o.why] ? ` <i>${esc(PROJ_WHY[o.why](I.minCond))}</i>` : ''}</small></div><button class="sbuy" data-act="proj" data-id="${esc(o.id)}" aria-label="${esc(o.name)} ${esc(money(o.cost))}에 하기. ${esc(o.gain)}, ${esc(o.price)}" ${o.ok ? '' : 'disabled'}>${money(o.cost)}</button></div>`).join('')}<p class="fine">값은 연봉에 비례한다(집중 캠프 10%, 팬 캠페인 6%, 최소 100만). 한 시즌에 하나만 할 수 있고 되돌릴 수 없다. 누르면 바로 적용된다.</p>`) : ''}</div>`;
+  }
+  // 단계형 투자의 지금 효과 → 다음 단계(0.11.9). 숫자는 성장 공식(장비·코치: 단계당 성장 +5%, 식단: 단계당 매달 컨디션 +1.5)에서 나온다
+  function tierFact(it) {
+    const gi = G.growInfo() || { ratio: {} }, lv = it.lv, nx = Math.min(it.of, lv + 1), pc = v => `+${v * 5}%`, near = ks => ks.every(k => (gi.ratio[k] || 0) >= .95);
+    if (it.id === 'gear') return ` 지금 피지컬·반응속도 성장 ${pc(lv)}${it.max ? '(최대)' : ` → 다음 단계 ${pc(nx)}`}.${near(['mech', 'reflex']) ? ' 지금은 두 능력치가 한계에 가까워 사도 거의 오르지 않는다(장비는 한계를 올리지 않는다).' : ''}`;
+    if (it.id === 'coach') return ` 지금 판단력·팀워크·숙련 폭 성장 ${pc(lv)}${it.max ? '(최대)' : ` → 다음 단계 ${pc(nx)}`}.${near(['sense', 'team', 'pool']) ? ' 지금은 세 능력치가 한계에 가까워 사도 거의 오르지 않는다(코치는 한계를 올리지 않는다).' : ''}`;
+    if (it.id === 'care') return ` 지금 매달 컨디션 +${lv * 1.5}${it.max ? '(최대)' : ` → 다음 단계 +${nx * 1.5}`}. 컨디션이 높으면 쉬는 달이 줄어든다.`;
+    return '';
   }
   function autoPanel(S) {
-    const a = G.autoInfo(), opt = (k, v) => (k === 'keep' ? `${money(v)}` : v ? money(v) : '제한 없음');
+    const sal = Math.round(S.contract.salary / 10), a = G.autoInfo(), opt = (k, v) => (k === 'keep' ? `${money(v)}` : v ? money(v) : '제한 없음');
     const once = a.items.filter(x => x.once), tier = a.items.filter(x => !x.once), tOn = tier.filter(x => x.on).length, open = !!U.shopOpen;
     return `<div class="autop" id="autop"><p class="autosum" role="status"><b>${a.n ? `자동 ${esc(a.n)}개 켜짐` : '자동 모두 꺼짐'}</b> · 매달 자동으로 나가는 돈 <b>${a.monthly ? money(a.monthly) : '없음'}</b>${tOn ? ` · 단계형 ${esc(tOn)}개는 돈이 모이면` : ''}</p>
+      ${a.monthly ? `<p class="payline ${a.monthly > sal ? 'warn' : ''}">월급 ${money(sal)} − 반복 지출 ${money(a.monthly)} = <b>${msgn(sal - a.monthly)}</b>${a.monthly > sal ? ' · 반복 지출이 월급보다 크다. 잔고가 매달 줄어든다.' : ''} <small>방송 수입·상금·단계형 구매는 뺀 값이고, 계약이 바뀌면 달라진다.</small></p>` : ''}
       <div class="lims"><button class="lim" data-act="alim" data-id="keep">남겨 둘 돈<b>${opt('keep', a.keep)}</b></button><button class="lim" data-act="alim" data-id="cap">한 달 자동 지출 상한<b>${opt('cap', a.cap)}</b></button></div>
       <p class="sec">매달 반복 — 한 달에 한 번</p>${once.map(it => shopRow(it, S)).join('')}
       <button class="grp" data-act="shopgrp" aria-expanded="${open}"><span><b>단계형 투자</b>${tier.map(it => `${esc({ gear: '장비', coach: '코치', care: '식단' }[it.id] || it.name)} ${it.lv}/${it.of}`).join(' · ')}${tOn ? ` · 자동 ${esc(tOn)}개` : ''}</span><i aria-hidden="true">${open ? '접기' : '펼치기'}</i></button>
@@ -506,14 +549,16 @@
   function goalLine() { GOAL_HTML = goalIn(); return `<div class="gbox" id="gbox">${GOAL_HTML}</div>`; }
   function goalIn() {
     const g = G.goal(), open = U.goalOpen || !!G.tutTip('goal'), sg = G.goalNow(), okN = g.items.filter(i => i.ok).length;
-    return `<div class="goal slim low"><button class="goalbtn" data-act="goalopen" aria-expanded="${open}"><span class="gsum">${sg ? `<span class="${sg.done ? 'ok' : ''}"><b>목표</b>올해 ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</span>` : ''}<span>${sg ? '' : '<b>목표</b>'}다음 ${esc(g.title)} <em class="${okN === g.items.length ? 'ok' : ''}">${esc(okN)}/${esc(g.items.length)}</em></span></span><i aria-hidden="true">${open ? '접기' : '펼치기'}</i></button>
+    // 0.11.9: 아직 못 채운 조건 가운데 첫 번째를 숫자로("OVR 3 부족"). 조건과 값은 엔진의 goal() 그대로다
+    const miss = g.items.find(i => !i.ok), gap = miss ? (miss.low ? `${miss.cur}위→${miss.need}위` : `${miss.label} ${Math.round((miss.need - miss.cur) * 10) / 10} 부족`) : '';
+    return `<div class="goal slim low"><button class="goalbtn" data-act="goalopen" aria-expanded="${open}"><span class="gsum">${sg ? `<span class="${sg.done ? 'ok' : ''}"><b>목표</b>올해 ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</span>` : ''}<span>${sg ? '' : '<b>목표</b>'}다음 ${esc(g.title)}${gap ? ` <em class="gap">${esc(gap)}</em>` : ''} <em class="gcnt ${gap ? 'hasgap' : ''} ${okN === g.items.length ? 'ok' : ''}">${esc(okN)}/${esc(g.items.length)}</em></span></span><i aria-hidden="true">${open ? '접기' : '펼치기'}</i></button>
 ${tip('goal')}
       ${open ? `${sg ? `<p class="sgoal ${sg.done ? 'ok' : ''}"><b>올해 목표</b> ${esc(sg.t)}${sg.txt ? ` <em>${esc(sg.txt)}</em>` : ''}</p>` : ''}<p class="sec gnext">다음 목표 · ${esc(g.title)}</p>${g.items.map(i => `<div class="gi ${i.ok ? 'ok' : ''}"><span>${esc(i.label)}</span><div class="bar"><i style="width:${i.low ? (i.ok ? 100 : 40) : Math.max(4, Math.min(100, Math.round(i.cur / i.need * 100)))}%"></i></div><b>${esc(i.cur)}${i.low ? '위' : ''} <em>/ ${esc(i.need)}${i.low ? '위 안' : ''}</em></b></div>`).join('')}<p class="fine">${esc(g.note)}</p>` : ''}</div>`;
   }
   function tPlay(S) { RV_HTML = rivalLine(); return `${goalLine()}${planBar(S)}${RV_HTML}${recapCard()}`; }
   function tMoney(S) {
     const c = S.contract;
-    return `<p class="moneyline"><span>보유 자금</span><b>${money(S.money)}</b><em>연봉 ${money(c.salary)} · 계약 ${esc(c.years)}년 남음</em></p>${autoPanel(S)}${cashBox(S)}`;   // 돈의 흐름은 맨 아래: 위쪽의 요약·한도·자동 스위치 위치를 0.11.5 와 같게 둔다
+    return `<p class="moneyline"><span>보유 자금</span><b>${money(S.money)}</b><em>연봉 ${money(c.salary)} · 계약 ${esc(c.years)}년 남음</em></p>${autoPanel(S)}${projBox(S)}${cashBox(S)}`;   // 돈의 흐름은 맨 아래: 위쪽의 요약·한도·자동 스위치 위치를 0.11.5 와 같게 둔다
   }
   /* 돈의 흐름(0.11.6): 최근에 진행한 달의 수입과 지출을 종류별로 보여 준다. 내역은 앱을 연 동안만 기억한다(저장에 넣지 않는다).
      새로 고친 직후에는 내역이 없으므로 숫자를 지어내지 않고 없다고 적는다. 기본은 한 줄이고 누르면 최근 세 달이 펼쳐진다. */
@@ -538,12 +583,12 @@ ${tip('goal')}
       <button class="btn" data-act="ap-start">▶▶ 자동진행 시작</button><button class="btn ghost" data-act="ap-close">닫기</button></section></div>`;
   }
   /* 자금 내역의 표시(0.11.6): 엔진이 적어 둔 실제 수입·지출만 쓴다. 종류별로 묶어 한 줄로 만든다. */
-  const CASH_K = [['sal', '월급'], ['stream', '방송'], ['prize', '상금'], ['award', '수상'], ['event', '사건'], ['auto', '자동 관리'], ['buy', '직접 구매'], ['etc', '기타']];
+  const CASH_K = [['sal', '월급'], ['stream', '방송'], ['prize', '상금'], ['award', '수상'], ['event', '사건'], ['auto', '자동 관리'], ['buy', '직접 구매'], ['proj', '시즌 프로젝트'], ['etc', '기타']];
   const msgn = v => (v < 0 ? '−' : '+') + money(Math.abs(v));
   const cashParts = items => CASH_K.map(([k, name]) => [name, items.filter(x => x.k === k).reduce((a, x) => a + x.v, 0)]).filter(x => x[1]).map(x => `${x[0]} ${msgn(x[1])}`).join(' · ');
   // 자동진행의 진행 줄 아래 한 줄: 방금 넘긴 달의 순변동과 잔고. 지나간 달을 쌓지 않고 이 한 줄만 바꾼다
   const cashMonth = (items, S) => (items.length ? `${items[0].m}월 자금 ${msgn(items.reduce((a, x) => a + x.v, 0))} (${cashParts(items)}) · 잔고 ${money(S.money)}` : `자금 변동 없음 · 잔고 ${money(S.money)}`);
-  const apLine = S => { const r = G.recap() || {}; return `${S.year}년차 ${G.month().m}월 · ${AP.n}개월 진행${r.aun ? ` · 자동 선택 ${r.aun}건` : ''}`; };
+  const apLine = S => { const r = G.recap() || {}, g = AP.n ? growShort(G.lastRep()) : ''; return `${S.year}년차 ${G.month().m}월 · ${AP.n}개월 진행${g ? ` · ${g}` : r.aun ? ` · 자동 선택 ${r.aun}건` : ''}`; };   // 0.11.9: 방금 넘긴 달의 성장 한 토막
   // 처음 안내(첫 3개월): 해당 화면 요소 바로 옆에 한 줄씩. 다음·건너뛰기를 누르면 다시 나오지 않는다.
   function tip(where, sc) {
     const t = G.tutTip(where); if (!t) return '';
@@ -1019,7 +1064,7 @@ ${tip('goal')}
   app.addEventListener('input', e => { if (e.target.id === 'nick') U.C.nick = e.target.value; });
   app.addEventListener('change', e => { if (e.target.id === 'impfile') { readImport(e.target.files && e.target.files[0]); e.target.value = ''; } });
   const DEMO_OK = new Set(['res', 'ok', 'mom-auto', 'tac', 'kick', 'wfast', 'wskip', 'snd', 'demoend', 'reload']);
-  const TAP_GUARD = new Set(['kick', 'demo', 'wskip', 'ap-go', 'ap-start', 'next', 'ok', 'res', 'goal', 'mom-auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
+  const TAP_GUARD = new Set(['proj', 'kick', 'demo', 'wskip', 'ap-go', 'ap-start', 'next', 'ok', 'res', 'goal', 'mom-auto', 'reroll', 'stay', 'transfer', 'try', 'accept', 'nego', 'retire', 'wipe', 'create', 'again', 'start', 'del', 'impok', 'tutnext', 'tutskip']);
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
@@ -1122,6 +1167,8 @@ ${tip('goal')}
       case 'plan': G.setPlan(id); SND.play('tap'); break;
       case 'goalopen': U.goalOpen = !U.goalOpen; break;
       case 'cashopen': U.cashOpen = !U.cashOpen; break;
+      case 'projopen': U.projOpen = !U.projOpen; break;
+      case 'proj': if (G.buyProj(id)) U.projOpen = true; break;
       case 'recmore': U.recMore = !U.recMore; break;
       case 'cmore': U.C.more = U.C.more === id ? '' : id; break;
       case 'auopen': U.auOpen = !U.auOpen; break;

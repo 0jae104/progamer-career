@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.8';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.9';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -560,6 +560,24 @@
   }
 
   /* ---------- 성장 ---------- */
+  // 남은 성장 여지: 성장 공식의 마지막 곱 1 − (능력치/한계)^4 를 포지션 비중으로 평균한 값(1 = 한계와 멀다, 0 = 한계)
+  function growRoom() { const w = role().w; let t = 0; for (const k in w) t += w[k] * Math.max(0, 1 - Math.pow(S.stats[k] / S.caps[k], 4)); return t; }
+  /* 이번 달 OVR 이 거의 오르지 않은 이유(0.11.9). 오른 폭이 0.15 미만일 때만, 성장 공식의 항 가운데 실제로 작았던 것을 위에서부터 하나 고른다.
+     rest = 쉬었다(휴식·재활·번아웃) / cap = 한계에 가깝다(여지 0.25 미만) / age = 나이 배율 0.3 이하 / plan = 고른 할 일이 포지션의 주요 능력치를 거의 올리지 않는다 */
+  function slowWhy(gain, planId) {
+    if (gain >= .15) return '';
+    if (planId === 'rest') return 'rest';
+    if (growRoom() < .25) return 'cap';
+    if (ageFactor() <= .3) return 'age';
+    const p = D.PLANS.find(x => x.id === planId), w = role().w; let fit = 0; if (p) for (const k in p.g) fit += (w[k] || 0) * p.g[k];
+    return fit < .12 ? 'plan' : '';
+  }
+  // 화면용: 지금의 OVR(소수), 다음 OVR 까지 남은 값, 남은 성장 여지, 한계에 가까운(93% 이상) 주요 능력치
+  function growInfo() {
+    if (!S) return null;
+    const w = role().w, o = ovr(), near = D.STATS.filter(x => w[x.id] >= .15 && S.stats[x.id] / S.caps[x.id] >= .93).map(x => x.name);
+    return { ovr: Math.round(o * 10) / 10, toNext: Math.round((Math.floor(o) + 1 - o) * 10) / 10, room: Math.round(growRoom() * 100) / 100, near, age: ageFactor(), ratio: Object.fromEntries(D.STATS.map(x => [x.id, Math.round(S.stats[x.id] / S.caps[x.id] * 100) / 100])) };
+  }
   function ageFactor() {
     const a = S.age; let f = B.ageGrow.find(x => a <= x[0])[1];
     if (S.trait === 'genius' && a <= 19) f += .15;
@@ -635,6 +653,8 @@
     S.fan = fr.fan; if (fr.lines.length) rep.fans = fr.lines;
     S.car.peak = Math.max(S.car.peak, ovr()); S.monthsInOrg++;
     rep.ovr = Math.floor(ovr());
+    // 0.11.9: 이번 달의 OVR 변화(소수 한 자리)와, 거의 오르지 않았다면 그 이유(성장 공식에서 실제로 0에 가까웠던 항). 난수를 쓰지 않는다
+    { const w = role().w; let o0 = 0; for (const k in w) o0 += w[k] * before[k]; rep.o0 = Math.round(o0 * 10) / 10; rep.o1 = Math.round(ovr() * 10) / 10; const why = slowWhy(ovr() - o0, sim.plan); if (why) rep.why = why; }
     const pm = rep.matches.filter(m => m.plays);
     if (pm.length) log(`${mi.m}월: ${pm.filter(m => m.win).length}승 ${pm.filter(m => !m.win).length}패, 평균 평점 ${(pm.reduce((a, m) => a + m.r, 0) / pm.length).toFixed(1)}`);
     if (mi.type === 'off') { S.q.push(rep); offseason(); return; }
@@ -741,7 +761,7 @@
     if (a > st + 1) fade('mech', (a - st - 1) * B.fadeMech[0] + B.fadeMech[1] + rnd() * .5);
     if (a > st + B.fadeOtherDelay) for (const k of ['sense', 'team', 'pool', 'mental']) fade(k, B.fadeOther);
     // 노력형: 시즌을 마칠 때마다 한계가 조금씩 오른다(늦게 피는 길). 이미 지나간 시즌은 다시 계산하지 않는다
-    if (S.trait === 'grinder' && B.grinderCapYear > 0 && S.age <= B.grinderCapAge) for (const k in S.caps) S.caps[k] = Math.min(99, S.caps[k] + B.grinderCapYear);
+    if (S.trait === 'grinder' && B.grinderCapYear > 0 && S.age <= B.grinderCapAge && S.age >= (B.grinderCapFrom || 0)) for (const k in S.caps) S.caps[k] = Math.min(99, S.caps[k] + B.grinderCapYear);
     S.fame *= .97; S.pendingNewYear = true;
     goalSeason(seasonSc, y, squadPlayed, S.age >= 36);   // 지난 목표의 판정과 다음 목표 후보(해가 넘어간 뒤의 소속·라이벌 상태로)
     if (S.age >= 36) { retire('서른여섯. 손이 더는 따라오지 않는다.'); return; }
@@ -982,7 +1002,7 @@
     pickOrg: { offers: [{ name: 's', org: 'org', note: 's', need1: 'n', need2: 'n', str: 'n' }, 1, 6] },
     event: { ev: 'ev', title: 's', text: 's', rid: 's?', choices: [{ label: 's', p: 'n?', disabled: 'b?', bd: 'bd?' }, 1, 4] },
     result: { title: 's', text: 's', ok: 'b', checked: 'b', p: 'n?', lines: ['s', 0, 16] },
-    month: { title: 's', sub: 's', plan: 's', ovr: 'n', salary: 'n', notes: ['s', 0, 16], growth: ['pair', 0, 16],
+    month: { title: 's', sub: 's', plan: 's', ovr: 'n', o0: 'n?', o1: 'n?', why: 's?', salary: 'n', notes: ['s', 0, 16], growth: ['pair', 0, 16],
       matches: [{ opp: 's', win: 'b', plays: 'b', r: 'n', k: 'n', d: 'n', a: 'n', label: 's?', score: 's?', mvp: 'b?', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8, '?'], rv: [{ nick: 's', r: 'n' }, 0, 6, '?'] }, 0, 16],
       eval: { r: 'n', rank: 'n', d: 'n?', rivals: [{ nick: 's', rank: 'n', r: 'n' }, 0, 6, '?'], '?': 1 }, fans: [{ v: 's', t: 's' }, 0, 8, '?'],
       auto: { spent: 'n', items: [{ id: 's', cost: 'n', why: 's' }, 0, 8], bal: 'n?', '?': 1 } },
@@ -1668,7 +1688,7 @@
     if (s.look != null && !LOOK(s.look)) delete s.look;   // 외형(0.11.2): 이상하면 버리고 예전 얼굴로
     if (s.prep != null && !Number.isFinite(s.prep)) delete s.prep;
     normStory(s);   // 시즌 목표와 라이벌 서사의 기록(0.11.5): 없으면 없는 대로, 이상하면 버린다
-    normAuto(s); normAp(s); normRecap(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
+    normAuto(s); normAp(s); normRecap(s); normProj(s);   // 자동 관리 설정과 진행 요약(0.11.1): 없으면 꺼짐, 이상하면 버린다
     // 처음 안내: 이 값이 없는 저장은 안내가 생기기 전에 시작한 커리어다. 진행 중에 안내가 끼어들지 않게 끝난 것으로 둔다.
     if (!s.tut || typeof s.tut !== 'object') s.tut = { p: 1, g: 1, r: 1, done: true };
     // 팬 반응 상태: 없거나 깨져 있으면 처음부터(지난 경기를 지어내지 않는다)
@@ -1748,6 +1768,43 @@
     save(); return true;
   }
 
+  /* ---------- 시즌 프로젝트(0.11.9): 한 시즌에 하나만 고르는 선택적 지출 ----------
+     - 고르지 않아도 된다. 자동으로 사지 않고, 자동진행을 멈추지도 않는다. 고르지 않으면 판정과 난수가 예전과 같다(난수를 쓰지 않는다).
+     - 효과는 사는 순간 한 번에 적용되고 그 뒤로 따로 계산하는 것이 없다. 그래서 이적·은퇴·저장과 불러오기에서 어긋날 것이 없다.
+       집중 캠프로 오른 한계는 남고(노쇠는 전처럼 깎는다), 팬 캠페인으로 오른 인기는 전처럼 해마다 조금씩 식는다.
+     - S.proj = { y: 산 연차, id, t: 이름, d: 한 줄 결과 }. 같은 연차에는 다시 살 수 없다(저장을 다시 불러와도 연차가 같으면 막힌다). */
+  const PROJ = [
+    { id: 'camp', name: '집중 캠프', sum: '한계를 올린다' },
+    { id: 'fan', name: '팬 캠페인', sum: '인기를 올린다' },
+  ];
+  function projTop() { const w = role().w; return D.STATS.slice().sort((a, b) => w[b.id] - w[a.id]).slice(0, 2); }
+  function projInfo() {
+    if (!S) return null;
+    const P = B.proj, done = S.proj && S.proj.y === S.year ? S.proj : null, top = projTop();
+    const opts = PROJ.map(p => {
+      const c = P[p.id], cost = Math.max(P.min, Math.round(S.contract.salary * c.rate / 10) * 10);
+      const gain = p.id === 'camp' ? `${top.map(x => x.name).join('·')} 한계 +${c.cap}` : `인기 +${Math.round(c.fame * (has('star') ? 1.5 : 1) * (1 - S.fame / 115) * 10) / 10}`;
+      const why = done ? 'done' : S.over ? 'over' : S.cond < P.minCond ? 'cond' : S.money < cost ? 'money' : p.id === 'camp' && top.every(x => S.caps[x.id] >= 99) ? 'max' : '';
+      return { id: p.id, name: p.name, sum: p.sum, cost, gain, price: `컨디션 ${c.cond}`, ok: !why, why };
+    });
+    return { y: S.year, done, opts, minCond: P.minCond, salary: S.contract.salary, lastY: S.proj ? S.proj.y : 0 };
+  }
+  function buyProj(id) {
+    const I = projInfo(), o = I && I.opts.find(x => x.id === id); if (!o || !o.ok || stale()) return false;
+    const c = B.proj[id]; S.money -= o.cost; cashAdd('proj', -o.cost);
+    let d = '';
+    if (id === 'camp') { const top = projTop(); for (const x of top) S.caps[x.id] = Math.min(99, S.caps[x.id] + c.cap); d = `${top.map(x => x.name).join('·')} 한계 +${c.cap}`; }
+    else { const f0 = S.fame; addFame(c.fame); d = `인기 ${Math.round(f0)} → ${Math.round(S.fame)}`; }
+    setCond(S.cond + c.cond);
+    S.proj = { y: S.year, id, t: o.name, d: txt(d, 60), c: o.cost };
+    log(`시즌 프로젝트 — ${o.name}: ${d}. ${fmtMoney(o.cost)} 사용.`);
+    save(); return true;
+  }
+  function normProj(s) {
+    const p = s.proj; if (p == null) return;
+    if (!(typeof p === 'object' && !Array.isArray(p) && Number.isInteger(p.y) && p.y >= 1 && p.y <= 60 && PROJ.some(x => x.id === p.id) && typeof p.t === 'string' && p.t.length <= 20 && typeof p.d === 'string' && p.d.length <= 60 && (p.c == null || (Number.isFinite(p.c) && p.c >= 0 && p.c < 1e9)))) delete s.proj;
+  }
+
   /* ---------- 자동 관리(0.11.1): 켜 둔 투자 항목을 매달 한 번 알아서 산다 ----------
      - 플레이어가 직접 켠 항목만. 새 커리어와 예전 저장은 전부 꺼져 있다(S.auto 가 없으면 아무 일도 하지 않고 판정도 예전과 같다).
      - 실행 시점은 한 군데: 월말 결산에서 월급을 받은 직후(finishMonth). 한 달에 한 번만(S.auto.at 에 실행한 달을 적는다).
@@ -1822,6 +1879,7 @@
     if (sc.auto) { r.spent += sc.auto.spent; r.skip += sc.auto.items.filter(x => x.why === 'low' || x.why === 'cap').length; }
     for (const g of sc.growth) { const e = r.g.find(x => x[0] === g[0]); if (e) e[1] = Math.round((e[1] + g[1]) * 10) / 10; else if (r.g.length < 16) r.g.push([g[0], g[1]]); }
     r.cond1 = Math.round(S.cond);
+    if (typeof sc.o0 === 'number' && typeof sc.o1 === 'number') { if (typeof r.o0 !== 'number') r.o0 = sc.o0; r.o1 = sc.o1; }   // 0.11.9: 구간의 OVR 변화
     S.lastRep = sc;
   }
   function settle() {
@@ -1860,6 +1918,7 @@
     return k;
   }
   function normRecap(s) {
+    if (s.recap && typeof s.recap === 'object') for (const k of ['o0', 'o1']) if (s.recap[k] != null && !(typeof s.recap[k] === 'number' && Number.isFinite(s.recap[k]) && Math.abs(s.recap[k]) < 200)) delete s.recap[k];
     const r = s.recap, num = v => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e12;
     if (r != null && !(typeof r === 'object' && !Array.isArray(r) && ['y0', 'm0', 'y1', 'm1', 'n', 'w', 'l', 'sal', 'spent', 'skip', 'cond0', 'cond1'].every(k => num(r[k])) && typeof r.stop === 'string' && r.stop.length < 12
       && Array.isArray(r.g) && r.g.length <= 16 && r.g.every(x => fits(x, 'pair')) && Array.isArray(r.cur) && r.cur.length === 2 && r.cur.every(num) && (r.ev == null || fits(r.ev, SCENE.result)) && fits(r.rv, [{ nick: 's', opp: 's', win: 'b', s: 's?' }, 0, 6, '?'])
@@ -2199,7 +2258,7 @@
     setFast(v) { S.opt.fast = !!v; save(); },
     LOOK_MAX, lookOk: LOOK,
     autoStart, autoMonth, autoStop, setAp, apInfo: () => apInfo(), autoLog: () => (S && S.alog ? S.alog.slice() : []), AP_RULE, _apTrace(a) { apTrace = a; }, _offers(withRenew) { let r = null; offerProbe = (cand, out) => { r = { cand, out }; }; try { genOffers(withRenew); } finally { offerProbe = null; } return r; },
-    cash, advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
+    cash, growInfo, projInfo, buyProj, advance, settle, setAuto, setAutoLimit, autoInfo, lastRep: () => (S && S.lastRep) || null, recap: () => (S && S.recap) || null,
     month: () => MONTHS[S.m],
     // 첫 20번 진행 측정값(이 기기에만 있다): 걸린 시간(ms, 화면을 꺼 둔 시간 포함)과 이벤트 수
     metrics: () => S ? Object.assign({}, S.stat) : null,

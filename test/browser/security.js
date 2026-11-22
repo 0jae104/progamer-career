@@ -17,8 +17,9 @@ module.exports = async function security(browser, url, R) {
   const { ctx, pg } = await open(browser, url);
   const saves = await pg.evaluate(() => {
     const out = {}, want = ['pickOrg', 'event', 'result', 'month', 'info', 'season', 'cards', 'stove', 'offers', 'tryout', 'moment', 'mresult', 'retire'];
-    for (let k = 0; k < 40 && Object.keys(out).length < want.length + 2; k++) {
-      PG.newGame({ nick: 'Sec' + k, region: ['kr', 'cn', 'eu', 'na'][k % 4], role: ['van', 'rov', 'core', 'gun', 'sup'][k % 5], trait: ['genius', 'grinder', 'brain'][k % 3] });
+    // 0.11.9: 시드를 정해 두고, 홈 상태의 저장까지 모일 때까지 계속한다. 전에는 시드 없이 장면 종류 수만 세어서, 실행에 따라 홈 저장 없이 끝나 아래 검사가 중단되는 일이 있었다
+    for (let k = 0; k < 40 && (Object.keys(out).length < want.length + 2 || !out.home || want.some(w => !out[w])); k++) {
+      PG.seed(4100 + k); PG.newGame({ nick: 'Sec' + k, region: ['kr', 'cn', 'eu', 'na'][k % 4], role: ['van', 'rov', 'core', 'gun', 'sup'][k % 5], trait: ['genius', 'grinder', 'brain'][k % 3] });
       for (let n = 0; n < 20000; n++) {
         const sc = PG.scene(), s = PG.state();
         if (sc && !out[sc.type] && (sc.type !== 'month' || (sc.matches.length && (sc.fans || []).length)) && (sc.type !== 'info' || sc.cele)) out[sc.type] = localStorage.getItem('pg_career_v1');

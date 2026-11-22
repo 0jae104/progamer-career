@@ -153,4 +153,74 @@ const toIdle = () => { let n = 0; while (n++ < 4000 && !(G.state().org && G.stat
   mem[KEY] = raw; G._seen(); if (G.load() !== 'ok') fail('저장을 다시 열지 못함');
   console.log(`자금 내역: 24커리어 ${steps}걸음(월급 ${months}달, 자동 관리가 나간 달 ${autoM}개)에서 잔고 + 내역 = 다음 잔고, 빠진 변동 0건 · 같은 달 중복 구매 ${dupes}건 · 종류별 ${K.filter(x => kinds[x]).map(x => `${x} ${kinds[x]}`).join(', ')} · 저장에는 들어가지 않음`);
 }
+// ---- 7) 0.11.9: 월간 보고의 OVR 변화와 "거의 오르지 않은 이유", 시즌 프로젝트 ----
+{
+  const B = D.BAL, P = B.proj, roleW = () => D.ROLES.find(r => r.id === G.state().role).w, ovrOf = st => { const w = roleW(); let t = 0; for (const k in w) t += w[k] * st[k]; return t; };
+  const room = S => { const w = roleW(); let t = 0; for (const k in w) t += w[k] * Math.max(0, 1 - Math.pow(S.stats[k] / S.caps[k], 4)); return t; };
+  // (가) 보고의 o0·o1 은 그달 앞뒤의 실제 OVR 이고, why 는 정의대로다(따로 다시 계산해 대조)
+  let reps = 0; const whys = {};
+  for (let c = 0; c < 9; c++) {
+    fresh(9300 + c, { role: ['van', 'rov', 'core', 'gun', 'sup'][c % 5], trait: ['genius', 'grinder', 'brain'][c % 3] }); let n = 0, o0 = null, seen = null;
+    while (!G.state().over && n++ < 30000) {
+      const sc = G.scene();
+      if (!sc && G.state().org) o0 = ovrOf(G.state().stats);   // 달을 시작하기 직전의 OVR
+      if (sc && sc.type === 'month' && sc !== seen) {
+        seen = sc; reps++;
+        if (typeof sc.o0 !== 'number' || typeof sc.o1 !== 'number') fail('월간 보고에 OVR 변화가 없음');
+        if (o0 != null && Math.abs(sc.o0 - Math.round(o0 * 10) / 10) > 1.05) fail(`보고의 시작 OVR ${sc.o0} 이 그달 시작의 실제 값 ${o0.toFixed(2)} 과 다름`);   // 사건으로 능력치가 바뀐 달은 달 시작(simMonth) 시점과 다를 수 있다
+        if (sc.ovr !== Math.floor(sc.o1 + 1e-9) && Math.abs(sc.o1 - sc.ovr) > 1) fail(`o1 ${sc.o1} 과 OVR ${sc.ovr} 이 맞지 않음`);
+        const sum = sc.growth.reduce((a, g) => a + Math.abs(g[1]), 0);
+        if (sc.why) { whys[sc.why] = (whys[sc.why] || 0) + 1; if (!['rest', 'cap', 'age', 'plan'].includes(sc.why)) fail('모르는 이유 ' + sc.why); if (sc.o1 - sc.o0 >= .25) fail(`OVR 이 ${sc.o1 - sc.o0} 올랐는데 이유(${sc.why})가 붙음`); if (sc.why === 'rest' && sc.plan !== '휴식') fail('쉬지 않았는데 이유가 휴식'); }
+        else if (sc.plan === '휴식' && sc.o1 - sc.o0 < .1 && sum < .5) fail('쉬어서 오르지 않은 달인데 이유가 없음');
+      }
+      G.autoStep();
+    }
+  }
+  if (reps < 800 || !whys.rest || !whys.cap) fail(`이유 표본이 모자람 ${reps} ${JSON.stringify(whys)}`);
+  // 이유 "cap" 은 남은 성장 여지가 0.25 미만일 때만: 상태를 직접 만들어 확인
+  fresh(9320, { trait: 'genius' }); toIdle();
+  { const S = G.state(); for (const k in S.stats) S.stats[k] = S.caps[k] - .2; S.cond = 90; S.wrist = 90; G.setPlan('scrim'); G.next(); let k = 0; while (G.scene() && G.scene().type !== 'month' && k++ < 40) G.autoStep(); const sc = G.scene(); if (!sc || sc.type !== 'month' || sc.why !== 'cap' || room(S) >= .25) fail(`한계에 붙은 선수의 이유가 cap 이 아님: ${sc && sc.why}`); if (G.growInfo().near.length < 2 || G.growInfo().room >= .25) fail('growInfo 가 한계에 가까운 능력치를 알려 주지 않음'); }
+  fresh(9321, { trait: 'genius' }); toIdle();
+  { const S = G.state(); for (const k in S.stats) S.stats[k] = S.caps[k] - 25; S.cond = 90; S.wrist = 90; G.setPlan('scrim'); G.next(); let k = 0; while (G.scene() && G.scene().type !== 'month' && k++ < 40) G.autoStep(); const sc = G.scene(); if (!sc || sc.type !== 'month' || sc.why) fail(`한계와 먼 어린 선수가 훈련했는데 이유가 붙음: ${sc && sc.why} (${sc && sc.o0}→${sc && sc.o1})`); if (sc.o1 - sc.o0 < .3) fail('훈련했는데 OVR 이 거의 오르지 않음'); }
+
+  // (나) 시즌 프로젝트
+  fresh(9330, { role: 'gun', trait: 'grinder' }); toIdle();
+  let S = G.state(), I = G.projInfo();
+  if (!I || I.done || I.opts.length !== 2 || I.opts.map(o => o.id).join() !== 'camp,fan') fail('프로젝트 선택지가 두 개가 아님');
+  const wantCost = id => Math.max(P.min, Math.round(S.contract.salary * P[id].rate / 10) * 10);
+  for (const o of I.opts) if (o.cost !== wantCost(o.id)) fail(`${o.id} 값 ${o.cost} ≠ 연봉 × ${P[o.id].rate} (${wantCost(o.id)})`);
+  // 돈이 모자라면, 컨디션이 낮으면 못 산다(상태는 그대로)
+  const snap = () => JSON.stringify([S.money, S.cond, S.fame, S.caps, S.proj || null]);
+  S.money = 5; S.cond = 90; let a = snap(); if (G.buyProj('camp') || snap() !== a || G.projInfo().opts[0].why !== 'money') fail('돈이 모자란데 프로젝트를 샀거나 이유가 다름');
+  S.money = 5000; S.cond = P.minCond - 1; a = snap(); if (G.buyProj('camp') || G.buyProj('fan') || snap() !== a || G.projInfo().opts[0].why !== 'cond') fail('컨디션이 낮은데 프로젝트를 샀거나 이유가 다름');
+  if (G.buyProj('nope') || snap() !== a) fail('없는 프로젝트를 삼');
+  // 집중 캠프: 비중이 큰 두 능력치의 한계만 +1, 컨디션 −20, 값만큼 자금, 능력치·인기는 그대로, 난수를 쓰지 않는다
+  S.cond = 80; const w = roleW(), top = D.STATS.slice().sort((x, y) => w[y.id] - w[x.id]).slice(0, 2).map(x => x.id), caps0 = Object.assign({}, S.caps), st0 = JSON.stringify(S.stats), m0 = S.money, f0 = S.fame, q0 = G.cash().seq, cost = wantCost('camp');
+  G.seed(4242); if (!G.buyProj('camp')) fail('집중 캠프를 사지 못함'); const r1 = G.rand(); G.seed(4242); if (G.rand() !== r1) fail('프로젝트 구매가 난수를 씀');
+  for (const k in caps0) if (Math.abs(S.caps[k] - (caps0[k] + (top.includes(k) ? P.camp.cap : 0))) > 1e-9) fail(`집중 캠프 뒤 ${k} 한계가 예상과 다름`);
+  if (S.money !== m0 - cost || S.cond !== 80 + P.camp.cond || JSON.stringify(S.stats) !== st0 || S.fame !== f0) fail('집중 캠프의 값·컨디션이 다르거나 능력치·인기가 바뀜');
+  const led = G.cash().all.filter(x => x.seq > q0); if (led.length !== 1 || led[0].k !== 'proj' || led[0].v !== -cost || led[0].gap) fail('프로젝트 지출이 자금 내역에 한 줄로 적히지 않음');
+  if (!S.proj || S.proj.y !== S.year || S.proj.id !== 'camp' || !G.projInfo().done) fail('산 프로젝트가 상태에 남지 않음');
+  if (!S.log[0].msg.includes('시즌 프로젝트') || !S.log[0].msg.includes('집중 캠프')) fail('소식에 적히지 않음');
+  // 같은 시즌에는 다시 못 산다. 저장하고 다시 열어도, 다른 선택지도
+  S.cond = 90; S.money = 99999; a = snap(); if (G.buyProj('camp') || G.buyProj('fan') || snap() !== a || G.projInfo().opts.some(o => o.ok || o.why !== 'done')) fail('한 시즌에 프로젝트를 두 번 삼');
+  G.save(); const raw = mem[KEY]; G._seen(); if (G.load() !== 'ok') fail('프로젝트가 든 저장을 열지 못함'); S = G.state();
+  if (!S.proj || S.proj.id !== 'camp' || G.buyProj('fan') || Math.abs(S.caps[top[0]] - (caps0[top[0]] + P.camp.cap)) > 1e-9) fail('다시 연 뒤 프로젝트 상태가 사라졌거나 또 살 수 있음');
+  if (!G.importCheck(JSON.stringify(G.exportData())).ok) fail('프로젝트가 든 백업이 검사를 통과하지 못함');
+  // 다음 시즌에는 다시 고를 수 있다. 팬 캠페인: 인기는 addFame 의 식대로, 컨디션 −12, 한계·능력치 그대로
+  const y0 = S.year; let n = 0; while (!G.state().over && G.state().year === y0 && n++ < 4000) G.autoStep(); let k2 = 0; while (G.scene() && k2++ < 200 && !G.state().over) G.autoStep();
+  S = G.state(); if (S.over) fail('검사용 커리어가 일찍 끝남');
+  if (G.projInfo().done || G.projInfo().lastY !== y0) fail('해가 바뀌었는데 지난 프로젝트가 올해 것으로 보임');
+  S.cond = 90; S.money = 99999; const fame0 = S.fame, capsB = JSON.stringify(S.caps), wantFame = Math.min(100, fame0 + P.fan.fame * ((S.cards || []).includes('star') ? 1.5 : 1) * (1 - fame0 / 115));
+  if (!G.buyProj('fan')) fail('다음 시즌에 팬 캠페인을 사지 못함');
+  if (Math.abs(S.fame - wantFame) > 1e-6 || S.cond !== 90 + P.fan.cond || JSON.stringify(S.caps) !== capsB || S.proj.id !== 'fan' || S.proj.y !== S.year) fail(`팬 캠페인의 효과가 예상과 다름(인기 ${fame0} → ${S.fame}, 예상 ${wantFame})`);
+  // 이상한 저장 값은 버리고 연다
+  for (const bad of [{ y: 'x', id: 'camp', t: 'a', d: 'b' }, { y: 3, id: 'hack', t: 'a', d: 'b' }, [1, 2], 'camp', { y: 3, id: 'camp', t: 'x'.repeat(99), d: 'b' }, { y: -1, id: 'fan', t: 'a', d: 'b' }]) {
+    const o = JSON.parse(raw); o.proj = bad; mem[KEY] = JSON.stringify(o); G._seen(); if (G.load() !== 'ok') fail('이상한 프로젝트 값이 든 저장을 열지 못함'); if (G.state().proj) fail('이상한 프로젝트 값을 버리지 않음: ' + JSON.stringify(bad)); if (!G.projInfo().opts.length) fail('프로젝트 안내가 깨짐');
+  }
+  // 자동으로는 사지 않는다: 자동 규칙·자동 관리로 은퇴까지 가도 프로젝트는 없다. 프로젝트가 없는 옛 저장도 그대로 열린다
+  fresh(9340, { trait: 'grinder' }); toIdle(); for (const it of D.SHOP) G.setAuto(it.id, true); n = 0; while (!G.state().over && n++ < 30000) { if (G.state().proj) fail('자동 진행이 프로젝트를 삼'); G.autoStep(); }
+  { const o = JSON.parse(raw); delete o.proj; mem[KEY] = JSON.stringify(o); G._seen(); if (G.load() !== 'ok' || G.state().proj || !G.projInfo().opts.every(x => x.why !== 'done')) fail('프로젝트가 없는 저장에서 이미 산 것으로 보임(소급 적용)'); }
+  console.log(`성장 표시·시즌 프로젝트: 월간 보고 ${reps}개의 OVR 변화와 이유(${Object.entries(whys).map(x => x.join(' ')).join(', ')}) 대조 · 집중 캠프는 ${top.join('·')} 한계 +${P.camp.cap}·컨디션 ${P.camp.cond}, 팬 캠페인은 인기 식대로·컨디션 ${P.fan.cond} · 한 시즌 한 번(다시 열어도) · 난수 안 씀 · 자동으로 사지 않음 · 이상한 값 6종 버림`);
+}
 console.log('통과');
