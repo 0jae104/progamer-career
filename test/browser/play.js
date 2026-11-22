@@ -241,9 +241,8 @@ module.exports = async function play(browser, url, R) {
     R.ok(await pg.evaluate(() => PG.rivalFixtures().length === 0 && !document.querySelector('.rvcard') && !/라이벌/.test(document.querySelector('.content').textContent)), `${w}: 라이벌전이 없는 달인데 홈에 라이벌 영역이 있음`);
     await load(pg, S4.rv); await m('홈 라이벌전 달');
     const rv = await pg.evaluate(() => { const fx = PG.rivalFixtures(), c = document.querySelector('.rvcard'), t = c ? c.textContent : ''; return { n: fx.length, cards: document.querySelectorAll('.rvcard').length, all: fx.every(f => t.includes(f.nick) && t.includes(f.org) && t.includes(`통산 ${f.w}승 ${f.l}패`)), plan: (() => { const r = document.querySelector('.plan5').getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.bottom <= f + 1; })(), seen: (() => { const r = c.getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return r.top >= 0 && r.bottom <= f + 1; })(), peek: (() => { const r = c.getBoundingClientRect(), f = document.querySelector('.foot').getBoundingClientRect().top; return Math.round(f - r.top); })(), veil: !!document.querySelector('.veil') }; });
-    // 0.11.7: 목표가 할 일 위로 올라가면서 320×568에서는 라이벌전 줄이 첫 화면에 다 들어오지 않는다(플레이어가 요청한 순서의 대가. 보고서에 적음).
-    // 그 크기에서는 "이번 달 라이벌전" 제목 줄이 보이는지(40px 이상)만 보고, 그보다 큰 화면에서는 전처럼 줄 전체가 보여야 한다.
-    R.ok(rv.n > 0 && rv.cards === 1 && rv.all && rv.plan && (w <= 320 ? rv.peek >= 40 : rv.seen) && !rv.veil, `${w}: 라이벌전 달의 홈 ${JSON.stringify(rv)}`);
+    // 0.11.8: 0.11.7 에서 320px 만 "제목 줄이 보인다"로 낮췄던 기준을 되돌렸다. 키가 작은 화면은 한 줄 요약이라 다시 줄 전체가 첫 화면에 보여야 한다.
+    R.ok(rv.n > 0 && rv.cards === 1 && rv.all && rv.plan && rv.seen && !rv.veil, `${w}: 라이벌전 달의 홈 ${JSON.stringify(rv)}`);
     R.note(`라이벌전 달 ${w}`, `라이벌전 줄이 첫 화면에 ${rv.seen ? '다 보임' : `위쪽 ${rv.peek}px만 보임(나머지는 스크롤)`}`);
     await pg.click('.rvcard');
     R.ok(await pg.evaluate(() => { const e = document.getElementById('rivals'), r = e && e.getBoundingClientRect(); return PG_UI.state.tab === 'league' && document.querySelector('.tabs [aria-selected=true]').dataset.id === 'league' && !!e && r.top >= -2 && r.top < innerHeight / 2 && document.querySelectorAll('#rivals .rival').length >= 1; }), `${w}: 라이벌 줄을 눌러 리그 탭의 라이벌 기록으로 가지 못함`);

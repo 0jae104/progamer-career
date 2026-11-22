@@ -507,3 +507,22 @@ p.cashsum.none { font-size: 13px; line-height: 1.5; color: var(--dim); }
 /* 접힌 요약은 두 줄(올해 목표 / 다음 목표). "목표" 이름표는 첫 줄 안에 있어 따로 한 줄을 쓰지 않는다. 긴 이름은 잘리지 않고 줄을 넘긴다 */
 .gsum { flex-direction: column; flex-wrap: nowrap; gap: 2px; } .gsum > span { overflow-wrap: anywhere; } .gsum > span > b { color: var(--cy); font-size: 13px; margin-right: 8px; }
 .goal.low { border-left-color: var(--cy); }
+
+/* ---------- 0.11.8 키가 작은 화면의 라이벌전 한 줄 ---------- */
+/* 기준은 높이다: 홈에서 모자라는 것은 세로 공간이고, 실제 폰의 브라우저는 주소 표시줄만큼 더 낮다(390×844 폰의 사파리는 약 664px).
+   높이 720px 이하에서만 한 줄 요약을 쓴다. 360×800·390×844·430×932 처럼 높이가 넉넉한 화면은 전과 같다. */
+.rvmini { display: none; } .rvcard i .rvgo { font: inherit; color: inherit; }
+@media (max-height: 720px) {
+  .rvcard .rvfull { display: none; }
+  .rvcard { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+  .rvcard .rvmini { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex: 1; white-space: nowrap; font-size: 14px; }
+  .rvmini > b { display: inline; flex: none; font-size: 13px; color: var(--gold); font-weight: 700; }
+  .rvmini > .rvn { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 700; }
+  .rvmini > em { flex: none; font-style: normal; font-size: 13px; color: var(--gold); }
+  .rvcard i .rvgo { display: none; }
+}
+/* 같은 높이에서 본문의 틈도 조금 줄인다(작은 화면에 이미 쓰던 값): "이번 달 할 일" 제목 줄을 접고(다섯 칸 묶음에 같은 이름이 있다) 칸 사이를 8px로.
+   375×667·390×664에서 한 줄 라이벌전 알림이 아래 버튼에 가려지지 않게 하는 데 필요한 만큼만. 다섯 칸의 크기와 위치 순서는 그대로다 */
+@media (min-width: 351px) and (min-height: 601px) and (max-height: 720px) { .plansec > .sec { display: none; } .content { gap: 8px; padding-top: 6px; } .planfx { margin-top: 4px; } }   /* 그보다 작은 화면에는 위쪽의 더 촘촘한 규칙이 이미 걸려 있다 */
+/* 폭이 350px 이하면 닉네임이 잘리지 않도록 "통산" 두 글자를 접는다(버튼 이름에는 그대로 있다) */
+@media (max-width: 350px) and (max-height: 720px) { .rvmini .rvw { display: none; } .rvmini > em { font-size: 12px; } .rvcard .rvmini { gap: 5px; } }

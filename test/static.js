@@ -19,7 +19,10 @@ const bad = [];
 if (/\.outerHTML\s*=\s*hstat\(/.test(ui)) bad.push('상태 칸을 outerHTML 로 바꾸는 코드가 있음(자금 줄이 쌓인다)');
 if (!/id="hbox"/.test(ui) || !/hb\.innerHTML = hstatIn\(S\)/.test(ui)) bad.push('상태·자금 상자(#hbox)의 안쪽만 바꾸는 코드가 없음');
 // 0.11.7: 목표는 자금 다음·할 일 앞에 한 번만, 상태·자금 상자와 다른 상자(#gbox)에. 자동진행은 그 안쪽만 바꾼다
-if (!/function tPlay\(S\) \{ return `\$\{goalLine\(\)\}\$\{planBar\(S\)\}\$\{rivalLine\(\)\}\$\{recapCard\(\)\}`; \}/.test(ui)) bad.push('홈 본문의 순서가 목표 → 할 일 → 라이벌전 → 지난 진행이 아님');
+// 0.11.8: 이번 달 할 일도 상자(#pbox)의 안쪽만, 글이 달라진 달에만 바꾼다. 라이벌전 줄은 한 곳에서만 만든다
+if (!/function tPlay\(S\) \{ RV_HTML = rivalLine\(\); return `\$\{goalLine\(\)\}\$\{planBar\(S\)\}\$\{RV_HTML\}\$\{recapCard\(\)\}`; \}/.test(ui)) bad.push('홈 본문의 순서가 목표 → 할 일 → 라이벌전 → 지난 진행이 아님');
+if (!/id="pbox"/.test(ui) || !/if \(ph !== PLAN_HTML\) \{ PLAN_HTML = ph; pb\.innerHTML = ph; \}/.test(ui)) bad.push('이번 달 할 일 상자(#pbox)를 달라진 달에만 바꾸는 코드가 없음');
+if ((ui.match(/class="plan5"/g) || []).length !== 1 || (ui.match(/class="rvcard"/g) || []).length !== 1) bad.push('할 일 다섯 칸이나 라이벌전 줄을 만드는 곳이 한 곳이 아님');
 if ((ui.match(/goalLine\(\)/g) || []).length !== 2) bad.push('goalLine() 을 그리는 곳이 한 곳이 아님(목표 칸이 둘이 될 수 있다)');
 if (!/id="gbox"/.test(ui) || !/gb\.innerHTML = gh/.test(ui) || /hstatIn[^\n]*goalIn\(/.test(ui)) bad.push('목표 상자(#gbox)의 안쪽만 바꾸는 코드가 없거나 목표가 상태·자금 상자 안에 들어감');
 const mem = {}; globalThis.localStorage = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };
