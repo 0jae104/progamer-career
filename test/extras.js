@@ -186,9 +186,9 @@ const toIdle = () => { let n = 0; while (n++ < 4000 && !(G.state().org && G.stat
   // (나) 시즌 프로젝트
   fresh(9330, { role: 'gun', trait: 'grinder' }); toIdle();
   let S = G.state(), I = G.projInfo();
-  if (!I || I.done || I.opts.length !== 2 || I.opts.map(o => o.id).join() !== 'camp,fan') fail('프로젝트 선택지가 두 개가 아님');
+  if (!I || I.done || I.opts.length !== 4 || I.opts.map(o => o.id).join() !== 'camp,fan,agent,acad') fail('프로젝트 선택지가 넷(집중 캠프·팬 캠페인·에이전트·아카데미)이 아님');   // 0.11.12: 둘 → 넷
   const wantCost = id => Math.max(P.min, Math.round(S.contract.salary * P[id].rate / 10) * 10);
-  for (const o of I.opts) if (o.cost !== wantCost(o.id)) fail(`${o.id} 값 ${o.cost} ≠ 연봉 × ${P[o.id].rate} (${wantCost(o.id)})`);
+  for (const o of I.opts.filter(x => x.id === 'camp' || x.id === 'fan')) if (o.cost !== wantCost(o.id)) fail(`${o.id} 값 ${o.cost} ≠ 연봉 × ${P[o.id].rate} (${wantCost(o.id)})`);
   // 돈이 모자라면, 컨디션이 낮으면 못 산다(상태는 그대로)
   const snap = () => JSON.stringify([S.money, S.cond, S.fame, S.caps, S.proj || null]);
   S.money = 5; S.cond = 90; let a = snap(); if (G.buyProj('camp') || snap() !== a || G.projInfo().opts[0].why !== 'money') fail('돈이 모자란데 프로젝트를 샀거나 이유가 다름');
@@ -287,5 +287,118 @@ const toIdle = () => { let n = 0; while (n++ < 4000 && !(G.state().org && G.stat
     fresh(11190); toIdle(); G.save();
   }
   console.log(`사건·시즌의 장면: 36커리어 사건 ${evs}건(100달당 ${per100.toFixed(1)}건) · 같은 사건이 12달 안에 다시 ${(near12 / 36).toFixed(2)}번/커리어 · 두 번째 이후의 다른 글 ${again}번 확인 · 사건 기록과 실제 횟수 일치 | 시즌 ${seasons}개의 문장 ${lines}줄(세 줄인 시즌 ${three}개), 우승 시즌 ${titleSeason}개에 우승 문장, OVR 숫자 일치 | 큰 경기 ${whyN}번의 한 줄(결승 ${finals}번은 통산 우승 수와 대조) | 사건 기록이 없거나 이상한 저장 5종을 열어 은퇴까지`);
+}
+// ---- 0.11.12) 큰돈의 쓸모: 전담 에이전트 · 유소년 아카데미 ----
+{
+  const P = D.BAL.proj, HALL2 = 'pg_legacy_v1';
+  const opt = id => G.projInfo().opts.find(x => x.id === id);
+  const idleNext = () => { let n = 0; do { G.autoStep(); } while (n++ < 6000 && !G.state().over && G.scene()); };
+  const toYear = y => { let n = 0; while (!G.state().over && n++ < 20000 && !(G.state().year >= y && !G.scene() && G.state().org)) G.autoStep(); };
+  // (가) 에이전트: 값, 장부, 난수·능력치 불변, 한 번만, 저장 뒤에도
+  fresh(12010, { role: 'rov', trait: 'genius' }); toIdle(); let S = G.state();
+  const aCost = () => Math.max(P.agent.min, Math.round(S.contract.salary * P.agent.rate / 10) * 10);
+  if (opt('agent').cost !== aCost() || !opt('agent').show) fail('에이전트 값이 연봉 × 15%(최소 300만)가 아님');
+  S.money = aCost() - 1; if (G.buyProj('agent') || opt('agent').why !== 'money' || S.agent) fail('돈이 모자란데 에이전트를 샀거나 이유가 다름');
+  S.money = 5000; S.cond = 20;   // 컨디션이 낮아도 살 수 있다(컨디션을 쓰지 않는다)
+  const snapA = JSON.stringify([S.stats, S.caps, S.fame, S.cond, S.trust]), m0 = S.money, q0 = G.cash().seq, c0 = aCost(), e0 = S.car.earn;
+  G.seed(77); if (!G.buyProj('agent')) fail('에이전트를 사지 못함'); const r1 = G.rand(); G.seed(77); if (G.rand() !== r1) fail('에이전트 구매가 난수를 씀');
+  if (S.money !== m0 - c0 || JSON.stringify([S.stats, S.caps, S.fame, S.cond, S.trust]) !== snapA || S.car.earn !== e0) fail('에이전트 구매가 값만큼 줄지 않았거나 능력치·한계·인기·컨디션·신뢰가 바뀜');
+  let led = G.cash().all.filter(x => x.seq > q0); if (led.length !== 1 || led[0].k !== 'agent' || led[0].v !== -c0 || led[0].gap) fail('에이전트 지출이 자금 내역에 한 줄(agent)로 적히지 않음');
+  if (!S.agent || S.agent.y !== S.year || S.agent.c !== c0 || S.proj.id !== 'agent' || !G.projInfo().agent) fail('에이전트 계약이 상태에 남지 않음');
+  S.money = 99999; let snap = JSON.stringify([S.money, S.agent, S.proj]); if (G.buyProj('agent') || G.buyProj('camp') || G.buyProj('acad') || JSON.stringify([S.money, S.agent, S.proj]) !== snap) fail('같은 시즌에 프로젝트를 또 삼(에이전트 뒤)');
+  G.save(); G._seen(); if (G.load() !== 'ok') fail('에이전트 계약이 든 저장을 열지 못함'); S = G.state();
+  if (!S.agent || S.agent.c !== c0 || G.buyProj('agent')) fail('다시 연 뒤 에이전트 계약이 사라졌거나 또 살 수 있음');
+  if (!G.importCheck(JSON.stringify(G.exportData())).ok) fail('에이전트 계약이 든 백업이 검사를 통과하지 못함');
+
+  // (나) 계약 시장: 에이전트가 있으면 같은 시드의 제안 목록에 후보 하나가 더 붙는다(앞의 제안은 그대로). 중복 구단 없음, 한 시장에 한 번, 못 찾으면 이어짐
+  let used = 0, kept = 0, rounds = 0, homePick = 0, refunds = 0, pairs = 0;
+  for (let c = 0; c < 40; c++) {
+    const seen = {};   // 에이전트 없이 돌린 같은 시드의 제안(연차별)
+    for (const withAgent of [false, true]) {
+      fresh(12100 + c, { region: ['kr', 'cn', 'eu', 'na'][c % 4], role: ['van', 'rov', 'core', 'gun', 'sup'][c % 5], trait: ['genius', 'grinder', 'brain'][c % 3] });
+      let n = 0, diverged = false, held = null;
+      while (!G.state().over && n++ < 40000) {
+        const S = G.state(), sc = G.scene();
+        if (withAgent && !sc && S.org && !S.agent && opt('agent').ok) { const cost = opt('agent').cost; if (G.buyProj('agent')) held = cost; }
+        if (sc && sc.type === 'offers' && !sc.__a) {
+          sc.__a = 1; const ag = sc.offers.filter(o => o.ag), ids = sc.offers.map(o => o.org);
+          if (new Set(ids).size !== ids.length) fail('제안 목록에 같은 구단이 두 번: ' + ids.join());
+          if (!withAgent) { if (ag.length) fail('에이전트가 없는데 추천 제안이 있음'); seen[S.year] = JSON.stringify(sc.offers); }
+          else {
+            if (ag.length > 1) fail('한 시장에 에이전트 추천이 둘 이상');
+            if (held != null) {
+              rounds++;
+              if (ag.length) {
+                used++; const o = ag[0];
+                if (S.agent || !S.agentLast || !sc.msg.includes('에이전트가') || o.squad !== 'first' || o.org === S.org || !D.ORG[o.org] || sc.offers[sc.offers.length - 1] !== o && !sc.offers[0].renew) fail('에이전트 추천 제안의 상태가 이상함');
+                if (D.ORG[o.org].region === S.home && D.ORG[S.org].region !== S.home && o.squad === 'first') { homePick++; if (!o.back) fail('고국 복귀 추천에 복귀 표시가 없음'); }
+                // 같은 시드·같은 지점까지 다른 선택이 없었다면, 추천을 뺀 목록은 에이전트 없는 목록과 같다
+                if (!diverged && seen[S.year]) {   // 구단·소속·기간·재계약 여부로 비교한다(연봉은 그동안 쓴 돈에 따라 사건의 선택이 달라져 조금 다를 수 있다)
+                  const key = a => JSON.stringify(a.map(x => [x.org, x.squad, x.years, x.renew])), base = JSON.parse(seen[S.year]);
+                  if (key(sc.offers.filter(x => !x.ag)) === key(base)) { pairs++; if (base.some(x => x.org === o.org)) fail('에이전트가 이미 있던 구단을 다시 가져옴'); if (sc.offers.filter(x => !x.ag).length !== base.length) fail('에이전트가 다른 제안을 지움'); }
+                }
+                held = null;
+              } else { kept++; if (!S.agent || !sc.msg.includes('더 찾아낸 1군 팀은 없었다')) fail('더 볼 후보가 없는데 에이전트 계약이 사라졌거나 안내가 없음'); }
+            } else if (ag.length) fail('에이전트 계약이 없는데 추천이 붙음');
+          }
+          diverged = diverged || withAgent;   // 한 번이라도 목록이 달라졌으면 그 뒤는 짝이 아니다(자동 규칙의 선택이 달라질 수 있다)
+        }
+        const before = S.agent ? S.agent.c : 0, m1 = S.money, e1 = S.car.earn, q1 = G.cash().seq;
+        G.autoStep();
+        if (G.state().over && before && withAgent) {   // 못 쓰고 은퇴: 그대로 돌려받고 통산 수입에는 넣지 않는다
+          const L = G.cash().all.filter(x => x.seq > q1 && x.k === 'refund');
+          if (L.length !== 1 || L[0].v !== before || G.state().agent || G.state().car.earn < e1 || G.state().q[0].earn !== G.state().car.earn) fail('은퇴할 때 에이전트 계약금을 돌려받지 못했거나 통산 수입에 섞임');
+          refunds++;
+        }
+        if (G.state().money < 0) fail('잔고가 음수');
+      }
+    }
+  }
+  if (!used || !pairs) fail('에이전트 추천을 확인할 표본이 없음');
+
+  // (다) 아카데미: 값은 단계마다 정해져 있고, 능력치·한계·인기·컨디션은 그대로, 장부 한 줄, 세 단계로 끝
+  fresh(12300, { role: 'sup', trait: 'grinder' }); toIdle(); S = G.state();
+  if (opt('acad').cost !== P.acad.cost[0] || opt('acad').show) fail('아카데미 1단계 값이 다르거나, 돈이 절반도 없는데 목록에 보임');
+  S.money = P.acad.cost[0] * P.acad.showAt; if (!opt('acad').show || opt('acad').ok || opt('acad').why !== 'money') fail('값의 절반을 모았는데 보이지 않거나 살 수 있음');
+  const paid = [], y1 = S.year;
+  for (let lv = 1; lv <= 3; lv++) {
+    S = G.state(); const cost = P.acad.cost[lv - 1]; S.money = cost + 1000; S.cond = 15;
+    const st = JSON.stringify([S.stats, S.caps, S.fame, S.cond, S.trust]), q = G.cash().seq, e = S.car.earn;
+    G.seed(99); if (!G.buyProj('acad')) fail(`아카데미 ${lv}단계를 사지 못함`); const r = G.rand(); G.seed(99); if (G.rand() !== r) fail('아카데미 구매가 난수를 씀');
+    paid.push(cost); led = G.cash().all.filter(x => x.seq > q);
+    if (S.money !== 1000 || JSON.stringify([S.stats, S.caps, S.fame, S.cond, S.trust]) !== st || S.car.earn !== e || led.length !== 1 || led[0].k !== 'acad' || led[0].v !== -cost) fail(`아카데미 ${lv}단계: 값·장부가 다르거나 능력치가 바뀜`);
+    if (!S.acad || S.acad.lv !== lv || S.acad.paid !== paid.reduce((a, b) => a + b, 0) || S.acad.ys.length !== lv || S.acad.ys[lv - 1] !== S.year) fail(`아카데미 ${lv}단계가 상태에 남지 않음`);
+    S.money = 9e6; if (G.buyProj('acad') || S.acad.lv !== lv) fail('같은 시즌에 아카데미를 두 번 삼');
+    G.save(); G._seen(); if (G.load() !== 'ok' || G.state().acad.lv !== lv || G.buyProj('acad')) fail('다시 연 뒤 아카데미 단계가 다르거나 또 살 수 있음');
+    if (!G.importCheck(JSON.stringify(G.exportData())).ok) fail('아카데미가 든 백업이 검사를 통과하지 못함');
+    // 다음 시즌으로: 결산에 수료생 한 줄, 수는 단계 + (인기 50 이상이면 1) + 0~1
+    const g0 = G.state().acad.grads, yy = G.state().year; let n = 0, sawLine = false, fameAt = null;
+    while (!G.state().over && n++ < 20000 && !(G.state().year > yy && !G.scene() && G.state().org)) { const sc = G.scene(); if (sc && sc.type === 'season' && sc.year === yy) { fameAt = G.state().fame; const k = G.state().acad.grads - g0; if (G.state().acad.ys[0] < yy) { if (k < lv || k > lv + 2) fail(`수료생 수 ${k}가 범위 밖(${lv}단계)`); sawLine = true; } else if (k !== 0) fail('세운 해에 수료생이 나옴'); } G.autoStep(); }
+    if (G.state().over) fail('검사용 커리어가 일찍 끝남(아카데미)');
+    if (lv >= 2 && !sawLine) fail('아카데미의 한 해가 결산에 반영되지 않음');
+  }
+  S = G.state(); S.money = 9e6; if (opt('acad').ok || opt('acad').why !== 'max' || G.buyProj('acad') || S.acad.lv !== 3 || S.acad.paid !== 380000) fail('아카데미가 3단계에서 끝나지 않음');
+  // 시즌을 시작할 때 감독 신뢰 +1 × 단계: 같은 시드의 두 갈래(사지 않음 / 1단계)를 다음 시즌 첫 달까지
+  const branch = buy => { fresh(12400, { role: 'core', trait: 'brain' }); toYear(3); const S = G.state(); S.money = 50000; S.trust = 40; if (buy && !G.buyProj('acad')) fail('두 갈래 검사에서 아카데미를 사지 못함'); const y = S.year; let n = 0; while (!G.state().over && n++ < 20000 && !(G.state().year > y && !G.scene())) G.autoStep(); const T = G.state(); return [T.trust, JSON.stringify([T.stats, T.caps, T.fame, T.cond, T.squad, T.org, T.car.g, T.car.w]), G.rand()]; };
+  const b0 = branch(false), b1 = branch(true);
+  if (!(b1[0] - b0[0] >= P.acad.trust - 1e-9 && b1[0] - b0[0] <= P.acad.trust * 1.5 + 1e-9) || b0[1] !== b1[1] || b0[2] !== b1[2])   // 신뢰를 더 받는 성장 카드가 있으면 1.3배까지 fail(`아카데미 1단계의 효과가 "다음 시즌 시작 때 감독 신뢰 +${P.acad.trust}" 하나가 아님: ${b0[0]} → ${b1[0]}`);
+  // 은퇴: 기록에 남고, 사지 않은 선수의 기록에는 없다
+  fresh(12300, { role: 'sup', trait: 'grinder' }); toIdle(); G.state().money = 40000; G.buyProj('acad'); let n9 = 0; while (!G.state().over && n9++ < 40000) G.autoStep();
+  let R = G.state().q[0], rec = G.hallGet(R.rid);
+  if (!R.acad || R.acad.lv !== 1 || R.acad.paid !== 30000 || R.acad.grads !== G.state().acad.grads || !R.life || !rec || rec.acadLv !== 1 || rec.acadGrads !== R.acad.grads || rec.acadPaid !== 30000) fail('은퇴 화면·명예의 전당에 아카데미가 남지 않음');
+  G.save(); G._seen(); if (G.load() !== 'ok' || !G.state().q[0].acad || G.state().q[0].life !== R.life) fail('은퇴한 저장을 다시 열면 아카데미 기록이 사라짐');
+  fresh(12301); let n8 = 0; while (!G.state().over && n8++ < 40000) G.autoStep(); R = G.state().q[0]; rec = G.hallGet(R.rid);
+  if ('acad' in R || 'life' in R || 'acadLv' in rec) fail('아카데미를 사지 않은 선수의 은퇴 기록에 아카데미 항목이 있음');
+  // 이상한 값: 버리고 연다. 명예의 전당의 가짜 단계도 버린다
+  fresh(12500); toIdle(); G.save(); const good = mem[KEY];
+  for (const [k, v] of [['agent', 'x'], ['agent', { y: 0, c: 100 }], ['agent', { y: 3, c: -5 }], ['agent', { y: 3, c: 1e12 }], ['agent', [1]], ['agentLast', { y: 3, t: 'x'.repeat(200) }], ['acad', { lv: 4, paid: 1, ys: [1, 2, 3, 4], grads: 0 }], ['acad', { lv: 2, paid: 1, ys: [1], grads: 0 }], ['acad', { lv: 1, paid: -1, ys: [1], grads: 0 }], ['acad', { lv: 1, paid: 1, ys: [1], grads: -3 }], ['acad', { lv: 1, paid: 1, ys: ['a'], grads: 1.5 }], ['acad', 7]]) {
+    const o = JSON.parse(good); o[k] = v; mem[KEY] = JSON.stringify(o); G._seen();
+    if (G.load() !== 'ok') fail(`이상한 ${k} 값이 든 저장을 열지 못함: ${JSON.stringify(v)}`);
+    if (G.state()[k] != null) fail(`이상한 ${k} 값을 버리지 않음: ${JSON.stringify(v)}`);
+    const I2 = G.projInfo(); if (!I2 || I2.opts.length !== 4) fail('이상한 값을 고친 뒤 프로젝트 정보가 깨짐');
+  }
+  mem[KEY] = good; G._seen(); G.load();
+  const fake = JSON.parse(mem[HALL2] || '{"v":1,"recs":[]}'); if (fake.recs && fake.recs[0]) { fake.recs[0].acadLv = 9; fake.recs[0].acadGrads = -4; mem[HALL2] = JSON.stringify(fake); G._seen(); const r0 = G.hallList ? G.hallList()[0] : G.hallGet(fake.recs[0].id); if (r0 && r0.acadLv) fail('명예의 전당의 가짜 아카데미 단계를 버리지 않음'); }
+  console.log(`에이전트·아카데미: 에이전트 값·장부·난수 불변·한 시즌 한 번·저장 뒤 유지 · 40커리어 × 두 갈래에서 추천이 붙은 시장 ${used}번(고국 복귀 추천 ${homePick}번, 같은 시드의 원래 목록과 대조 ${pairs}번), 더 볼 팀이 없어 이어진 시장 ${kept}번, 못 쓰고 은퇴해 돌려받음 ${refunds}번, 중복 구단 0 · 아카데미 세 단계의 값(3억·10억·25억)·장부·수료생 수·3단계에서 끝 · 효과는 다음 시즌 시작의 감독 신뢰 +${P.acad.trust}뿐(두 갈래 대조) · 은퇴 화면과 명예의 전당에 남음, 사지 않은 선수에게는 없음 · 이상한 값 12종을 버리고 엶`);
 }
 console.log('통과');

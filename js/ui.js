@@ -1,6 +1,6 @@
 /* 프로게이머 키우기 — 화면 */
 (function () {
-  const UI_VERSION = '0.11.11';
+  const UI_VERSION = '0.11.12';
   const VER = window.PG_VER = window.PG_VER || {}; VER.ui = UI_VERSION;
   // 스크립트 버전이 서로 다르면(업데이트 도중 파일이 섞임) 게임을 시작하지 않는다. 안내는 index.html 의 확인 스크립트가 띄운다.
   if (!window.PG || !window.PG_CARD || VER.data !== UI_VERSION || VER.engine !== UI_VERSION || VER.card !== UI_VERSION) return;
@@ -161,6 +161,7 @@
       <div class="kv"><div><span>1군 경기</span><b>${val(r.g)}</b></div><div><span>승률</span><b>${r.g > 0 ? val(r.w, w => Math.round(w / r.g * 100) + '%') : none}</b></div><div><span>평균 평점</span><b>${r.g > 0 ? val(r.avg, f1) : none}</b></div>
         <div><span>최고 OVR</span><b>${val(r.peak)}</b></div><div><span>경기 MVP</span><b>${val(r.mvp)}</b></div><div><span>1군 우승</span><b>${val(r.big, v => v + '회')}</b></div>
         <div><span>통산 수입</span><b>${val(r.earn, money)}</b></div><div><span>1군 데뷔</span><b>${full ? (r.debut ? esc(r.debut) + '세' : '데뷔 못 함') : none}</b></div><div><span>은퇴한 날</span><b>${r.at ? day(r.at) : none}</b></div></div>
+      ${r.acadLv ? `<div class="acadend"><p class="sec">남긴 것</p><p>유소년 아카데미 ${esc(r.acadLv)}단계 · 배출한 프로 ${esc(r.acadGrads || 0)}명 · 들인 돈 ${money(r.acadPaid || 0)}</p></div>` : ''}
       <div><p class="sec">트로피·수상</p>${full ? trophyChips(r) : `<p>${none}</p>`}</div>
       <div><p class="sec">거쳐 간 팀</p><p>${full && r.orgs.length ? r.orgs.map(esc).join(' → ') : none}</p></div>
       ${full && r.rv.length ? `<div><p class="sec">라이벌 상대 전적</p><ul class="plain">${r.rv.map(v => `<li><b>${esc(v.nick)}</b> ${esc(v.w)}승 ${esc(v.l)}패${v.label ? ` · ${esc(v.label)}` : ''}</li>`).join('')}</ul></div>` : ''}
@@ -522,14 +523,34 @@
   }
   /* 시즌 프로젝트(0.11.9): 자산 탭의 접힌 한 줄. 누르면 두 가지 가운데 하나를 고를 수 있다. 고르지 않아도 된다(자동으로 사지 않는다).
      값·효과·대가·살 수 없는 이유는 엔진의 projInfo() 그대로다. */
-  const PROJ_WHY = { cond: n => `컨디션 ${n} 이상일 때 할 수 있다`, money: () => '자금이 모자라다', max: () => '이미 한계가 최대다', done: () => '', over: () => '' };
+  const PROJ_WHY = { cond: n => `컨디션 ${n} 이상일 때 할 수 있다`, money: () => '자금이 모자라다', max: () => '더 올릴 것이 없다', done: () => '', over: () => '', held: () => '이미 계약 중이다', noorg: () => '소속 팀이 있을 때 할 수 있다' };
+  // 시즌 프로젝트(0.11.9) + 큰돈의 쓸모 둘(0.11.12: 전담 에이전트, 유소년 아카데미). 접힌 한 줄이 기본이고, 계약 중인 에이전트·아카데미가 있을 때만 상태 한 줄이 붙는다
+  const PROJ_NOTE = {   // 효과와 조건을 한 줄로. 값은 버튼에, 대가는 윗줄에 있다
+    camp: top => `${top}의 한계가 막혔을 때 다시 자랄 자리를 만든다.`,
+    fan: () => '방송 수입과 다음 연봉 제안이 오른다. 능력치는 그대로다.',
+    agent: () => '자격이 되는 1군 팀 중 한 곳을 더 본다(해외에서는 고국 팀 먼저). 조건을 보장하지 않는다.',
+    acad: () => '능력치는 그대로다. 해마다 수료생이 프로가 되고, 감독 신뢰와 은퇴 기록에 남는다.',
+  };
+  function projState(I, open) {   // 접힌 상태에서도 보이는 짧은 한 줄: 지금 걸려 있는 것. 펼치면 금액과 지난 결과까지
+    const a = [], b = [];
+    const dn = I.done ? I.done.id : '';   // 그 시즌에 산 것은 윗줄(완료 — …)에 이미 적혀 있으므로 상태 줄에서 뺀다
+    if (I.agent) { if (dn !== 'agent') a.push('에이전트 대기 중'); b.push(`에이전트 계약 ${money(I.agent.c)} — 다음 계약 시장에서 쓰인다(못 쓰고 은퇴하면 돌려받는다).`); }
+    else if (I.agentLast && I.agentLast.y >= I.y - 1) b.push(I.agentLast.t);
+    if (I.acad) { if (dn !== 'acad') a.push(`아카데미 ${I.acad.lv}단계(프로 ${I.acad.grads}명)`); b.push(`아카데미 ${I.acad.lv}단계 ${I.acad.name} — 지금까지 ${money(I.acad.paid)}, 시즌 시작 때 감독 신뢰 +${I.acad.trust}.`); }
+    return (a.length ? `<p class="projst" role="status">${esc(a.join(' · '))}</p>` : '') + (open && b.length ? `<p class="sdesc projnow">${b.map(esc).join('<br>')}</p>` : '');
+  }
   function projBox(S) {
     const I = G.projInfo(); if (!I) return '';
     const open = !!U.projOpen, top = D.STATS.slice().sort((a, b) => D.ROLES.find(r => r.id === S.role).w[b.id] - D.ROLES.find(r => r.id === S.role).w[a.id]).slice(0, 2).map(x => x.name).join('·');
     const head = I.done ? `<b>시즌 프로젝트</b> ${esc(I.y)}년차 ${esc(I.done.t)} 완료 — ${esc(I.done.d)}` : `<b>시즌 프로젝트</b> ${esc(I.y)}년차 · 아직 고르지 않음 <em>(한 시즌에 하나, 선택)</em>`;
-    return `<div class="projbox"><button class="projsum" data-act="projopen" aria-expanded="${open}"><span>${head}</span><i aria-hidden="true">${open ? '접기' : I.done ? '내용' : '고르기'}</i></button>
-      ${open ? (I.done ? `<p class="sdesc">${esc(I.done.t)}에 ${money(I.done.c || 0)}을 썼다. ${I.done.id === 'camp' ? '오른 한계는 남는다(나이에 따른 노쇠는 전처럼 깎는다). 한계가 오르면 그 능력치가 다시 자랄 자리가 생긴다.' : '오른 인기는 해마다 조금씩 식는다. 인기는 방송 수입, 연봉 제안, 협상, 해외 제안에 쓰인다.'} 다음 프로젝트는 다음 시즌에 고를 수 있다.</p>`
-        : `${I.opts.map(o => `<div class="prow"><div class="pinfo2"><b>${esc(o.name)}</b><span>${esc(o.gain)} · ${esc(o.price)}</span><small>${o.id === 'camp' ? `${esc(top)} — 이 두 능력치가 한계에 막혔을 때 다시 자랄 자리를 만든다. 능력치가 바로 오르지는 않는다.` : '인기는 방송 수입과 다음 연봉 제안을 올린다. 능력치는 오르지 않는다.'}${o.why && PROJ_WHY[o.why] ? ` <i>${esc(PROJ_WHY[o.why](I.minCond))}</i>` : ''}</small></div><button class="sbuy" data-act="proj" data-id="${esc(o.id)}" aria-label="${esc(o.name)} ${esc(money(o.cost))}에 하기. ${esc(o.gain)}, ${esc(o.price)}" ${o.ok ? '' : 'disabled'}>${money(o.cost)}</button></div>`).join('')}<p class="fine">값은 연봉에 비례한다(집중 캠프 10%, 팬 캠페인 6%, 최소 100만). 한 시즌에 하나만 할 수 있고 되돌릴 수 없다. 누르면 바로 적용된다.</p>`) : ''}</div>`;
+    const doneNote = { camp: '오른 한계는 남는다(나이에 따른 노쇠는 전처럼 깎는다). 한계가 오르면 그 능력치가 다시 자랄 자리가 생긴다.', fan: '오른 인기는 해마다 조금씩 식는다. 인기는 방송 수입, 연봉 제안, 협상, 해외 제안에 쓰인다.',
+      agent: '다음 계약 시장(계약 만료 또는 스토브리그의 이적 요청)에서 1군 후보 한 곳을 더 본다. 더 볼 팀이 없으면 그다음 시장까지 이어지고, 못 쓰고 은퇴하면 돌려받는다.', acad: '아카데미는 남는다. 해마다 결산에 수료생 소식이 오고, 은퇴 기록에 적힌다.' };
+    const shown = I.opts.filter(o => o.show !== false), hid = I.opts.find(o => o.id === 'acad' && o.show === false);
+    const row = o => { const arm = o.big && U.projArm === o.id && o.ok;
+      return `<div class="prow"><div class="pinfo2"><b>${esc(o.name)}</b><span>${esc(o.gain)} · ${esc(o.price)}</span><small>${esc(PROJ_NOTE[o.id](top))}${o.why && PROJ_WHY[o.why] ? ` <i>${esc(PROJ_WHY[o.why](I.minCond))}</i>` : ''}</small></div><button class="sbuy${arm ? ' arm' : ''}" data-act="proj" data-id="${esc(o.id)}" aria-label="${esc(o.name)} ${esc(money(o.cost))}${arm ? ' 지출 확정' : '에 하기'}. ${esc(o.gain)}, ${esc(o.price)}" ${o.ok ? '' : 'disabled'}>${o.why === 'max' && o.id === 'acad' ? '완료' : arm ? `한 번 더<br>${money(o.cost)}` : money(o.cost)}</button></div>`; };
+    return `<div class="projbox"><button class="projsum" data-act="projopen" aria-expanded="${open}"><span>${head}</span><i aria-hidden="true">${open ? '접기' : I.done ? '내용' : '고르기'}</i></button>${projState(I, open)}
+      ${open ? (I.done ? `<p class="sdesc">${esc(I.done.t)}에 ${money(I.done.c || 0)}을 썼다. ${doneNote[I.done.id] || ''} 다음 프로젝트는 다음 시즌에 고를 수 있다.</p>`
+        : `${shown.map(row).join('')}<p class="fine">한 시즌에 하나, 되돌릴 수 없다. 값은 연봉에 비례하고 아카데미만 정해진 값이다. 에이전트는 쓰일 때까지 이어지고 못 쓰고 은퇴하면 돌려받는다. 아카데미는 두 번 눌러야 산다.${hid ? ` 유소년 아카데미는 ${money(Math.round(hid.cost / 2))}을 모으면 여기에 나온다.` : ''}</p>`) : ''}</div>`;
   }
   // 단계형 투자의 지금 효과 → 다음 단계(0.11.9). 숫자는 성장 공식(장비·코치: 단계당 성장 +5%, 식단: 단계당 매달 컨디션 +1.5)에서 나온다
   function tierFact(it) {
@@ -618,7 +639,7 @@ ${tip('goal')}
       <button class="btn" data-act="ap-start">▶▶ 자동진행 시작</button><button class="btn ghost" data-act="ap-close">닫기</button></section></div>`;
   }
   /* 자금 내역의 표시(0.11.6): 엔진이 적어 둔 실제 수입·지출만 쓴다. 종류별로 묶어 한 줄로 만든다. */
-  const CASH_K = [['sal', '월급'], ['stream', '방송'], ['prize', '상금'], ['award', '수상'], ['event', '사건'], ['auto', '자동 관리'], ['buy', '직접 구매'], ['proj', '시즌 프로젝트'], ['etc', '기타']];
+  const CASH_K = [['sal', '월급'], ['stream', '방송'], ['prize', '상금'], ['award', '수상'], ['event', '사건'], ['auto', '자동 관리'], ['buy', '직접 구매'], ['proj', '시즌 프로젝트'], ['agent', '에이전트'], ['acad', '아카데미'], ['refund', '환급'], ['etc', '기타']];
   const msgn = v => (v < 0 ? '−' : '+') + money(Math.abs(v));
   const cashParts = items => CASH_K.map(([k, name]) => [name, items.filter(x => x.k === k).reduce((a, x) => a + x.v, 0)]).filter(x => x[1]).map(x => `${x[0]} ${msgn(x[1])}`).join(' · ');
   // 자동진행의 진행 줄 아래 한 줄: 방금 넘긴 달의 순변동과 잔고. 지나간 달을 쌓지 않고 이 한 줄만 바꾼다
@@ -941,7 +962,7 @@ ${tip('goal')}
           <p class="fine">${sc.scouted ? '시즌 중 연락해 온 스카우터가 있다. 이적을 요청하면 1군 제안이 올 가능성이 높다. ' : ''}이적을 요청했다가 잔류하면 감독 신뢰가 떨어진다.</p>`; break;
       case 'offers':
         h = `<p class="eyebrow">CONTRACT</p><h2>계약 제안</h2><p>${esc(sc.msg)}</p>
-          ${sc.offers.map((o, i) => `<div class="offer"><div class="row"><div class="grow"><b>${esc(o.name)}</b> <span class="dim">${esc(o.region)}${o.renew ? ' · 재계약' : ''}</span><br><span class="dim">${G.SQUAD[o.squad]} · ${esc(o.years)}년 · 연봉</span> <b>${money(o.salary)}</b></div></div>
+          ${sc.offers.map((o, i) => `<div class="offer"><div class="row"><div class="grow"><b>${esc(o.name)}</b> <span class="dim">${esc(o.region)}${o.renew ? ' · 재계약' : ''}</span>${o.ag ? ' <i class="agtag">에이전트 추천</i>' : ''}<br><span class="dim">${G.SQUAD[o.squad]} · ${esc(o.years)}년 · 연봉</span> <b>${money(o.salary)}</b></div></div>
             ${offerLines(o)}
             <div class="btns"><button class="btn" data-act="accept" data-i="${esc(i)}">계약</button><button class="btn ghost" data-act="nego" data-i="${esc(i)}" ${o.p == null ? 'disabled' : ''}>${o.p == null ? '협상 불가' : `15% 인상 요구 ${esc(o.p)}%`}</button></div></div>`).join('')}
           ${sc.canStay ? '<button class="btn ghost" data-act="stay">잔류한다</button>' : ''}${S.age >= 20 ? retireBtn() : ''}
@@ -972,6 +993,7 @@ ${tip('goal')}
       </svg>
       <div class="kv"><div><span>1군 경기</span><b>${esc(r.g)}</b></div><div><span>승률</span><b>${r.g ? Math.round(r.w / r.g * 100) + '%' : '-'}</b></div><div><span>평균 평점</span><b>${r.g ? f1(r.avg) : '-'}</b></div>
         <div><span>최고 OVR</span><b>${esc(r.peak)}</b></div><div><span>경기 MVP</span><b>${esc(r.mvp)}</b></div><div><span>통산 수입</span><b>${money(r.earn)}</b></div></div>
+      ${r.acad ? `<div class="acadend"><p class="sec">은퇴 뒤</p><p>${esc(r.life || '')}</p><p class="dim small">유소년 아카데미 ${esc(r.acad.lv)}단계 · 배출한 프로 ${esc(r.acad.grads)}명 · 들인 돈 ${money(r.acad.paid)}</p></div>` : ''}
       <div><p class="sec">트로피·수상</p>${r.titles.length + r.awards.length ? `<div class="chips">${r.titles.map(t => `<span class="chip gold">${esc(t.y)}년차 ${esc(t.name)}</span>`).join('')}${r.awards.map(a => `<span class="chip">${esc(a.y)}년차 ${esc(a.name)}</span>`).join('')}</div>` : '<p class="dim">트로피 없이 커리어를 마쳤다.</p>'}</div>
       <div><p class="sec">거쳐 간 팀</p><p>${r.orgs.map(esc).join(' → ')}</p></div>
       ${r.rivals && r.rivals.length ? `<div><p class="sec">라이벌</p>${r.rivals.map(v => rivalCard(v, `<p class="epi">${esc(v.epilogue)}</p>`)).join('')}</div>` : ''}
@@ -1123,6 +1145,7 @@ ${tip('goal')}
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const a = b.dataset.act, id = b.dataset.id, i = +b.dataset.i;
+    if (a !== 'proj') U.projArm = '';   // 두 번 눌러 사는 버튼(아카데미)은 다른 것을 누르면 풀린다
     SND.unlock();   // 사용자의 입력 뒤에만 오디오를 켠다
     if (a === 'reload') { window.location.reload(); return; }
     if (AP.on) { apStop('pause'); if (!['tab', 'plan', 'goalopen'].includes(a)) return; }   // 자동진행 중에는 어떤 입력이든 먼저 멈춘다. 탭 이동, 이번 달 할 일 바꾸기, 목표 펼치기는 멈춘 뒤 그대로 처리한다(한 번 누르면 된다. 0.11.7)
@@ -1222,8 +1245,12 @@ ${tip('goal')}
       case 'plan': G.setPlan(id); SND.play('tap'); break;
       case 'goalopen': U.goalOpen = !U.goalOpen; break;
       case 'cashopen': U.cashOpen = !U.cashOpen; break;
-      case 'projopen': U.projOpen = !U.projOpen; break;
-      case 'proj': if (G.buyProj(id)) U.projOpen = true; break;
+      case 'projopen': U.projOpen = !U.projOpen; U.projArm = ''; break;
+      case 'proj': {   // 아카데미처럼 금액이 큰 것은 같은 버튼을 두 번 눌러야 산다(창을 띄우지 않는다). 다른 곳을 누르면 풀린다
+        const o = (G.projInfo() || { opts: [] }).opts.find(x => x.id === id);
+        if (o && o.big && o.ok && U.projArm !== id) { U.projArm = id; break; }
+        U.projArm = ''; if (G.buyProj(id)) U.projOpen = true; break;
+      }
       case 'recmore': U.recMore = !U.recMore; break;
 
       case 'auopen': U.auOpen = !U.auOpen; break;

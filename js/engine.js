@@ -1,7 +1,7 @@
 /* 프로게이머 키우기 — 게임 엔진 (화면과 분리된 순수 로직. Node 에서도 실행 가능) */
 (function (root) {
   const D = root.PG_DATA || require('./data.js');
-  const VERSION = '0.11.11';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
+  const VERSION = '0.11.12';   // index.html 의 ?v= 와 sw.js 의 VERSION 도 함께 올린다(test/sim.js 가 일치 여부를 검사)
   const B = D.BAL;
   const TUT = 'pg_tut_v1';   // 이 기기에서 처음 안내를 끝냈거나 건너뛴 적이 있으면 '1'
   const KEY = 'pg_career_v1', BAK = 'pg_career_v1_bak', BAD = 'pg_career_v1_bad', HALL = 'pg_hall_v1';
@@ -208,6 +208,7 @@
     S.m = 0; S.dom = { spring: {}, summer: {} };
     backupNext = true;
     S.yr = { g: 0, w: 0, rs: 0, mvp: 0, g1: 0, rs1: 0, titles: [], awards: [] };
+    if (S.acad && S.acad.lv && S.org) addTrust(B.proj.acad.trust * S.acad.lv);   // 아카데미: 후배를 챙기는 선수를 감독이 달리 본다(시즌을 시작할 때 감독 신뢰 +1 × 단계)
     if (S.flags && S.flags.hlNext) { const n = S.flags.hlNext; delete S.flags.hlNext; if (typeof n === 'string') hl(6, n, 0); }   // 스토브리그의 이적은 새 시즌의 첫 장면이다
     setupSplit('spring');
   }
@@ -745,6 +746,18 @@
       if (!out.some(isBack)) { const low = Math.min(...D.ORGS.filter(g => g.region === S.home).map(g => S.orgStr[g.id])); genOffers.note = `${D.REGION[S.home].name} 리그의 1군 제안은 없었다. 문턱이 가장 낮은 팀도 OVR ${Math.ceil(low - need + homePen)} 안팎을 원한다(지금 ${Math.floor(o)}${homePen ? `, 나이 때문에 +${Math.round(homePen)}` : ''}).${proved ? '' : ` 한 시즌 ${B.homeGames}경기 이상, 평균 평점 ${B.homeAvg} 이상이면 고국 팀이 더 눈여겨본다.`}`; }
     }
     if (offerProbe) offerProbe(all, out.slice());
+    /* 전담 에이전트(0.11.12): 자격을 통과했지만 세 자리에 들지 못한 후보(cand 에 남은 것) 가운데 한 곳을 더 보여 준다. 새 후보를 만들지 않고 난수도 쓰지 않는다.
+       1군 제안만 가져온다: 해외에서 뛰는 중이고 목록에 고국 1군이 없으면 고국 1군(연봉이 가장 높은 곳) → 아니면 전력이 가장 강한 1군.
+       더 보여 줄 후보가 없으면 계약은 쓰이지 않고 다음 시장까지 이어진다. 측정용 호출(offerProbe)에서는 쓰지 않는다. */
+    if (S.agent && !offerProbe) {
+      let pk = abroad && !out.some(isBack) ? cand.find(isBack) : null;
+      if (!pk) pk = cand.filter(x => x.squad === 'first').sort((a, b) => S.orgStr[b.org] - S.orgStr[a.org] || b.salary - a.salary)[0];
+      if (pk) {
+        pk.ag = true; if (abroad && isBack(pk)) pk.back = true; out.push(pk);
+        S.agentLast = { y: S.year, t: txt(`에이전트가 ${pk.name} ${SQUAD[pk.squad]}의 제안을 더 가져왔다.`, 80) }; delete S.agent;
+        genOffers.note = (genOffers.note ? genOffers.note + ' ' : '') + S.agentLast.t;
+      } else genOffers.note = (genOffers.note ? genOffers.note + ' ' : '') + '에이전트가 더 찾아낸 1군 팀은 없었다. 에이전트 계약은 다음 계약 시장까지 이어진다.';
+    }
     if (withRenew) {
       const base = S.orgStr[S.org];
       const want = S.squad === 'first' ? o >= base - 12 - (S.trust - 50) / 10 + agePen : S.squad === 'second' ? S.age <= B.secondRenewAge : S.age < B.traineeMaxAge;
@@ -794,6 +807,11 @@
     if (prev && rec.ovr - prev.ovr >= 3) extra.push({ m: 14, w: rec.ovr - prev.ovr >= 5 ? 6 : 5, t: rec.ovr - prev.ovr >= 5 ? `한 해 동안 OVR이 ${prev.ovr}에서 ${jo(rec.ovr, '으로', '로')} 뛰었다.` : `OVR이 ${prev.ovr}에서 ${jo(rec.ovr, '으로', '로')} 올랐다.` });
     else if (prev && rec.ovr - prev.ovr <= -2) extra.push({ m: 14, w: 4, t: `OVR이 ${prev.ovr}에서 ${jo(rec.ovr, '으로', '로')} 내려갔다. 버티는 시즌이었다.` });
     if (S.car.debut === S.age && y.g1 > 0 && !(y.hl || []).some(x => /1군에 콜업/.test(x.t))) extra.push({ m: 1, w: 7, t: `1군 데뷔 시즌이었다. ${y.g1}경기에 나섰다.` });
+    if (S.acad && S.acad.lv && S.acad.ys[0] < S.year) {   // 아카데미의 한 해: 수료생 가운데 프로 팀에 들어간 수(단계 + 인기 50 이상이면 1 + 해마다 0~1, 난수를 쓰지 않는다)
+      let h = 0; for (const ch of String(S.cid)) h = (h * 31 + ch.charCodeAt(0)) % 9973;
+      const k = S.acad.lv + (S.fame >= 50 ? 1 : 0) + ((h + S.year * 7) % 2); S.acad.grads = Math.min(9999, S.acad.grads + k);
+      extra.push({ m: 13.5, w: 3, t: `아카데미 수료생 ${k}명이 프로 팀에 들어갔다. 지금까지 ${S.acad.grads}명.` });
+    }
     const seasonSc = Object.assign({ type: 'season', story: seasonStory(y, squadPlayed, extra) }, rec);
     after.push(seasonSc);
     if (y.awards.includes('올해의 선수')) after.push(info('올해의 선수', '전 세계 기자단과 선수단 투표 1위. 올해 이 종목에서 가장 빛난 이름은 나였다.', 'gold', ['상금 5,000만']));
@@ -853,6 +871,8 @@
   }
   function retire(reason) {
     const ev = evaluate(), c = S.car;
+    // 쓰이지 않은 에이전트 계약은 은퇴할 때 돌려받는다(돈만 내고 아무 일도 없는 계약을 남기지 않는다). 통산 수입에는 넣지 않는다
+    if (S.agent) { const back = S.agent.c; delete S.agent; if (back > 0) { S.money += back; cashAdd('refund', back); log(`쓰이지 않은 에이전트 계약금 ${fmtMoney(back)}을 돌려받았다.`); } }
     S.over = true; S.pendingNewYear = false; S.pendingSim = false;
     const sc = Object.assign({
       type: 'retire', reason, nick: S.nick, role: role().name, roleId: S.role, age: S.age, years: S.hist.length,
@@ -861,6 +881,10 @@
       news: c.g ? `${role().name} ${S.nick}, ${S.age}세에 은퇴 — 1군 ${c.g}경기${c.titles.filter(t => t.tier !== 'second').length ? `, 우승 ${c.titles.filter(t => t.tier !== 'second').length}회` : ''}` : `${S.nick}, 1군 무대를 밟지 못하고 ${S.age}세에 은퇴`,
       rivals: S.rivals.map(r => Object.assign(rivalView(r), { epilogue: rivalEpilogue(r), hist: r.hist.slice(0, 1).concat(r.hist.slice(1).slice(-4)) })),
     }, ev);
+    if (S.acad && S.acad.lv) {   // 아카데미를 남긴 선수의 은퇴 뒤(0.11.12). 점수·등급·별명은 바꾸지 않는다
+      const a = S.acad; sc.acad = { lv: a.lv, grads: a.grads, paid: a.paid };
+      sc.life = a.lv === 1 ? '은퇴한 뒤에도 자신이 후원한 아카데미에 들러 후배들의 경기를 봐 준다.' : a.lv === 2 ? '은퇴한 뒤에는 자신이 세운 아카데미에서 코치로 후배를 가르친다.' : '은퇴한 뒤에는 자신의 이름을 건 아카데미의 원장이 됐다.';
+    }
     sc.rid = S.cid; sc.at = Date.now();
     S.q = [sc];
     legacy();   // 예전 명예의 전당을 아직 옮기지 않았다면, 이번 기록을 더하기 전에 먼저 옮긴다
@@ -883,6 +907,7 @@
     const num = (k, lo, hi, int) => { if (Number.isFinite(r[k])) o[k] = clamp(int ? Math.round(r[k]) : r[k], lo, hi); };
     num('peak', 0, 99, 1); num('big', 0, 999, 1); num('years', 0, 60, 1); num('age', 10, 60, 1); num('g', 0, 1e5, 1); num('w', 0, 1e5, 1); num('avg', 0, 10); num('mvp', 0, 1e5, 1);
     num('kda', 0, 999); num('earn', 0, 1e12, 1); num('pct', 0, 100, 1); num('debut', 0, 60, 1);
+    if (Number.isInteger(r.acadLv) && r.acadLv >= 1 && r.acadLv <= 3) { o.acadLv = r.acadLv; num('acadGrads', 0, 9999, 1); num('acadPaid', 0, 1e10, 1); }   // 0.11.12 아카데미(남긴 선수만)
     if (o.src !== 'play') return o;
     for (const [k, list] of [['roleId', D.ROLES], ['home', D.REGIONS], ['trait', D.TRAITS]]) if (list.find(x => x.id === r[k])) o[k] = r[k];
     o.ver = txt(r.ver, 10); o.reason = txt(r.reason, 120); if (LOOK(r.look)) o.look = r.look;
@@ -897,6 +922,7 @@
     return cleanRec({
       id: sc.rid || st.cid, src: 'play', at: sc.at, ver: VERSION, look: st.look, nick: sc.nick, role: sc.role, roleId: st.role, home: st.home, trait: st.trait, age: sc.age, years: sc.years,
       score: sc.score, grade: sc.grade, ep: sc.ep, pct: sc.pct, ax: sc.ax, g: sc.g, w: sc.w, avg: sc.avg, mvp: sc.mvp, kda: sc.kda, peak: sc.peak, earn: sc.earn,
+      acadLv: sc.acad ? sc.acad.lv : undefined, acadGrads: sc.acad ? sc.acad.grads : undefined, acadPaid: sc.acad ? sc.acad.paid : undefined,
       titles: sc.titles, awards: sc.awards, orgs: sc.orgs, reason: sc.reason, big: (sc.titles || []).filter(t => t.tier !== 'second').length, debut: st.car.debut || 0,
       rv: (sc.rivals || []).map(v => ({ nick: v.nick, w: v.w, l: v.l, label: v.label })),
     });
@@ -1058,7 +1084,7 @@
       goal: { t: 's', ok: 'n', why: 's', '?': 1 }, goals: [{ id: 's', t: 's', d: 's', need: 'n?', rid: 's?', nick: 's?', w0: 'n?', l0: 'n?' }, 0, 3, '?'] },
     cards: { cards: ['card', 1, 6], reroll: 'n' },
     stove: { years: 'n', salary: 'n', canRetire: 'b', scouted: 'b?' },
-    offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n', back: 'b?' }, 0, 8] },
+    offers: { msg: 's', canStay: 'b', offers: [{ name: 's', org: 'org', region: 's', renew: 'b', salary: 'n', squad: 'squad', years: 'n', p: 'n?', tries: 'n', back: 'b?', ag: 'b?' }, 0, 8] },
     tryout: { p: PCTN, text: 's', vet: 'b', retry: 'b' },
     moment: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', mid: 's', sit: 's', set: 'n', bo: 'n', x: 'n', y: 'n', base: 'n', rival: 's?', pips: 's?', tac: 's?', from: 'n?', seen: 'n?', choices: [{ label: 's', p: 'n', up: 'n', down: 'n', bd: 'bd' }, 2, 3] },
     mresult: { title: 's', text: 's', tour: 's', label: 's', me: 's', opp: 's', choice: 's', i: 'n', p: 'n', eff: 'n', set: 'n', x: 'n', y: 'n', ok: 'b', over: 'b', setWin: 'b', pips: 's?', tac: 's?', d: 'n?', auto: 'b?' },
@@ -1067,7 +1093,7 @@
       r: 'n', k: 'n', d: 'n', a: 'n', mvp: 'b', moms: [{ title: 's', label: 's', ok: 'b', auto: 'b?' }, 0, 8], rival: 's', next: 's', seen: 'n?' },
     retire: { nick: 's', role: 's', reason: 's', age: 'n', years: 'n', g: 'n', w: 'n', avg: 'n', mvp: 'n', kda: 'n', peak: 'n', earn: 'n', score: 'n', pct: 'n', grade: 's', ep: 's',
       ax: { '기량': 'n', '우승': 'n', '개인상': 'n', '인기': 'n', '롱런': 'n' }, titles: [{ y: 'n', name: 's', tier: 'tier' }, 0, 120], awards: [{ y: 'n', name: 's' }, 0, 120], orgs: ['s', 0, 40],
-      news: 's?', rid: 's?', at: 'n?', rivals: [RIVALV, 0, 8, '?'] },
+      news: 's?', rid: 's?', at: 'n?', rivals: [RIVALV, 0, 8, '?'], acad: { lv: 'n', grads: 'n', paid: 'n', '?': 1 }, life: 's?' },
   };
   function fits(v, rule) {
     if (typeof rule === 'string') {
@@ -1837,31 +1863,62 @@
   const PROJ = [
     { id: 'camp', name: '집중 캠프', sum: '한계를 올린다' },
     { id: 'fan', name: '팬 캠페인', sum: '인기를 올린다' },
+    // 0.11.12 큰돈의 쓸모 둘. 둘 다 능력치·승률·한계·인기를 건드리지 않는다. 사지 않으면 판정과 난수가 전과 같다.
+    { id: 'agent', name: '전담 에이전트', sum: '계약 후보를 한 곳 더 본다' },
+    { id: 'acad', name: '유소년 아카데미', sum: '선수 인생에 남는 것을 만든다' },
   ];
+  const ACAD = ['장학 후원', '아카데미 설립', '이름을 건 아카데미'];   // 1~3단계
+  const acadLv = () => (S.acad && S.acad.lv) || 0;
   function projTop() { const w = role().w; return D.STATS.slice().sort((a, b) => w[b.id] - w[a.id]).slice(0, 2); }
   function projInfo() {
     if (!S) return null;
     const P = B.proj, done = S.proj && S.proj.y === S.year ? S.proj : null, top = projTop();
     const opts = PROJ.map(p => {
-      const c = P[p.id], cost = Math.max(P.min, Math.round(S.contract.salary * c.rate / 10) * 10);
+      const c = P[p.id], lv = acadLv();
+      if (p.id === 'agent') {   // 값은 연봉에 비례. 컨디션을 쓰지 않는다. 이미 계약 중이면 다시 살 수 없다(다음 계약 시장에서 쓰일 때까지 이어진다)
+        const cost = Math.max(c.min, Math.round(S.contract.salary * c.rate / 10) * 10), why = done ? 'done' : S.over ? 'over' : !S.org ? 'noorg' : S.agent ? 'held' : S.money < cost ? 'money' : '';
+        return { id: p.id, name: p.name, sum: p.sum, cost, gain: '다음 계약 시장에서 1군 후보 1곳 추가', price: '보장 없음', ok: !why, why, show: !!S.org };
+      }
+      if (p.id === 'acad') {    // 값은 단계마다 정해져 있다(연봉과 무관). 세 단계로 끝난다
+        const cost = lv < 3 ? c.cost[lv] : 0, why = done ? 'done' : S.over ? 'over' : lv >= 3 ? 'max' : !S.org ? 'noorg' : S.money < cost ? 'money' : '';
+        return { id: p.id, name: p.name, sum: p.sum, cost, gain: lv < 3 ? `${lv + 1}단계 ${ACAD[lv]}` : '3단계까지 마쳤다', price: '되돌릴 수 없음', ok: !why, why, show: lv > 0 || (lv < 3 && S.money >= cost * c.showAt), big: true };
+      }
+      const cost = Math.max(P.min, Math.round(S.contract.salary * c.rate / 10) * 10);
       const gain = p.id === 'camp' ? `${top.map(x => x.name).join('·')} 한계 +${c.cap}` : `인기 +${Math.round(c.fame * (has('star') ? 1.5 : 1) * (1 - S.fame / 115) * 10) / 10}`;
       const why = done ? 'done' : S.over ? 'over' : S.cond < P.minCond ? 'cond' : S.money < cost ? 'money' : p.id === 'camp' && top.every(x => S.caps[x.id] >= 99) ? 'max' : '';
-      return { id: p.id, name: p.name, sum: p.sum, cost, gain, price: `컨디션 ${c.cond}`, ok: !why, why };
+      return { id: p.id, name: p.name, sum: p.sum, cost, gain, price: `컨디션 ${c.cond}`, ok: !why, why, show: true };
     });
-    return { y: S.year, done, opts, minCond: P.minCond, salary: S.contract.salary, lastY: S.proj ? S.proj.y : 0 };
+    return { y: S.year, done, opts, minCond: P.minCond, salary: S.contract.salary, lastY: S.proj ? S.proj.y : 0,
+      agent: S.agent ? { y: S.agent.y, c: S.agent.c } : null, agentLast: S.agentLast ? Object.assign({}, S.agentLast) : null,
+      acad: S.acad ? { lv: S.acad.lv, name: ACAD[S.acad.lv - 1], paid: S.acad.paid, grads: S.acad.grads, trust: P.acad.trust * S.acad.lv, next: S.acad.lv < 3 ? P.acad.cost[S.acad.lv] : 0 } : null };
   }
   function buyProj(id) {
     const I = projInfo(), o = I && I.opts.find(x => x.id === id); if (!o || !o.ok || stale()) return false;
-    const c = B.proj[id]; S.money -= o.cost; cashAdd('proj', -o.cost);
+    const c = B.proj[id]; S.money -= o.cost; cashAdd(id === 'agent' || id === 'acad' ? id : 'proj', -o.cost);
     let d = '';
-    if (id === 'camp') { const top = projTop(); for (const x of top) S.caps[x.id] = Math.min(99, S.caps[x.id] + c.cap); d = `${top.map(x => x.name).join('·')} 한계 +${c.cap}`; }
+    if (id === 'agent') { S.agent = { y: S.year, c: o.cost }; delete S.agentLast; d = '계약 시장 후보 +1 대기'; }
+    else if (id === 'acad') {
+      const lv = acadLv() + 1, a = S.acad || { lv: 0, paid: 0, ys: [], grads: 0 };
+      S.acad = { lv, paid: a.paid + o.cost, ys: a.ys.concat(S.year), grads: a.grads }; d = `${lv}단계 ${ACAD[lv - 1]}`;
+      hl(5, lv === 1 ? `${MONTHS[S.m].m}월, 유소년 아카데미에 장학 후원을 시작했다.` : lv === 2 ? `${MONTHS[S.m].m}월, 유소년 아카데미를 세웠다.` : `${MONTHS[S.m].m}월, 자신의 이름을 건 아카데미를 열었다.`);
+    }
+    else if (id === 'camp') { const top = projTop(); for (const x of top) S.caps[x.id] = Math.min(99, S.caps[x.id] + c.cap); d = `${top.map(x => x.name).join('·')} 한계 +${c.cap}`; }
     else { const f0 = S.fame; addFame(c.fame); d = `인기 ${Math.round(f0)} → ${Math.round(S.fame)}`; }
-    setCond(S.cond + c.cond);
+    if (c.cond) setCond(S.cond + c.cond);
     S.proj = { y: S.year, id, t: o.name, d: txt(d, 60), c: o.cost };
     log(`시즌 프로젝트 — ${o.name}: ${d}. ${fmtMoney(o.cost)} 사용.`);
     save(); return true;
   }
   function normProj(s) {
+    // 0.11.12 에이전트 계약·아카데미: 모양이 맞지 않으면 버린다(없는 것으로 본다). 값의 범위도 확인한다
+    const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi, obj = v => typeof v === 'object' && v !== null && !Array.isArray(v);
+    if (s.agent != null && !(obj(s.agent) && int(s.agent.y, 1, 60) && Number.isFinite(s.agent.c) && s.agent.c >= 0 && s.agent.c < 1e9)) delete s.agent;
+    if (s.agent) s.agent = { y: s.agent.y, c: s.agent.c };
+    if (s.agentLast != null && !(obj(s.agentLast) && int(s.agentLast.y, 1, 60) && typeof s.agentLast.t === 'string' && s.agentLast.t.length <= 80)) delete s.agentLast;
+    if (s.agentLast) s.agentLast = { y: s.agentLast.y, t: s.agentLast.t };
+    const a = s.acad;
+    if (a != null && !(obj(a) && int(a.lv, 1, 3) && Number.isFinite(a.paid) && a.paid >= 0 && a.paid < 1e10 && Array.isArray(a.ys) && a.ys.length === a.lv && a.ys.every(y => int(y, 1, 60)) && int(a.grads, 0, 9999))) delete s.acad;
+    if (s.acad) s.acad = { lv: a.lv, paid: a.paid, ys: a.ys.slice(), grads: a.grads };
     const p = s.proj; if (p == null) return;
     if (!(typeof p === 'object' && !Array.isArray(p) && Number.isInteger(p.y) && p.y >= 1 && p.y <= 60 && PROJ.some(x => x.id === p.id) && typeof p.t === 'string' && p.t.length <= 20 && typeof p.d === 'string' && p.d.length <= 60 && (p.c == null || (Number.isFinite(p.c) && p.c >= 0 && p.c < 1e9)))) delete s.proj;
   }

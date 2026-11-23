@@ -2,6 +2,8 @@
 //   node test/balance.js traits [시드당 성향별 커리어 수=600] [--seeds=1,2,3,4,5] [--set=키=값,키=값]
 //   node test/balance.js curve [시드당 성향별 커리어 수=300] [--seeds=1,2,3] [--set=…]   0.11.9: 나이별 OVR(10·50·90백분위), 22~25세 성장량, 한계에 막힌 달의 비율, 포지션·리그별, 상·중·하위 분포
 //   node test/balance.js proj [정책별 커리어 수=300] [--seeds=1,2]   0.11.9: 시즌 프로젝트를 매 시즌 사는 정책과 사지 않는 정책의 비교(같은 시드·포지션·리그·성향)
+//   node test/balance.js econ [정책별 커리어 수=300] [--seeds=1,2]   0.11.12: 연차별 잔고·통산 수입과 지출·연봉·계약 시장의 후보 수(기준선)
+//   node test/balance.js spend [정책별 커리어 수=300] [--seeds=1,2]   0.11.12: 에이전트·아카데미를 포함한 지출 정책 비교
 //   node test/balance.js offers [국적별 커리어 수=400] [--seeds=1,2] [--set=…]   해외 리그에서 뛰는 선수에게 고국 리그의 1군 제안이 오는 비율
 // 같은 시드 번호의 커리어는 성향만 다르고 포지션·리그·난수 시드가 같다(난수 소비가 달라지므로 완전한 짝은 아니다).
 // 진행 규칙은 test/sim.js 와 같은 autoStep(할 일을 돌아가며 고르고 컨디션이 낮으면 휴식)이다. 사람의 플레이와는 다르다.
@@ -174,4 +176,120 @@ if (mode === 'proj') {
   line('산 횟수(커리어당)', R => f(R.n)); line('쓴 돈(만)', R => f(R.spent, 0)); line('통산 수입(만)', R => f(R.earn, 0)); line('쓴 돈 ÷ 통산 수입', R => (mean(R.spent) / mean(R.earn) * 100).toFixed(1) + '%');
   line('25세 OVR', R => f(R.o25)); line('최고 OVR', R => f(R.peak)); line('최고 OVR 가운데 (10%~90%)', R => `${q(R.peak, .5).toFixed(1)} (${q(R.peak, .1).toFixed(1)}~${q(R.peak, .9).toFixed(1)})`);
   line('1군 데뷔 비율', R => pct(R.debut)); line('1군 데뷔 나이', R => f(R.dAge)); line('1군 경기 수', R => f(R.g, 0)); line('1군 우승 수', R => f(R.titles, 2)); line('커리어 중 최고 인기', R => f(R.fame)); line('커리어 점수', R => f(R.score, 0));
+}
+
+if (mode === 'econ') {
+  /* 0.11.12 — 돈의 분포(기준선). 정책: none = 아무것도 사지 않음, shop = 단계형 투자를 돈이 되는 대로, camp = 매 시즌 집중 캠프.
+     연차별 잔고(10·50·90백분위), 통산 수입·지출·은퇴 잔액, 소속·리그별 연봉, 단계형 투자를 다 올린 시점, 성향·포지션별 잔고, 계약 시장이 열리는 횟수와 후보 수.
+     후보 수는 결산 때마다 genOffers 를 따로 불러 센다(난수를 쓰므로 그 정책은 다른 정책과 짝이 아니다). */
+  const q = (a, p) => { if (!a.length) return NaN; const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(p * b.length))]; };
+  const eok = v => (v / 10000).toFixed(v >= 100000 ? 0 : 1) + '억', YS = [3, 5, 8, 10, 12, 14];
+  const POL = ['none', 'shop', 'camp', 'probe'], rows = {}; for (const p of POL) rows[p] = { at: {}, earn: [], spent: [], money: [], years: [], maxY: [], sal: {}, byTrait: {}, byRole: {}, expire: [], stove: [], pool: [], extra: [], backExtra: [], abroadRounds: 0, rounds: 0 };
+  const t0 = Date.now();
+  for (const seed of SEEDS) for (let i = 0; i < N; i++) for (const pol of POL) {
+    for (const k in mem) delete mem[k]; mem.pg_tut_v1 = '1'; G._seen(); G.seed(seed * 1000003 + i);
+    const tr = traits[i % traits.length], role = roles[i % roles.length];
+    G.newGame({ nick: 'B', region: regs[Math.floor(i / roles.length) % regs.length], role, trait: tr });
+    const R = rows[pol]; let n = 0, spent = 0, maxY = 0, exp = 0, stv = 0;
+    while (!G.state().over && n++ < 30000) {
+      const s = G.state(), sc = G.scene();
+      if (sc && !sc.__e) {
+        sc.__e = 1;
+        if (sc.type === 'season') {
+          if (YS.includes(sc.year)) (R.at[sc.year] = R.at[sc.year] || []).push(s.money);
+          if (s.org) { const k = sc.squad + '|' + D.ORG[s.org].region; (R.sal[k] = R.sal[k] || []).push(sc.salary); }
+          if (pol === 'probe' && s.org) { const r = G._offers(false); if (r) { R.rounds++; R.pool.push(r.cand.length); const rest = r.cand.filter(x => !r.out.includes(x)); R.extra.push(rest.length ? 1 : 0); if (D.ORG[s.org].region !== s.home) { R.abroadRounds++; R.backExtra.push(rest.some(x => x.squad === 'first' && D.ORG[x.org].region === s.home) && !r.out.some(x => x.squad === 'first' && D.ORG[x.org].region === s.home) ? 1 : 0); } } }
+        }
+        if (sc.type === 'offers' && !sc.canStay) exp++; if (sc.type === 'stove') stv++;
+      }
+      if (!sc && s.org) {
+        if (pol === 'camp') { const op = G.projInfo().opts.find(x => x.id === 'camp'); if (op.ok && G.buyProj('camp')) spent += op.cost; }
+        if (pol === 'shop') { let all = true; for (const id of ['gear', 'coach', 'care']) { const it = G.autoInfo().items.find(x => x.id === id); if (!it.max && s.money >= it.cost + 300 && G.buy(id)) spent += it.cost; if (!G.autoInfo().items.find(x => x.id === id).max) all = false; } if (all && !maxY) maxY = s.year; }
+      }
+      G.autoStep();
+    }
+    const s = G.state(); R.earn.push(s.car.earn); R.spent.push(spent); R.money.push(s.money); R.years.push(s.year); if (maxY) R.maxY.push(maxY); R.expire.push(exp); R.stove.push(stv);
+    (R.byTrait[tr] = R.byTrait[tr] || []).push(s.money); (R.byRole[role] = R.byRole[role] || []).push(s.money);
+  }
+  console.log(`돈의 분포 | 버전 ${G.VERSION} | 시드 ${SEEDS.join(',')} × 정책별 ${N}커리어 = 정책마다 ${SEEDS.length * N}커리어(세 성향·다섯 포지션·네 리그 고르게) | ${((Date.now() - t0) / 1000).toFixed(0)}초`);
+  console.log('자동 규칙(autoStep)의 결과이며 사람의 플레이와 다르다. 금액은 억 원(1억 = 10,000만).\n');
+  const NAME = { none: '아무것도 사지 않음', shop: '단계형 투자만', camp: '매 시즌 집중 캠프' };
+  console.log('연차별 결산 때 잔고: 중앙값 (10%~90%) · 그 연차까지 간 커리어 수'); console.log('| 연차 | ' + ['none', 'shop', 'camp'].map(p => NAME[p]).join(' | ') + ' |'); console.log('|---|---|---|---|');
+  for (const y of YS) console.log(`| ${y}년차 | ` + ['none', 'shop', 'camp'].map(p => { const a = rows[p].at[y] || []; return `${eok(q(a, .5))} (${eok(q(a, .1))}~${eok(q(a, .9))}) · ${a.length}` }).join(' | ') + ' |');
+  console.log('\n통산'); console.log('| 지표 | ' + ['none', 'shop', 'camp'].map(p => NAME[p]).join(' | ') + ' |'); console.log('|---|---|---|---|');
+  const line = (label, fn) => console.log(`| ${label} | ` + ['none', 'shop', 'camp'].map(p => fn(rows[p])).join(' | ') + ' |');
+  line('통산 수입: 평균 / 중앙값 (10%~90%)', R => `${eok(mean(R.earn))} / ${eok(q(R.earn, .5))} (${eok(q(R.earn, .1))}~${eok(q(R.earn, .9))})`);
+  line('쓴 돈(정책이 산 것): 평균', R => eok(mean(R.spent))); line('쓴 돈 ÷ 통산 수입', R => (mean(R.spent) / mean(R.earn) * 100).toFixed(1) + '%');
+  line('은퇴 잔액: 평균 / 중앙값 (10%~90%)', R => `${eok(mean(R.money))} / ${eok(q(R.money, .5))} (${eok(q(R.money, .1))}~${eok(q(R.money, .9))})`);
+  line('커리어 길이(시즌)', R => f(R.years)); line('단계형 투자를 모두 올린 커리어 · 그 연차의 중앙값', R => R.maxY.length ? `${(R.maxY.length / R.money.length * 100).toFixed(0)}% · ${q(R.maxY, .5)}년차` : '-');
+  line('계약 만료로 시장에 나온 횟수(커리어당)', R => f(R.expire, 2)); line('계약 중에 맞은 스토브리그(커리어당)', R => f(R.stove, 2));
+  console.log('\n연봉(만 원): 결산 때의 소속·리그별 중앙값 (10%~90%) — 아무것도 사지 않는 정책'); console.log('| 리그 | 연습생 | 2군 | 1군 |'); console.log('|---|---|---|---|');
+  for (const g of regs) console.log(`| ${D.REGION[g].name} | ` + ['trainee', 'second', 'first'].map(sq => { const a = rows.none.sal[sq + '|' + g] || []; return a.length ? `${q(a, .5)} (${q(a, .1)}~${q(a, .9)})` : '-'; }).join(' | ') + ' |');
+  console.log('\n은퇴 잔액의 중앙값: 성향·포지션별(아무것도 사지 않는 정책)');
+  console.log('성향: ' + traits.map(t => `${D.TRAITS.find(x => x.id === t).name} ${eok(q(rows.none.byTrait[t], .5))}`).join(' · ') + ' | 포지션: ' + roles.map(r => `${D.ROLES.find(x => x.id === r).name} ${eok(q(rows.none.byRole[r], .5))}`).join(' · '));
+  const P = rows.probe;
+  console.log(`\n계약 시장의 후보(결산 때마다 genOffers 를 불러 셈, ${P.rounds}번): 자격을 통과한 구단 수의 중앙값 ${q(P.pool, .5)} (10%~90% ${q(P.pool, .1)}~${q(P.pool, .9)}) · 보여 준 것 말고도 후보가 남은 비율 ${(mean(P.extra) * 100).toFixed(1)}% · 해외에서 뛰는 동안(${P.abroadRounds}번) 고국 1군 후보가 자격은 되는데 보여 준 목록에 없던 비율 ${(mean(P.backExtra) * 100).toFixed(1)}%`);
+}
+
+if (mode === 'spend') {
+  /* 0.11.12 — 큰돈의 쓸모: 지출 정책 비교(같은 시드·포지션·리그·성향).
+     none 사지 않음 · camp 매 시즌 집중 캠프 · fan 매 시즌 팬 캠페인 · shop 단계형 투자만
+     strong 에이전트 없이, 제안 가운데 전력이 가장 강한 1군 팀을 고름 · agentS 계약이 끝나는 해에 에이전트를 사고 같은 규칙으로 고름
+     home 에이전트 없이, 해외에서 뛸 때 고국 1군 제안이 보이면 받음 · agentH 해외에서 뛰는 동안 에이전트를 사 두고 같은 규칙으로 고름
+     acad 돈이 되면 아카데미(그 시즌에는 다른 프로젝트 없음) · mix 단계형 투자 + 계약이 끝나는 해에는 에이전트, 돈이 되면 아카데미, 아니면 집중 캠프
+     제안을 고르는 규칙이 바뀌면 커리어가 달라지므로 strong ↔ agentS, home ↔ agentH 를 짝으로 본다. */
+  const q = (a, p) => { if (!a.length) return NaN; const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(p * b.length))]; };
+  const eok = v => (v / 10000).toFixed(v >= 100000 ? 0 : 1) + '억';
+  const POL = (opt('pol') || 'none,camp,fan,shop,strong,agentS,home,agentH,acad,mix').split(','), rows = {};
+  for (const p of POL) rows[p] = { peak: [], g: [], wr: [], titles: [], score: [], earn: [], spent: [], money: [], fame: [], moves: [], years: [], nAgent: [], agUsed: [], agTook: [], lv: [], grads: [], back: [], abroad: [], neg: 0, ledger: 0, n: { camp: [], fan: [], agent: [], acad: [] }, byTrait: {} };
+  const t0 = Date.now();
+  for (const seed of SEEDS) for (let i = 0; i < N; i++) for (const pol of POL) {
+    for (const k in mem) delete mem[k]; mem.pg_tut_v1 = '1'; G._seen(); G.seed(seed * 1000003 + i);
+    const tr = traits[i % traits.length];
+    G.newGame({ nick: 'B', region: regs[Math.floor(i / roles.length) % regs.length], role: roles[i % roles.length], trait: tr });
+    const R = rows[pol], cnt = { camp: 0, fan: 0, agent: 0, acad: 0 }; let n = 0, pk = 0, spent = 0, fameMax = 0, agUsed = 0, agTook = 0, back = 0, wasAbroad = 0, seq0 = G.cash().seq, bal0 = G.state().money, flow = 0;
+    const buy = id => { const op = G.projInfo().opts.find(x => x.id === id); if (op && op.ok && G.buyProj(id)) { spent += op.cost; cnt[id]++; return true; } return false; };
+    while (!G.state().over && n++ < 30000) {
+      const s = G.state(), sc = G.scene(), o = G.ovr(); if (o > pk) pk = o; if (s.fame > fameMax) fameMax = s.fame; if (s.money < 0) R.neg++;
+      const abroad = !!s.org && D.ORG[s.org].region !== s.home; if (wasAbroad && !abroad && s.org && s.squad === 'first') back = 1; if (abroad) wasAbroad = 1;
+      if (!sc && s.org) {
+        const last = s.contract.years <= 1;
+        if (pol === 'camp' || pol === 'fan') buy(pol);
+        if (pol === 'shop' || pol === 'mix') for (const id of ['gear', 'coach', 'care']) { const it = G.autoInfo().items.find(x => x.id === id); if (!it.max && s.money >= it.cost + 300 && G.buy(id)) spent += it.cost; }
+        if (pol === 'agentS' && last) buy('agent');
+        if (pol === 'agentH' && abroad) buy('agent');
+        if (pol === 'acad') buy('acad');
+        if (pol === 'mix') { if (!(last && buy('agent')) && !buy('acad')) buy('camp'); }
+      }
+      if (sc && sc.type === 'offers' && !sc.__s) {
+        sc.__s = 1; if (sc.offers.some(x => x.ag)) agUsed++;
+        let pick = -1;
+        if (pol === 'strong' || pol === 'agentS') { let best = -1; sc.offers.forEach((x, k) => { if (x.squad === 'first' && s.orgStr[x.org] > best) { best = s.orgStr[x.org]; pick = k; } }); }
+        if ((pol === 'home' || pol === 'agentH') && abroad) pick = sc.offers.findIndex(x => x.squad === 'first' && D.ORG[x.org].region === s.home);
+        if (pick >= 0) { const x = sc.offers[pick]; if (x.ag) agTook++; G.resolve({ i: pick, act: 'accept' }); continue; }
+      }
+      G.autoStep();
+    }
+    const s = G.state(), c = s.car;
+    // 장부 대조: 남아 있는 내역(최근 240줄) 안에서 잔고가 이어지는지(gap 없음)
+    if (G.cash().all.some(x => x.gap)) R.ledger++;
+    R.peak.push(pk); R.g.push(c.g); R.wr.push(c.g ? c.w / c.g * 100 : 0); R.titles.push(c.titles.filter(x => x.tier !== 'second').length); R.score.push(s.q[0].score); R.earn.push(c.earn); R.spent.push(spent); R.money.push(s.money); R.fame.push(fameMax); R.moves.push(c.moves); R.years.push(s.year);
+    R.agUsed.push(agUsed); R.agTook.push(agTook); R.lv.push(s.acad ? s.acad.lv : 0); R.grads.push(s.acad ? s.acad.grads : 0); if (wasAbroad) { R.abroad.push(1); R.back.push(back ? 1 : 0); }
+    for (const k in cnt) R.n[k].push(cnt[k]); (R.byTrait[tr] = R.byTrait[tr] || []).push(s.q[0].score);
+  }
+  console.log(`지출 정책 비교 | 버전 ${G.VERSION} | 시드 ${SEEDS.join(',')} × 정책별 ${N}커리어 = 정책마다 ${SEEDS.length * N}커리어(세 성향·다섯 포지션·네 리그 고르게) | ${((Date.now() - t0) / 1000).toFixed(0)}초`);
+  console.log('값은 평균±95% 신뢰구간. 자동 규칙(autoStep)에 정책만 얹은 결과이며 사람의 플레이와 다르다.\n');
+  const NAME = { none: '사지 않음', camp: '집중 캠프', fan: '팬 캠페인', shop: '단계형만', strong: '강팀 고르기', agentS: '강팀+에이전트', home: '고국 복귀', agentH: '복귀+에이전트', acad: '아카데미', mix: '섞어 쓰기' };
+  console.log('| 지표 | ' + POL.map(p => NAME[p] || p).join(' | ') + ' |'); console.log('|---|' + POL.map(() => '---|').join(''));
+  const line = (label, fn) => console.log(`| ${label} | ` + POL.map(p => fn(rows[p])).join(' | ') + ' |');
+  line('산 횟수: 캠프 / 팬 / 에이전트 / 아카데미', R => ['camp', 'fan', 'agent', 'acad'].map(k => mean(R.n[k]).toFixed(1)).join(' / '));
+  line('쓴 돈', R => eok(mean(R.spent))); line('통산 수입', R => `${eok(mean(R.earn))}±${eok(ci(R.earn))}`); line('쓴 돈 ÷ 통산 수입', R => (mean(R.spent) / mean(R.earn) * 100).toFixed(1) + '%');
+  line('은퇴 잔액: 중앙값 (10%~90%)', R => `${eok(q(R.money, .5))} (${eok(q(R.money, .1))}~${eok(q(R.money, .9))})`);
+  line('최고 OVR', R => f(R.peak)); line('1군 경기', R => f(R.g, 0)); line('1군 승률 %', R => f(R.wr)); line('1군 우승', R => f(R.titles, 2)); line('우승: 하위 10% / 중앙 / 상위 10%', R => `${q(R.titles, .1)} / ${q(R.titles, .5)} / ${q(R.titles, .9)}`);
+  line('이적 횟수', R => f(R.moves, 2)); line('최고 인기', R => f(R.fame)); line('커리어 길이', R => f(R.years)); line('커리어 점수', R => f(R.score));
+  line('커리어 점수: 천재 / 노력 / 두뇌', R => traits.map(t => mean(R.byTrait[t]).toFixed(1)).join(' / '));
+  line('에이전트가 후보를 더 가져온 시장(커리어당)', R => f(R.agUsed, 2)); line('그 후보와 계약한 횟수', R => f(R.agTook, 2));
+  line('해외에서 뛴 커리어 중 고국 1군으로 돌아간 비율', R => `${pct(R.back)} (${R.abroad.length})`);
+  line('아카데미: 0 / 1 / 2 / 3단계로 은퇴한 비율', R => [0, 1, 2, 3].map(l => Math.round(R.lv.filter(x => x === l).length / R.lv.length * 100) + '%').join(' / ')); line('배출한 프로(아카데미가 있는 커리어)', R => { const a = R.grads.filter((x, k) => R.lv[k] > 0); return a.length ? f(a) : '-'; });
+  line('잔고가 음수였던 걸음 / 장부가 끊긴 커리어', R => `${R.neg} / ${R.ledger}`);
 }

@@ -569,3 +569,9 @@ p.cashsum.none { font-size: 13px; line-height: 1.5; color: var(--dim); }
 /* 0.11.11: 라이벌전이 있는 달에 목표가 두 줄이면 좁은 화면(360×800, 320×568)에서 첫 화면이 3~6px 넘쳤다(v0.11.10에도 있던 문제). 본문 아래 여백을 줄여 맞춘다 */
 @media (max-width: 380px) { .content { padding-bottom: 12px; } }
 @media (max-width: 350px), (max-height: 600px) { .content { padding-bottom: 0; } }
+
+/* ---------- 0.11.12 큰돈의 쓸모: 전담 에이전트 · 유소년 아카데미 ---------- */
+.projst { margin: 0; padding: 4px 12px; font-size: 13px; line-height: 1.45; color: var(--cy); border-left: 3px solid var(--cy); background: var(--panel); overflow-wrap: anywhere; }
+.prow .sbuy.arm { color: #1a1630; background: var(--gold); border-color: var(--gold); font-size: 13px; line-height: 1.25; }
+.agtag { display: inline-block; font-style: normal; font-size: 12px; font-weight: 800; color: #1a1630; background: var(--cy); padding: 1px 6px; margin-left: 4px; white-space: nowrap; }
+.acadend { border-left: 3px solid var(--cy); padding-left: 10px; } .acadend p { margin: 0 0 4px; overflow-wrap: anywhere; }

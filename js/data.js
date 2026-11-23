@@ -70,7 +70,9 @@
     /* 시즌 프로젝트(0.11.9): 한 시즌에 하나만 고르는 선택적 지출. 고르지 않으면 판정이 예전과 같다.
        값은 연봉에 비례한다(rate × 연봉, 최소 min 만) — 연습생도 살 수 있고 1군에게도 가볍지 않게.
        camp = 집중 캠프: 포지션 비중이 큰 두 능력치의 한계 +cap, 컨디션 cond. fan = 팬 캠페인: 인기 +fame(높을수록 덜 오른다), 컨디션 cond. minCond 미만이면 할 수 없다. */
-    proj: { min: 100, minCond: 45, camp: { rate: .10, cap: 1, cond: -20 }, fan: { rate: .06, fame: 8, cond: -12 } },
+    proj: { min: 100, minCond: 45, camp: { rate: .10, cap: 1, cond: -20 }, fan: { rate: .06, fame: 8, cond: -12 },
+      agent: { rate: .15, min: 300, cond: 0 },                          // 0.11.12 전담 에이전트: 연봉의 15%(최소 300만). 다음 계약 시장에서 자격이 되는 후보 1곳을 더 본다
+      acad: { cost: [30000, 100000, 250000], trust: 1, showAt: .5, cond: 0 } },   // 0.11.12 유소년 아카데미: 3억 · 10억 · 25억의 세 단계. 시즌을 시작할 때 감독 신뢰 +1 × 단계. 다음 단계 값의 절반을 모으면 목록에 보인다
     ageGrow: [[17, 1.35], [19, 1.15], [21, .85], [23, .55], [25, .3], [99, .15]],   // [이 나이까지, 성장 배율]
     // ── 리그 수준 ──
     orgShift: 5,       // 모든 구단 전력에 더하는 값. 올리면 데뷔·우승이 어려워지고 은퇴가 빨라진다
@@ -1264,7 +1266,7 @@
     { id: 'grade_s', name: '전설', desc: 'S등급 이상으로 은퇴한다' },
   ];
 
-  (root.PG_VER = root.PG_VER || {}).data = '0.11.11';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
+  (root.PG_VER = root.PG_VER || {}).data = '0.11.12';   // 파일 버전(여섯 곳이 같아야 한다. sw.js 머리말 참고)
   root.PG_DATA = D;
   if (typeof module !== 'undefined') module.exports = D;
 })(typeof window !== 'undefined' ? window : globalThis);
